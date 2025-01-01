@@ -21,51 +21,24 @@
 typedef struct MyBoardState {
     MachineState parent_obj;
     
-    // Memory regions
-    MemoryRegion *itcm[4];
-    MemoryRegion *dtcm[4];
+    // Only keep implemented memory regions
     MemoryRegion *flash_program;
     MemoryRegion *flash_data;
     MemoryRegion *sram[4];
-    MemoryRegion *utest;
-    
-    // Backdoor regions
-    MemoryRegion *itcm_backdoor[4];
-    MemoryRegion *dtcm_backdoor[4];
 } MyBoardState;
 
 #define TYPE_MYBOARD_MACHINE "myboard"
 #define MYBOARD(obj) \
     OBJECT_CHECK(MyBoardState, (obj), TYPE_MYBOARD_MACHINE)
 
-static void create_itcm(MyBoardState *s)
-{
-    MemoryRegion *sys_mem = get_system_memory();
-    
-    for (int i = 0; i < 4; i++) {
-        char name[32];
-        snprintf(name, sizeof(name), "itcm_%d", i);
-        
-        s->itcm[i] = g_new(MemoryRegion, 1);
-        memory_region_init_ram(s->itcm[i], NULL, name, ITCM_SIZE, &error_fatal);
-        memory_region_add_subregion(sys_mem, 0x00000000 + (i * ITCM_SIZE), s->itcm[i]);
-        
-        // Create backdoor access
-        snprintf(name, sizeof(name), "itcm_%d_backdoor", i);
-        s->itcm_backdoor[i] = g_new(MemoryRegion, 1);
-        memory_region_init_alias(s->itcm_backdoor[i], NULL, name, s->itcm[i], 0, ITCM_SIZE);
-        memory_region_add_subregion(sys_mem, 0x11000000 + (i * 0x400000), s->itcm_backdoor[i]);
-    }
-}
-
 static void create_program_flash(MyBoardState *s)
 {
     MemoryRegion *sys_mem = get_system_memory();
     
-    // Create program flash region
+    // Program flash is divided into PFC0 and PFC1 blocks
     s->flash_program = g_new(MemoryRegion, 1);
     memory_region_init_rom(s->flash_program, NULL, "program_flash", 
-                          12 * FLASH_BLOCK_1024K, &error_fatal);
+                          12 * FLASH_BLOCK_1024K, &error_fatal);  // Total 12MB
     memory_region_add_subregion(sys_mem, 0x00400000, s->flash_program);
 }
 
@@ -73,7 +46,6 @@ static void create_data_flash(MyBoardState *s)
 {
     MemoryRegion *sys_mem = get_system_memory();
     
-    // Create data flash region
     s->flash_data = g_new(MemoryRegion, 1);
     memory_region_init_rom(s->flash_data, NULL, "data_flash", 
                           256 * KiB, &error_fatal);
@@ -84,7 +56,7 @@ static void create_sram(MyBoardState *s)
 {
     MemoryRegion *sys_mem = get_system_memory();
     
-    // SRAM regions with different sizes
+    // SRAM regions with correct sizes from memory map
     const struct {
         hwaddr base;
         size_t size;
@@ -105,50 +77,52 @@ static void create_sram(MyBoardState *s)
     }
 }
 
-static void create_dtcm(MyBoardState *s)
+static void create_unimplemented_regions(void)
 {
     MemoryRegion *sys_mem = get_system_memory();
     
+    // ITCM regions (4 x 64KB at same address)
+    for (int i = 0; i < 4; i++) {
+        char name[32];
+        snprintf(name, sizeof(name), "itcm_%d", i);
+        MemoryRegion *itcm = g_new(MemoryRegion, 1);
+        memory_region_init_io(itcm, NULL, NULL, NULL, name, ITCM_SIZE);
+        memory_region_add_subregion_overlap(sys_mem, 0x00000000, itcm, i);
+    }
+    
+    // ITCM backdoor regions (4 x 64KB at different addresses)
+    for (int i = 0; i < 4; i++) {
+        char name[32];
+        snprintf(name, sizeof(name), "itcm_%d_backdoor", i);
+        MemoryRegion *itcm_backdoor = g_new(MemoryRegion, 1);
+        memory_region_init_io(itcm_backdoor, NULL, NULL, NULL, name, ITCM_SIZE);
+        memory_region_add_subregion(sys_mem, 0x11000000 + (i * 0x400000), itcm_backdoor);
+    }
+    
+    // DTCM regions (4 x 128KB at same address)
     for (int i = 0; i < 4; i++) {
         char name[32];
         snprintf(name, sizeof(name), "dtcm_%d", i);
-        
-        s->dtcm[i] = g_new(MemoryRegion, 1);
-        memory_region_init_ram(s->dtcm[i], NULL, name, DTCM_SIZE, &error_fatal);
-        memory_region_add_subregion(sys_mem, 0x20000000, s->dtcm[i]);
-        
-        // Create backdoor access
-        snprintf(name, sizeof(name), "dtcm_%d_backdoor", i);
-        s->dtcm_backdoor[i] = g_new(MemoryRegion, 1);
-        memory_region_init_alias(s->dtcm_backdoor[i], NULL, name, s->dtcm[i], 0, DTCM_SIZE);
-        memory_region_add_subregion(sys_mem, 0x21000000 + (i * 0x400000), s->dtcm_backdoor[i]);
+        MemoryRegion *dtcm = g_new(MemoryRegion, 1);
+        memory_region_init_io(dtcm, NULL, NULL, NULL, name, DTCM_SIZE);
+        memory_region_add_subregion_overlap(sys_mem, 0x20000000, dtcm, i);
     }
-}
-
-static void create_utest(MyBoardState *s)
-{
-    MemoryRegion *sys_mem = get_system_memory();
     
-    // UTEST region
-    s->utest = g_new(MemoryRegion, 1);
-    memory_region_init_ram(s->utest, NULL, "utest", 8 * KiB, &error_fatal);
-    memory_region_add_subregion(sys_mem, 0x1B000000, s->utest);
-}
-
-static void myboard_init(MachineState *machine)
-{
-    MyBoardState *s = MYBOARD(machine);
-    MemoryRegion *sys_mem = get_system_memory();
-
-    // Initialize all memory regions
-    create_itcm(s);
-    create_program_flash(s);
-    create_data_flash(s);
-    create_sram(s);
-    create_dtcm(s);
-    create_utest(s);
-
-    // Create unimplemented device regions
+    // DTCM backdoor regions (4 x 128KB at different addresses)
+    for (int i = 0; i < 4; i++) {
+        char name[32];
+        snprintf(name, sizeof(name), "dtcm_%d_backdoor", i);
+        MemoryRegion *dtcm_backdoor = g_new(MemoryRegion, 1);
+        memory_region_init_io(dtcm_backdoor, NULL, NULL, NULL, name, DTCM_SIZE);
+        memory_region_add_subregion(sys_mem, 0x21000000 + (i * 0x400000), dtcm_backdoor);
+    }
+    
+    // UTEST region (8KB)
+    MemoryRegion *utest = g_new(MemoryRegion, 1);
+    memory_region_init_io(utest, NULL, NULL, NULL, "utest", 8 * KiB);
+    memory_region_add_subregion(sys_mem, 0x1B000000, utest);
+    
+    // AIPS regions
     MemoryRegion *aips0 = g_new(MemoryRegion, 1);
     memory_region_init_io(aips0, NULL, NULL, NULL, "aips0", 2 * MiB);
     memory_region_add_subregion(sys_mem, 0x40000000, aips0);
@@ -160,6 +134,36 @@ static void myboard_init(MachineState *machine)
     MemoryRegion *aips2 = g_new(MemoryRegion, 1);
     memory_region_init_io(aips2, NULL, NULL, NULL, "aips2", 2 * MiB);
     memory_region_add_subregion(sys_mem, 0x40400000, aips2);
+
+    // Additional peripheral regions
+    MemoryRegion *aes = g_new(MemoryRegion, 1);
+    memory_region_init_io(aes, NULL, NULL, NULL, "aes_accel", 1 * KiB);
+    memory_region_add_subregion(sys_mem, 0x44000000, aes);
+
+    MemoryRegion *qspi_rx = g_new(MemoryRegion, 1);
+    memory_region_init_io(qspi_rx, NULL, NULL, NULL, "qspi_rx", 1 * KiB);
+    memory_region_add_subregion(sys_mem, 0x67000000, qspi_rx);
+
+    MemoryRegion *qspi_ahb = g_new(MemoryRegion, 1);
+    memory_region_init_io(qspi_ahb, NULL, NULL, NULL, "qspi_ahb", 128 * MiB);
+    memory_region_add_subregion(sys_mem, 0x68000000, qspi_ahb);
+
+    MemoryRegion *ppb = g_new(MemoryRegion, 1);
+    memory_region_init_io(ppb, NULL, NULL, NULL, "ppb", 1 * MiB);
+    memory_region_add_subregion(sys_mem, 0xE0000000, ppb);
+}
+
+static void myboard_init(MachineState *machine)
+{
+    MyBoardState *s = MYBOARD(machine);
+
+    // Initialize implemented memory regions
+    create_program_flash(s);
+    create_data_flash(s);
+    create_sram(s);
+    
+    // Create all unimplemented device regions
+    create_unimplemented_regions();
 
     // Initialize CPU
     const char *cpu_type = ARM_CPU_TYPE_NAME("cortex-m7");
