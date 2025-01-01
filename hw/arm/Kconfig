@@ -642,7 +642,13 @@ config ARMSSE
     select SSE_COUNTER
     select SSE_TIMER
 
+config S32K358_MCU
+    bool
+    select ARM_V7M
+    select OR_IRQ
+
 config MY_CUSTOM_BOARD
     bool
     default y
     select ARM
+    select S32K358_MCU
