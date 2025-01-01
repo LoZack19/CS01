@@ -641,3 +641,8 @@ config ARMSSE
     select UNIMP
     select SSE_COUNTER
     select SSE_TIMER
+
+config MY_CUSTOM_BOARD
+    bool
+    default y
+    select ARM
