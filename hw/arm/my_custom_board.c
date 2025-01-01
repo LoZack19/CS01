@@ -62,9 +62,10 @@ static void create_program_flash(MyBoardState *s)
 {
     MemoryRegion *sys_mem = get_system_memory();
     
-    // Program Flash PFC0 and PFC1
+    // Create program flash region
     s->flash_program = g_new(MemoryRegion, 1);
-    memory_region_init_ram(s->flash_program, NULL, "program_flash", 12 * FLASH_BLOCK_1024K, &error_fatal);
+    memory_region_init_rom(s->flash_program, NULL, "program_flash", 
+                          12 * FLASH_BLOCK_1024K, &error_fatal);
     memory_region_add_subregion(sys_mem, 0x00400000, s->flash_program);
 }
 
@@ -72,9 +73,10 @@ static void create_data_flash(MyBoardState *s)
 {
     MemoryRegion *sys_mem = get_system_memory();
     
-    // Data Flash
+    // Create data flash region
     s->flash_data = g_new(MemoryRegion, 1);
-    memory_region_init_ram(s->flash_data, NULL, "data_flash", 256 * KiB, &error_fatal);
+    memory_region_init_rom(s->flash_data, NULL, "data_flash", 
+                          256 * KiB, &error_fatal);
     memory_region_add_subregion(sys_mem, 0x10000000, s->flash_data);
 }
 
