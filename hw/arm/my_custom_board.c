@@ -1,14 +1,12 @@
 #include "qemu/osdep.h"
-#include "hw/boards.h"
-#include "hw/loader.h"
-#include "qapi/error.h"
-#include "qom/object.h"
+#include "qemu/units.h"         // MiB
+#include "qemu/error-report.h"  // error_report()
+#include "qapi/error.h"         // error_t
 
-#include "qemu/error-report.h"
-#include "hw/qdev-properties.h"
-#include "hw/arm/allwinner-a10.h"
-#include "hw/arm/boot.h"
-#include "hw/i2c/i2c.h"
+#include "exec/address-spaces.h" // get_system_memory()
+
+#include "target/arm/cpu.h"
+#include "hw/boards.h"
 
 typedef struct MyBoardState {
     MachineState parent_obj;
