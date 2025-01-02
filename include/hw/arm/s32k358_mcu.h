@@ -28,9 +28,11 @@ typedef struct S32K358State {
     ARMv7MState armv7m;
     
     // Only keep implemented memory regions
-    MemoryRegion *flash_program;
-    MemoryRegion *flash_data;
-    MemoryRegion *sram[4];
+    MemoryRegion itcm;
+    MemoryRegion dtcm;
+    MemoryRegion flash_program;
+    MemoryRegion flash_data;
+    MemoryRegion sram[4];
 
     Clock *sysclk;
     Clock *refclk;
