@@ -4,12 +4,12 @@
 #include "hw/qdev-properties.h"
 #include "hw/qdev-clock.h"
 #include "qemu/error-report.h"
-// #include "hw/arm/stm32f205_soc.h"
 #include "hw/arm/boot.h"
 #include "hw/arm/s32k358_mcu.h"
 
-/* Main SYSCLK frequency in Hz (120MHz) */
-#define SYSCLK_FRQ 120000000ULL
+// Main SYSCLK frequency in Hz (25MHz)
+#define  XTAL (50000000UL)
+#define  SYSCLK_FRQ (XTAL / 2U)
 
 static void s32k3x8evb_q289_init(MachineState *machine)
 {
