@@ -26,7 +26,7 @@ static void s32k3x8evb_q289_init(MachineState *machine)
     sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
 
     armv7m_load_kernel(ARM_CPU(first_cpu), machine->kernel_filename,
-                       0, PROGRAM_FLASH_SIZE);
+                       PROGRAM_FLASH_BASE_ADDRESS, PROGRAM_FLASH_SIZE);
 }
 
 static void s32k3x8evb_q289_machine_init(MachineClass *mc)
@@ -42,4 +42,4 @@ static void s32k3x8evb_q289_machine_init(MachineClass *mc)
     mc->ignore_memory_transaction_failures = true;
 }
 
-DEFINE_MACHINE("s32k3x8evb_q289", s32k3x8evb_q289_machine_init)
+DEFINE_MACHINE("s32k3x8evb-q289", s32k3x8evb_q289_machine_init)

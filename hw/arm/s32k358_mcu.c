@@ -191,7 +191,9 @@ static void s32k358_mcu_realize(DeviceState *dev_soc, Error **errp)
     qdev_prop_set_uint32(armv7m, "num-irq", 240);
     qdev_prop_set_uint8(armv7m, "num-prio-bits", 4);
     qdev_prop_set_string(armv7m, "cpu-type", ARM_CPU_TYPE_NAME("cortex-m7"));
-    // qdev_prop_set_bit(armv7m, "enable-bitband", true);
+    qdev_prop_set_uint32(armv7m, "init-svtor", PROGRAM_FLASH_BASE_ADDRESS);
+    qdev_prop_set_uint32(armv7m, "init-nsvtor", PROGRAM_FLASH_BASE_ADDRESS);
+    qdev_prop_set_bit(armv7m, "enable-bitband", true);
     qdev_connect_clock_in(armv7m, "cpuclk", s->sysclk);
     qdev_connect_clock_in(armv7m, "refclk", s->refclk);
     object_property_set_link(OBJECT(&s->armv7m), "memory",
