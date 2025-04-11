@@ -15,6 +15,38 @@
 
 #define ALIGN_OFFSET 8192
 
+#define MC_ME_BASE_ADDRESS 0x402dc000
+#define MC_ME_SIZE 1340
+
+static uint64_t mc_me_read(void *opaque, hwaddr addr, unsigned size) {
+    uint32_t ret = 0;
+
+    switch (addr) {
+        case 0x310:
+            ret = 0x1000000;
+            break;
+        default:
+            ret = 0x0;
+            break;
+    }
+
+    return ret;
+}
+
+static void mc_me_write(void *opaque, hwaddr addr, uint64_t val,
+                        unsigned size) {
+    switch (addr) {
+        default:
+            break;
+    }
+}
+
+static const MemoryRegionOps mc_me_ops = {
+    .read = mc_me_read,
+    .write = mc_me_write,
+    .endianness = DEVICE_NATIVE_ENDIAN,
+};
+
 static void s32k358_mcu_initfn(Object *obj)
 {
     S32K358State *s = S32K358_MCU(obj);
@@ -104,6 +136,7 @@ static void s32k358_mcu_realize(DeviceState *dev_soc, Error **errp)
 {
     S32K358State *s = S32K358_MCU(dev_soc);
     DeviceState *armv7m;
+    MemoryRegion *sys_mem = get_system_memory();
 
     /*
      * We use s->refclk internally and only define it with qdev_init_clock_in()
@@ -136,6 +169,11 @@ static void s32k358_mcu_realize(DeviceState *dev_soc, Error **errp)
     create_data_flash(s);
     create_sram(s);
 
+    // Connect MC_ME
+    memory_region_init_io(&s->mc_me, OBJECT(dev_soc), &mc_me_ops, s, "NXPS32K358.MC_ME", MC_ME_SIZE);
+    sysbus_init_mmio(SYS_BUS_DEVICE(s), &s->mc_me);
+    memory_region_add_subregion(sys_mem, MC_ME_BASE_ADDRESS, &s->mc_me);
+
     // Init ARMv7m
     armv7m = DEVICE(&s->armv7m);
     qdev_prop_set_uint32(armv7m, "num-irq", 240);
@@ -143,6 +181,8 @@ static void s32k358_mcu_realize(DeviceState *dev_soc, Error **errp)
     qdev_prop_set_string(armv7m, "cpu-type", ARM_CPU_TYPE_NAME("cortex-m7"));
     qdev_prop_set_uint32(armv7m, "init-svtor", PROGRAM_FLASH_BASE_ADDRESS + ALIGN_OFFSET);
     qdev_prop_set_uint32(armv7m, "init-nsvtor", PROGRAM_FLASH_BASE_ADDRESS + ALIGN_OFFSET);
+    qdev_prop_set_uint32(armv7m, "mpu-ns-regions", 16);
+    qdev_prop_set_uint32(armv7m, "mpu-s-regions", 16);
     qdev_prop_set_bit(armv7m, "enable-bitband", true);
     qdev_connect_clock_in(armv7m, "cpuclk", s->sysclk);
     qdev_connect_clock_in(armv7m, "refclk", s->refclk);

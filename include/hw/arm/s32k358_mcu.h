@@ -33,6 +33,7 @@ typedef struct S32K358State {
     MemoryRegion flash_program;
     MemoryRegion flash_data;
     MemoryRegion sram[4];
+    MemoryRegion mc_me;
 
     Clock *sysclk;
     Clock *refclk;
