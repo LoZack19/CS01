@@ -36,7 +36,7 @@ static void s32k3x8evb_q289_machine_init(MachineClass *mc)
         NULL
     };
 
-    mc->desc = "S32K3X8EVB-Q289 Machine (Cortex-M3)";
+    mc->desc = "S32K3X8EVB-Q289 Machine (Cortex-M7)";
     mc->init = s32k3x8evb_q289_init;
     mc->valid_cpu_types = valid_cpu_types;
     mc->ignore_memory_transaction_failures = true;

@@ -13,6 +13,8 @@
 #include "hw/clock.h"
 #include "hw/arm/s32k358_mcu.h"
 
+#define ALIGN_OFFSET 8192
+
 static void s32k358_mcu_initfn(Object *obj)
 {
     S32K358State *s = S32K358_MCU(obj);
@@ -33,7 +35,7 @@ static void create_program_flash(MyMCUState *s)
     
     memory_region_init_rom(&s->flash_program, NULL, "program_flash", 
                           PROGRAM_FLASH_SIZE, &error_fatal);  // Total 12MB
-    memory_region_add_subregion(sys_mem, 0x00400000, &s->flash_program);
+    memory_region_add_subregion(sys_mem, PROGRAM_FLASH_BASE_ADDRESS, &s->flash_program);
 }
 
 static void create_data_flash(MyMCUState *s)
@@ -139,8 +141,8 @@ static void s32k358_mcu_realize(DeviceState *dev_soc, Error **errp)
     qdev_prop_set_uint32(armv7m, "num-irq", 240);
     qdev_prop_set_uint8(armv7m, "num-prio-bits", 4);
     qdev_prop_set_string(armv7m, "cpu-type", ARM_CPU_TYPE_NAME("cortex-m7"));
-    qdev_prop_set_uint32(armv7m, "init-svtor", PROGRAM_FLASH_BASE_ADDRESS);
-    qdev_prop_set_uint32(armv7m, "init-nsvtor", PROGRAM_FLASH_BASE_ADDRESS);
+    qdev_prop_set_uint32(armv7m, "init-svtor", PROGRAM_FLASH_BASE_ADDRESS + ALIGN_OFFSET);
+    qdev_prop_set_uint32(armv7m, "init-nsvtor", PROGRAM_FLASH_BASE_ADDRESS + ALIGN_OFFSET);
     qdev_prop_set_bit(armv7m, "enable-bitband", true);
     qdev_connect_clock_in(armv7m, "cpuclk", s->sysclk);
     qdev_connect_clock_in(armv7m, "refclk", s->refclk);
