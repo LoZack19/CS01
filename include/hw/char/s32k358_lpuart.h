@@ -8,16 +8,35 @@
 #include "qemu/timer.h"
 #include "hw/registerfields.h"
 #include "qom/object.h"
+#include "hw/qdev-clock.h"
 
 #define TYPE_S32K358_LPUART "s32k358-lpuart"
 OBJECT_DECLARE_SIMPLE_TYPE(s32k358LPUARTState, S32K358_LPUART)
 
+#define VERID_RST 0x00000000
+#define PARAM_RST 0x00000000
 #define GLOBAL_RST 0x00000000
+#define PINCFG_RST 0x00000000
 #define BAUD_RST 0x0F000004
 #define STAT_RST 0x00C00000
 #define CTRL_RST 0x00000000
 #define DATA_RST 0x00001000
+#define MATCH_RST 0x00000000
+#define MODIR_RST 0x00000000
+#define FIFO_RST 0x00000000
+#define WATER_RST 0x00000000
 #define DATARO_RST 0x00001000
+#define MCR_RST 0x00000000
+#define MSR_RST 0x00000000
+#define REIR_RST 0x00000000
+#define TEIR_RST 0x00000000
+#define HDCR_RST 0x00000000
+#define TOCR_RST 0x00000000
+#define TOSR_RST 0x0000000F
+#define TIMEOUT0_RST 0x00000000
+#define TIMEOUT1_RST 0x00000000
+#define TIMEOUT2_RST 0x00000000
+#define TIMEOUT3_RST 0x00000000
 
 /* --- Core Register Block --- */
 REG32(VERID,    0x000)
@@ -26,9 +45,14 @@ REG32(GLOBAL,   0x008)
     FIELD(GLOBAL, RST, 1, 1)
 REG32(PINCFG,   0x00C)
 REG32(BAUD,     0x010)
+    FIELD(BAUD, OSR, 24, 5)
+    FIELD(BAUD, SBR, 0, 13)
 REG32(STAT,     0x014)  
     FIELD(STAT, RDRF, 21, 1)
 REG32(CTRL,     0x018)
+    FIELD(CTRL, TIE, 23, 1)
+    FIELD(CTRL, TCIE, 22, 1)
+    FIELD(CTRL, RIE, 21, 1)
     FIELD(CTRL, RE, 18, 1)
     FIELD(CTRL, M7, 11, 1)
     FIELD(CTRL, M, 4, 1)
@@ -86,5 +110,11 @@ struct s32k358LPUARTState {
     uint32_t timeout2;
     uint32_t timeout3;
 };
+
+static inline uint32_t LPUART_BAUD_RATE(s32k358LPUARTState *s) {
+    uint32_t sbr = FIELD_EX32(s->baud, BAUD, SBR);
+    uint32_t osr = FIELD_EX32(s->baud, BAUD, OSR);
+    return clock_get_hz(s->clk) / (sbr * (osr + 1));
+}
 
 #endif

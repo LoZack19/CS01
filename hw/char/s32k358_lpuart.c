@@ -2,17 +2,61 @@
 #include "qemu/log.h"
 #include "hw/char/s32k358_lpuart.h"
 #include "hw/irq.h"
-#include "hw/qdev-properties.h"
-#include "hw/qdev-properties-system.h"
+#include "chardev/char.h"
+#include "chardev/char-serial.h"
 #include "hw/sysbus.h"
 #include "qemu/module.h"
 #include "chardev/char-fe.h"
 #include "qom/object.h"
 
-/**
- * documentation??
- * 
- */
+static void s32k358_lpuart_update_irq(s32k358LPUARTState *s) {
+    uint32_t mask = s->stat & s->ctrl;
+
+    if (mask &
+        (R_CTRL_TIE_MASK | R_CTRL_TCIE_MASK | R_CTRL_RIE_MASK)) {
+        qemu_set_irq(s->irq, 1);
+    } else {
+        qemu_set_irq(s->irq, 0);
+    }
+}
+
+static void s32k358_lpuart_reset(DeviceState *dev) {
+    s32k358LPUARTState *s = S32K358_LPUART(dev);
+
+    s->verid = VERID_RST;
+    s->param = PARAM_RST;
+    s->global = GLOBAL_RST;
+    s->pincfg = PINCFG_RST;
+    s->baud = BAUD_RST;
+    s->stat = STAT_RST;
+    s->ctrl = CTRL_RST;
+    s->data = DATA_RST;
+    s->match = MATCH_RST;
+    s->modir = MODIR_RST;
+    s->fifo = FIFO_RST;
+    s->water = WATER_RST;
+    s->dataro = DATARO_RST;
+    s->mcr = MCR_RST;
+    s->msr = MSR_RST;
+    s->reir = REIR_RST;
+    s->teir = TEIR_RST;
+    s->hdcr = HDCR_RST;
+    s->tocr = TOCR_RST;
+    s->tosr = TOSR_RST;
+    s->timeout0 = TIMEOUT0_RST;
+    s->timeout1 = TIMEOUT1_RST;
+    s->timeout2 = TIMEOUT2_RST;
+    s->timeout3 = TIMEOUT3_RST;
+
+    s32k358_lpuart_update_irq(s);
+}
+
+static void s32k358_lpuart_update_params(s32k358LPUARTState *s) {
+    QEMUSerialSetParams ssp;
+    ssp.speed = LPUART_BAUD_RATE(s);
+
+    qemu_chr_fe_ioctl(&s->chr, CHR_IOCTL_SERIAL_SET_PARAMS, &ssp);
+}
 
 static uint64_t s32k358_lpuart_read(void *opaque, hwaddr addr, unsigned int size)
 {
@@ -30,7 +74,7 @@ static uint64_t s32k358_lpuart_read(void *opaque, hwaddr addr, unsigned int size
             qemu_chr_fe_accept_input(&s->chr);
             s32k358_lpuart_update_irq(s);
             return s->data;
-        case A_CONTROL:
+        case A_CTRL:
             return s->ctrl;
         case A_BAUD:
             return s->baud;
@@ -70,15 +114,15 @@ static void s32k358_lpuart_write(void *opaque, hwaddr addr, uint64_t val64, unsi
 
             qemu_chr_fe_write_all(&s->chr, &ch, 1);
             return;
-        case A_CONTROL:
-            s->ctrl = value
+        case A_CTRL:
+            s->ctrl = value;
             s32k358_lpuart_update_irq(s);
             return;
         case A_BAUD:
             s->baud = value;
             s32k358_lpuart_update_params(s);
             return;
-        defualt:
+        default:
             qemu_log_mask(LOG_GUEST_ERROR,
                 "%s: Bad offset 0x%" HWADDR_PRIx "\n", __func__,
                 addr);
@@ -86,26 +130,10 @@ static void s32k358_lpuart_write(void *opaque, hwaddr addr, uint64_t val64, unsi
 
 }
 
-static void s32k358_lpuart_reset(DeviceState *dev) {
-    s32k358LPUARTState *s = S32K358_LPUART(dev);
-
-    // s->verid ??
-    // s->data ??
-
-    s->global = GLOBAL_RST;
-    s->data = DATA_RST;
-    s->ctrl = CTRL_RST;
-    s->baud = BAUD_RST;
-    s->dataro = DATARO_RST;
-    s->stat = STAT_RST;
-
-    s32k358_lpuart_update_irq(s);
-}
-
 static void s32k358_lpuart_receive(void *opaque, const uint8_t *buf, int size) {
     s32k358LPUARTState *s = S32K358_LPUART(opaque);
 
-    if (s->ctrl & R_CTRL_RE_MASK == 0) {
+    if ((s->ctrl & R_CTRL_RE_MASK) == 0) {
         return;
     }
 
@@ -126,21 +154,23 @@ static int s32k358_lpuart_can_receive(void *opaque) {
 }
 
 static const MemoryRegionOps uart_ops = {
-    .read = lpuart_read, // !TODO
-    .write = lpuart_write, // !TODO
+    .read = s32k358_lpuart_read,
+    .write = s32k358_lpuart_write,
     .endianness = DEVICE_NATIVE_ENDIAN,
+    // Note: This sets acceptable access sizes.this is correct.
+    // Access of 1 or 2 bytes is undefined or unsupported.
     .valid = {
         .min_access_size = 1,
         .max_access_size = 4
-    } // UHM???
+    }
 };
 
 static void s32k358_lpuart_realize(DeviceState *dev, Error **errp)
 {
     s32k358LPUARTState *s = S32K358_LPUART(dev);
 
-    qemu_chr_fe_set_handlers(&s->chr, lpuart_can_rx, lpuart_rx,
-                             lpuart_event, NULL, s, NULL, true);
+    qemu_chr_fe_set_handlers(&s->chr, s32k358_lpuart_can_receive, s32k358_lpuart_receive,
+                             NULL, NULL, s, NULL, true);
 }
 
 static void s32k358_lpuart_init(Object *obj)
@@ -160,7 +190,13 @@ static void s32k358_lpuart_class_init(ObjectClass *klass, void *data)
 
     device_class_set_legacy_reset(dc, s32k358_lpuart_reset);
     dc->realize = s32k358_lpuart_realize;
-    device_class_set_props(dc, s32k358_lpuart_properties);
+
+    object_class_property_add_link(klass, "chardev", TYPE_CHARDEV,
+        offsetof(s32k358LPUARTState, chr),
+        object_property_allow_set_link,
+        0
+    );
+
 }
 
 static const TypeInfo s32k358_lpuart_info = {
