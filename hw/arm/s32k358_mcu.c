@@ -51,17 +51,19 @@ static void s32k358_mcu_initfn(Object *obj)
 {
     S32K358State *s = S32K358_MCU(obj);
     object_initialize_child(obj, "armv7m", &s->armv7m, TYPE_ARMV7M);
-
-    // for (int i = 0; i < STM_NUM_USARTS; i++) {
-    //     object_initialize_child(obj, "usart[*]", &s->usart[i],
-    //                             TYPE_STM32F2XX_USART);
-    // }
-
+    
     s->sysclk = qdev_init_clock_in(DEVICE(s), "sysclk", NULL, NULL, 0);
     s->refclk = qdev_init_clock_in(DEVICE(s), "refclk", NULL, NULL, 0);
+    s->aips_plat_clk = qdev_init_clock_in(DEVICE(s), "aips_plat_clk", NULL, NULL, 0);
+    s->aips_slow_clk = qdev_init_clock_in(DEVICE(s), "aips_slow_clk", NULL, NULL, 0);
+
+    for (int i = 0; i < S32K358_NUM_LPUART; i++) {
+        object_initialize_child(obj, "lpuart[*]", &s->lpuart[i],
+                                TYPE_S32K358_LPUART);
+    }
 }
 
-static void create_program_flash(MyMCUState *s)
+static void create_program_flash(S32K358State *s)
 {
     MemoryRegion *sys_mem = get_system_memory();
     
@@ -70,7 +72,7 @@ static void create_program_flash(MyMCUState *s)
     memory_region_add_subregion(sys_mem, PROGRAM_FLASH_BASE_ADDRESS, &s->flash_program);
 }
 
-static void create_data_flash(MyMCUState *s)
+static void create_data_flash(S32K358State *s)
 {
     MemoryRegion *sys_mem = get_system_memory();
     
@@ -132,6 +134,36 @@ static void create_dtcm(S32K358State *s)
     memory_region_add_subregion(sys_mem, dtcm_regions[0].base, &s->dtcm);
 }
 
+// Attach UART (uses USART registers) and USART controllers
+static void create_lpuart(S32K358State *s, DeviceState *armv7m, Error **errp)
+{
+    DeviceState *dev;
+    SysBusDevice *busdev;
+
+    for (int i = 0; i < S32K358_NUM_LPUART; i++) {
+        dev = DEVICE(&(s->lpuart[i]));
+        qdev_prop_set_chr(dev, "chardev", serial_hd(i));
+        if (!sysbus_realize(SYS_BUS_DEVICE(&s->lpuart[i]), errp)) {
+            return;
+        }
+
+        // Connect the LPUART to the appropriate clock
+        if (i == 0 || i == 1 || i == 8) {
+            qdev_connect_clock_in(dev, "clk", s->aips_plat_clk);
+        } else {
+            qdev_connect_clock_in(dev, "clk", s->aips_slow_clk);
+        }
+
+        if (!sysbus_realize(SYS_BUS_DEVICE(dev), errp)) {
+            return;
+        }
+
+        busdev = SYS_BUS_DEVICE(dev);
+        sysbus_mmio_map(busdev, 0, lpuart_addr[i]);
+        sysbus_connect_irq(busdev, 0, qdev_get_gpio_in(armv7m, lpuart_irq[i]));
+    }
+}
+
 static void s32k358_mcu_realize(DeviceState *dev_soc, Error **errp)
 {
     S32K358State *s = S32K358_MCU(dev_soc);
@@ -161,6 +193,9 @@ static void s32k358_mcu_realize(DeviceState *dev_soc, Error **errp)
     /* The refclk always runs at frequency HCLK / 8 */
     clock_set_mul_div(s->refclk, 8, 1);
     clock_set_source(s->refclk, s->sysclk);
+
+    clock_set_hz(s->aips_plat_clk, 80000000);
+    clock_set_hz(s->aips_plat_clk, 40000000);
 
     // Initialize implemented memory regions
     create_itcm(s);
@@ -192,17 +227,8 @@ static void s32k358_mcu_realize(DeviceState *dev_soc, Error **errp)
         return;
     }
 
-    /* Attach UART (uses USART registers) and USART controllers */
-    // for (int i = 0; i < STM_NUM_USARTS; i++) {
-    //     dev = DEVICE(&(s->usart[i]));
-    //     qdev_prop_set_chr(dev, "chardev", serial_hd(i));
-    //     if (!sysbus_realize(SYS_BUS_DEVICE(&s->usart[i]), errp)) {
-    //         return;
-    //     }
-    //     busdev = SYS_BUS_DEVICE(dev);
-    //     sysbus_mmio_map(busdev, 0, usart_addr[i]);
-    //     sysbus_connect_irq(busdev, 0, qdev_get_gpio_in(armv7m, usart_irq[i]));
-    // }
+    #warning "Not working yet: clock has issues"
+    create_lpuart(s, armv7m, errp);
 
     create_unimplemented_device("hse_xbic", 0x40008000, 0x4000);
     create_unimplemented_device("erm1", 0x4000c000, 0x4000);
