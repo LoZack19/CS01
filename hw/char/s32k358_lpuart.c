@@ -169,6 +169,11 @@ static void s32k358_lpuart_realize(DeviceState *dev, Error **errp)
 {
     s32k358LPUARTState *s = S32K358_LPUART(dev);
 
+    if (!clock_has_source(s->clk)) {
+        error_setg(errp, "Clock source not set");
+        return;
+    }
+
     qemu_chr_fe_set_handlers(&s->chr, s32k358_lpuart_can_receive, s32k358_lpuart_receive,
                              NULL, NULL, s, NULL, true);
 }
@@ -182,6 +187,8 @@ static void s32k358_lpuart_init(Object *obj)
     memory_region_init_io(&s->mmio, obj, &uart_ops, s,
                           TYPE_S32K358_LPUART, 0x4000);
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->mmio);
+
+    s->clk = qdev_init_clock_in(DEVICE(s), "clk", NULL, s, 0);
 }
 
 static void s32k358_lpuart_class_init(ObjectClass *klass, void *data)

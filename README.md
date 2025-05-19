@@ -90,3 +90,66 @@ For open source projects, say how it is licensed.
 
 ## Project status
 If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+
+---
+
+# NXP S32K358 EXTENSION
+
+## Running qemu
+
+The command used to run qemu with our firmware is:
+
+```bash
+./group3/build/qemu-system-arm -kernel firmware/Debug_FLASH/FreeRTOS_Toggle_Led_Example_S32K358.elf -machine s32k3x8evb-q289 -nographic -d guest_errors -serial none -serial none -serial none -serial mon:stdio
+```
+
+**Explanation:**
+
+```bash
+./group3/build/qemu-system-arm
+```
+
+→ Runs the QEMU ARM emulator (custom build in `group3/build`).
+
+```bash
+-kernel firmware/Debug_FLASH/FreeRTOS_Toggle_Led_Example_S32K358.elf
+```
+
+→ Loads and runs the specified FreeRTOS firmware ELF file.
+
+```bash
+-machine s32k3x8evb-q289
+```
+
+→ Emulates the S32K3x8EVB-Q289 development board (matches the hardware).
+
+```bash
+-nographic
+```
+
+→ Disables GUI; all I/O is done through the terminal.
+
+```bash
+-d guest_errors
+```
+
+→ Enables logging of errors from the guest (firmware) side.
+
+```bash
+-serial none
+-serial none
+-serial none
+```
+
+→ Disables serial ports 0, 1, and 2 (no output or devices attached).
+
+```bash
+-serial mon:stdio
+```
+
+→ Redirects QEMU monitor to terminal using serial port 3 (i.e. `lpuart[3]`)
+
+---
+
+**Summary**:
+This command runs FreeRTOS firmware for the S32K358 board on a headless QEMU emulator, logs guest-side errors, disables unused serial ports, and uses the terminal for monitor interaction.

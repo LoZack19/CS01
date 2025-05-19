@@ -143,9 +143,6 @@ static void create_lpuart(S32K358State *s, DeviceState *armv7m, Error **errp)
     for (int i = 0; i < S32K358_NUM_LPUART; i++) {
         dev = DEVICE(&(s->lpuart[i]));
         qdev_prop_set_chr(dev, "chardev", serial_hd(i));
-        if (!sysbus_realize(SYS_BUS_DEVICE(&s->lpuart[i]), errp)) {
-            return;
-        }
 
         // Connect the LPUART to the appropriate clock
         if (i == 0 || i == 1 || i == 8) {
@@ -227,7 +224,6 @@ static void s32k358_mcu_realize(DeviceState *dev_soc, Error **errp)
         return;
     }
 
-    #warning "Not working yet: clock has issues"
     create_lpuart(s, armv7m, errp);
 
     create_unimplemented_device("hse_xbic", 0x40008000, 0x4000);
