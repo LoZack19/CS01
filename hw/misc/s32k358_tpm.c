@@ -5,6 +5,7 @@
 #include "migration/vmstate.h"
 #include "hw/irq.h"
 #include "qom/object.h"
+#include "qemu/log.h"
 
 #define TYPE_S32K358_TPM                  "s32k358_tpm"
 OBJECT_DECLARE_SIMPLE_TYPE(S32k358TPMState, S32K358_TPM)
@@ -59,9 +60,9 @@ static const VMStateDescription s32k358_tpm_vmstate = {
     .version_id = 1,
     .minimum_version_id = 1,
     .fields = (const VMStateField[]) {
-        VMSTATE_UINT8("status", S32k358TPMState, status),
-        VMSTATE_UINT8("control", S32k358TPMState, control),
-        VMSTATE_UINT8("data", S32k358TPMState, data),
+        VMSTATE_UINT8(status, S32k358TPMState),
+        VMSTATE_UINT8(control, S32k358TPMState),
+        VMSTATE_UINT8(data, S32k358TPMState),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -77,14 +78,13 @@ static void s32k358_tpm_reset(DeviceState *d)
 
 static void s32k358_tpm_init(Object *obj)
 {
-    DeviceState *dev = DEVICE(obj);
     S32k358TPMState *s = S32K358_TPM(obj);
     SysBusDevice *sbd = SYS_BUS_DEVICE(obj);
 
     memory_region_init_io(&s->iomem, obj, &s32k358_tpm_ops, s,
                           TYPE_S32K358_TPM, S32K358_TPM_MEM_SIZE);
     sysbus_init_mmio(sbd, &s->iomem);
-    sysbus_init_irq(sbd, &s->irq);
+    //sysbus_init_irq(sbd, &s->irq);
 }
 
 static void s32k358_tpm_class_init(ObjectClass *klass, void *data)

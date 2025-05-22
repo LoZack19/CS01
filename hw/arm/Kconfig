@@ -647,6 +647,7 @@ config S32K358_MCU
     select ARM_V7M
     select OR_IRQ
     select S32K358_LPUART
+    select S32K358_TPM
 
 config MY_CUSTOM_BOARD
     bool
