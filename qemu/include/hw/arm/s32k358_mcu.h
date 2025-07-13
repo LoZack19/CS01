@@ -6,6 +6,7 @@
 #include "qom/object.h"
 #include "hw/char/s32k358_lpuart.h"
 #include "include/qemu/units.h"
+#include "hw/misc/s32k358_tpm.h"
 
 #define ITCM_SIZE (64 * KiB)
 #define DTCM_SIZE (128 * KiB)
@@ -21,6 +22,8 @@
 #define PROGRAM_FLASH_SIZE 8 * MiB
 
 #define S32K358_NUM_LPUART 16
+
+#define TPM_TIS_LOC0 0xFED40000
 
 static const hwaddr lpuart_addr[] = {
     0x40328000, // lpuart[0]
@@ -61,6 +64,8 @@ struct S32K358State {
     MemoryRegion mc_me;
     
     s32k358LPUARTState lpuart[S32K358_NUM_LPUART];
+
+    S32k358TPMState tpm;
 
     Clock *sysclk;
     Clock *refclk;

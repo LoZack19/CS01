@@ -161,6 +161,17 @@ static void create_lpuart(S32K358State *s, DeviceState *armv7m, Error **errp)
     }
 }
 
+static void tpm_wire_to_board(ARMv7MState *armv7m, S32K358TPMState *tpm, Error **errp) {
+    DeviceState *armv7mdev = DEVICE(armv7m);
+    DeviceState *tpmdev = DEVICE(tpm);
+    SysBusDevice *busdev = SYS_BUS_DEVICE(tpmdev);
+
+    if (!sysbus_realize(busdev, errp))
+        return;
+
+    sysbus_mmio_map(busdev, 0, TPM_TIS_LOC0);
+}
+
 static void s32k358_mcu_realize(DeviceState *dev_soc, Error **errp)
 {
     S32K358State *s = S32K358_MCU(dev_soc);
@@ -225,6 +236,7 @@ static void s32k358_mcu_realize(DeviceState *dev_soc, Error **errp)
     }
 
     create_lpuart(s, armv7m, errp);
+    tpm_wire_to_board(&armv7m, &s->tpm, errp);
 
     create_unimplemented_device("hse_xbic", 0x40008000, 0x4000);
     create_unimplemented_device("erm1", 0x4000c000, 0x4000);
