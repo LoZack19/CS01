@@ -7,31 +7,25 @@
 #include "qom/object.h"
 #include "qemu/log.h"
 
-#define TYPE_S32K358_TPM                  "s32k358_tpm"
-OBJECT_DECLARE_SIMPLE_TYPE(S32k358TPMState, S32K358_TPM)
+#include "include/hw/misc/s32k358_tpm.h"
 
-#define S32K358_TPM_MEM_SIZE 0x10
-
-#define STATUS_RST 0x00
-#define CONTROL_RST 0x00
-#define DATA_RST 0x00
-
-struct S32k358TPMState {
-    SysBusDevice parent_obj;
-
-    MemoryRegion iomem;
-
-    uint8_t status;
-    uint8_t control;
-    uint8_t data;
-};
+static void s32k358_tpm_process_input(S32k358TPMState *s) {
+    qemu_log_mask(LOG_GUEST_ERROR, "%s: Unimplemented input processing\n", __func__);
+}
 
 static uint64_t s32k358_tpm_read(void *opaque, hwaddr offset, unsigned size) {
     S32k358TPMState *s = opaque;
     switch (offset) {
-        case 0x00: return s->status;
-        case 0x01: return s->control;
-        case 0x02: return s->data;
+        case A_STATUS: return s->status;
+        case A_CONTROL: return s->control;
+        case A_DATA:
+            if (s->outfifo.num > 0) {
+                s->data = fifo8_pop(&s->outfifo);
+            } else {
+                qemu_log_mask(LOG_GUEST_ERROR, "%s: No data available in FIFO\n", __func__);
+                s->data = 0; // No data available
+            }
+            return s->data;
         default: 
             qemu_log_mask(LOG_GUEST_ERROR, "%s: Bad offset 0x%"HWADDR_PRIx"\n", __func__, offset);
             return 0;
@@ -41,9 +35,17 @@ static uint64_t s32k358_tpm_read(void *opaque, hwaddr offset, unsigned size) {
 static void s32k358_tpm_write(void *opaque, hwaddr offset, uint64_t value, unsigned size) {
     S32k358TPMState *s = opaque;
     switch (offset) {
-        case 0x00: s->status = value; break;
-        case 0x01: s->control = value; break;
-        case 0x02: s->data = value; break;
+        case A_STATUS: s->status = value; break;
+        case A_CONTROL: s->control = value; break;
+        case A_DATA:
+            s->data = value;
+            if (s->infifo.num < s->infifo.capacity) {
+                fifo8_push(&s->infifo, value & 0xFF);
+            } else {
+                qemu_log_mask(LOG_GUEST_ERROR, "%s: FIFO is full, cannot write data\n", __func__);
+            }
+            s32k358_tpm_process_input(s);
+            break;
         default:
             qemu_log_mask(LOG_GUEST_ERROR, "%s: Bad offset 0x%"HWADDR_PRIx"\n", __func__, offset);
     }
@@ -74,12 +76,18 @@ static void s32k358_tpm_reset(DeviceState *d)
     s->status = STATUS_RST;
     s->control = CONTROL_RST;
     s->data = DATA_RST;
+
+    fifo8_reset(&s->infifo);
+    fifo8_reset(&s->outfifo);
 }
 
 static void s32k358_tpm_init(Object *obj)
 {
     S32k358TPMState *s = S32K358_TPM(obj);
     SysBusDevice *sbd = SYS_BUS_DEVICE(obj);
+    
+    fifo8_create(&s->infifo, S32K358_TPM_INFIFO_SIZE);
+    fifo8_create(&s->outfifo, S32K358_TPM_OUTFIFO_SIZE);
 
     memory_region_init_io(&s->iomem, obj, &s32k358_tpm_ops, s,
                           TYPE_S32K358_TPM, S32K358_TPM_MEM_SIZE);
