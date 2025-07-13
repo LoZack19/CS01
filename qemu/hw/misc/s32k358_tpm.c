@@ -6,26 +6,25 @@
 #include "hw/irq.h"
 #include "qom/object.h"
 #include "qemu/log.h"
-
 #include "include/hw/misc/s32k358_tpm.h"
 
 static void s32k358_tpm_process_input(S32k358TPMState *s) {
     qemu_log_mask(LOG_GUEST_ERROR, "%s: Unimplemented input processing\n", __func__);
 }
 
+static void s32k358_tpm_update(S32k358TPMState *s) {
+    if (s->tpm_access & TPM_ACCESS_requestUse) {
+        // Since there's only one locality, always grant
+        s->tpm_access |= TPM_ACCESS_activeLocality;
+        s->tpm_access &= ~TPM_ACCESS_requestUse;
+    }
+}
+
 static uint64_t s32k358_tpm_read(void *opaque, hwaddr offset, unsigned size) {
     S32k358TPMState *s = opaque;
     switch (offset) {
-        case A_STATUS: return s->status;
-        case A_CONTROL: return s->control;
-        case A_DATA:
-            if (s->outfifo.num > 0) {
-                s->data = fifo8_pop(&s->outfifo);
-            } else {
-                qemu_log_mask(LOG_GUEST_ERROR, "%s: No data available in FIFO\n", __func__);
-                s->data = 0; // No data available
-            }
-            return s->data;
+        case A_TPM_ACCESS:
+            return s->tpm_access;
         default: 
             qemu_log_mask(LOG_GUEST_ERROR, "%s: Bad offset 0x%"HWADDR_PRIx"\n", __func__, offset);
             return 0;
@@ -35,16 +34,9 @@ static uint64_t s32k358_tpm_read(void *opaque, hwaddr offset, unsigned size) {
 static void s32k358_tpm_write(void *opaque, hwaddr offset, uint64_t value, unsigned size) {
     S32k358TPMState *s = opaque;
     switch (offset) {
-        case A_STATUS: s->status = value; break;
-        case A_CONTROL: s->control = value; break;
-        case A_DATA:
-            s->data = value;
-            if (s->infifo.num < s->infifo.capacity) {
-                fifo8_push(&s->infifo, value & 0xFF);
-            } else {
-                qemu_log_mask(LOG_GUEST_ERROR, "%s: FIFO is full, cannot write data\n", __func__);
-            }
-            s32k358_tpm_process_input(s);
+        case A_TPM_ACCESS:
+            s->tpm_access = value & 0xFF;
+            s32k358_tpm_update(s);
             break;
         default:
             qemu_log_mask(LOG_GUEST_ERROR, "%s: Bad offset 0x%"HWADDR_PRIx"\n", __func__, offset);
