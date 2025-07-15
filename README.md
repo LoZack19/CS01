@@ -5,13 +5,21 @@
 - Build a template for the TPM peripheral
 - Implement TPM (Giovanni + Tommaso)
     - (Idea) https://chatgpt.com/share/68739b5b-0ad4-800a-9be4-929466039e64
+    - Implement basic types
     - Access TPM peripheral
-    - TODO: Send command
+    - Implement state transitions
+        - TODO: Log state transitions
+    - Unmarshall command and marshal response
+        - TODO: Separate into its own layer
+    - Dispatch command
+    - Execute command
+        - GetRandom
 - Connect TPM (Mateus)
     - wip: initialize TPM on the board
     - spotted compilation warnings
 - Write firmware (Mansour)
-    - wip: setup environment
+    - Setup environment
+    - Write test firmware for GetRandom
 
 ## Compilation
 
