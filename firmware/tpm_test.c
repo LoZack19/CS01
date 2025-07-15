@@ -32,6 +32,19 @@ uint8_t tpm_rsp_expected[] = {
     // Fill this in after running and capturing a real response
 };
 
+// Add TPM2_GetRandom command (request 8 random bytes)
+uint8_t tpm_getrandom_cmd[] = {
+    0x80, 0x01,                         // TPM_ST_NO_SESSIONS
+    0x00, 0x00, 0x00, 0x0C,             // command size = 12
+    0x00, 0x00, 0x01, 0x7B,             // TPM2_CC_GetRandom (0x0000017B)
+    0x00, 0x08                         // bytesRequested = 8 (big-endian)
+};
+
+// TODO: Replace with actual expected response from your TPM implementation for GetRandom
+uint8_t tpm_getrandom_rsp_expected[] = {
+    // Fill this in after running and capturing a real response
+};
+
 // Requests access to TPM locality 0 and waits until it is granted.
 void tpm_wait_access() {
     TPM_ACCESS = TPM_ACCESS_REQUEST_USE;
@@ -103,7 +116,28 @@ int main() {
         while (1); // Error: response mismatch (loops forever)
     }
 
-    // 8. Success: loop forever to indicate test passed
+    // --- Test TPM2_GetRandom ---
+    // 8. Prepare TPM for a new command
+    TPM_STS = TPM_STS_COMMAND_READY;  // Enter Ready state
+
+    // 9. Send the TPM2_GetRandom command to the TPM FIFO
+    tpm_wait_burst_and_write(tpm_getrandom_cmd, sizeof(tpm_getrandom_cmd));
+
+    // 10. Signal TPM to start processing the command
+    TPM_STS = TPM_STS_GO;             // Begin execution
+
+    // 11. Read the response from the TPM FIFO
+    tpm_read_response(rsp_buf, sizeof(rsp_buf), &rsp_len);
+
+    // 12. Validate the response length (should match expected or at least header + 8 random bytes)
+    if (rsp_len < 10 + 2 + 8) { // header + parameter size + 8 bytes
+        while (1); // Error: response too short
+    }
+
+    // 13. Optionally, check the response header fields and that the returned random bytes are present
+    // (You may want to print or log the random bytes for manual inspection)
+
+    // 14. Success: loop forever to indicate test passed
     while (1);
     return 0;
 } 
