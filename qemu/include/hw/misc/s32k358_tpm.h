@@ -21,14 +21,34 @@ OBJECT_DECLARE_SIMPLE_TYPE(S32k358TPMState, S32K358_TPM)
 #define S32K358_TPM_INFIFO_SIZE 1024
 #define S32K358_TPM_OUTFIFO_SIZE 1024
 
-#define STATUS_RST 0x00
-#define CONTROL_RST 0x00
-#define DATA_RST 0x00
+#define TPM_STATE_RST TPM_S_INIT
+
+#define TPM_ACCESS_RST          0x00
+#define TPM_INT_ENABLE_RST      0x00000000
+#define TPM_INT_VECTOR_RST      0x00
+#define TPM_INT_STATUS_RST      0x00000000
+#define TPM_INTF_CAPS_RST       0x00000000
+#define TPM_STS_RST             0x00000000
+    #define TPM_STS_burstCount_RST      64
+#define TPM_DATA_FIFO_RST       0x00000000
+#define TPM_INTERFACE_ID_RST    0x00000000
+#define TPM_XDATA_FIFO_RST      0x00000000
+#define TPM_DID_VID_RST         0x00000000
+#define TPM_RID_RST             0x00
 
 struct S32k358TPMState {
     SysBusDevice parent_obj;
 
     MemoryRegion iomem;
+
+    enum {
+        TPM_S_INIT,
+        TPM_S_IDLE,
+        TPM_S_READY,
+        TPM_S_RECV,
+        TPM_S_EXEC,
+        TPM_S_CMPL
+    } tpm_state;
 
     uint8_t tpm_access;
     uint32_t tpm_int_enable;
@@ -36,7 +56,7 @@ struct S32k358TPMState {
     uint32_t tpm_int_status;
     uint32_t tpm_intf_caps;
     uint32_t tpm_sts;
-    uint32_t tpm_data;
+    uint32_t tpm_data_fifo;
     uint32_t tpm_interface_id;
     uint32_t tpm_xdata_fifo;
     uint32_t tpm_did_vid;
@@ -54,7 +74,11 @@ REG8(TPM_INT_VECTOR,    0x000C)  // Interrupt Vector Register
 REG32(TPM_INT_STATUS,   0x0010)  // Interrupt Status Register
 REG32(TPM_INTF_CAPS,    0x0014)  // Interface Capabilities Register
 REG32(TPM_STS,          0x0018)  // Status Register
-REG32(TPM_DATA,         0x0024)  // Data Register (ReadFIFO / WriteFIFO depending on direction)
+    FIELD(TPM_STS, burstCount, 8, 16)
+    FIELD(TPM_STS, commandReady, 6, 1) // Start receiving
+    FIELD(TPM_STS, tpmGo, 5, 1) // Start command execution
+    FIELD(TPM_STS, dataAvail, 4, 1)
+REG32(TPM_DATA_FIFO,    0x0024)  // Data Register (ReadFIFO / WriteFIFO depending on direction)
 REG32(TPM_INTERFACE_ID, 0x0030)  // Interface ID Register
 REG32(TPM_XDATA_FIFO,   0x0080)  // Extended Data FIFO Register (ReadFIFO / WriteFIFO depending on direction)
 REG32(TPM_DID_VID,      0x0F00)  // Device ID and Vendor ID Register
