@@ -173,14 +173,6 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
 
 }
 
-static void s32k358_tpm_update(S32k358TPMState *s) {
-    if (s->tpm_access & TPM_ACCESS_requestUse) {
-        // Since there's only one locality, always grant
-        s->tpm_access |= TPM_ACCESS_activeLocality;
-        s->tpm_access &= ~TPM_ACCESS_requestUse;
-    }
-}
-
 static uint64_t s32k358_tpm_read(void *opaque, hwaddr offset, unsigned size) {
     S32k358TPMState *s = opaque;
     switch (offset) {
@@ -205,9 +197,21 @@ static void s32k358_tpm_write(void *opaque, hwaddr offset, uint64_t value, unsig
     S32k358TPMState *s = opaque;
     switch (offset) {
         case A_TPM_ACCESS:
-            s->tpm_access = value & 0xFF;
-            s32k358_tpm_update(s);
-            break;
+        
+        // If activeLocality is set, clear it and relinquish control
+        if (value & TPM_ACCESS_activeLocality) {
+            s->tpm_access &= ~TPM_ACCESS_activeLocality;
+            s->tpm_state = TPM_S_IDLE; // Transition to idle state
+        }
+
+        // Check if the locality is being requested
+        if (s->tpm_access & TPM_ACCESS_requestUse) {
+            // Since there's only one locality, always grant
+            s->tpm_access &= ~TPM_ACCESS_requestUse;
+            s->tpm_access |= TPM_ACCESS_activeLocality;
+        }
+        
+        break;
         case A_TPM_DATA_FIFO:
             if (fifo8_is_full(&s->infifo)) {
                 qemu_log_mask(LOG_GUEST_ERROR, "%s: Input FIFO is full, cannot write 0x%"PRIx64"\n", __func__, value);
@@ -223,10 +227,8 @@ static void s32k358_tpm_write(void *opaque, hwaddr offset, uint64_t value, unsig
             }
             break;
         case A_TPM_STS:
-            #warning "Some fields in TPM_STS should not be written directly, this is a simplified implementation"
-            s->tpm_sts = value & 0xFFFFFFFF;
-            
-            // If commandReady, transition status to ready
+                    
+            // If commandReady is set, transition status to ready
             // Now bytes can be accepted in the input FIFO
             if (s->tpm_sts & R_TPM_STS_commandReady_MASK) {
                 if (s->tpm_state == TPM_S_CMPL) {
@@ -234,13 +236,11 @@ static void s32k358_tpm_write(void *opaque, hwaddr offset, uint64_t value, unsig
                 } else {
                     s->tpm_state = TPM_S_READY;
                 }
-                s->tpm_sts &= ~R_TPM_STS_commandReady_MASK; // Clear commandReady
             }
 
+            // If tpmGo is set, transition to execution state
             if (s->tpm_state == TPM_S_RECV && s->tpm_sts & R_TPM_STS_tpmGo_MASK) {
-                // If tpmGo is set, transition to execution state
                 s->tpm_state = TPM_S_EXEC;
-                s->tpm_sts &= ~R_TPM_STS_tpmGo_MASK; // Clear tpmGo
                 s32k358_tpm_process_input(s);
             }
 
