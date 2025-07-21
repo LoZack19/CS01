@@ -105,6 +105,7 @@ int main(void) {
     IntCtrl_Ip_EnableIrq(LPUART3_IRQn);
 
     Lpuart_Uart_Ip_Init(LPUART_INSTANCE, &Lpuart_Uart_Ip_xHwConfigPB_3);
+    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Starting TPM Test", 25, portMAX_DELAY);
 
     tpm_wait_access();
 
