@@ -131,7 +131,8 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
 
     // Check if fifo is not full enough and report error condition if so
     if (fifo8_num_used(&s->infifo) < sizeof(tpm_cmd_header_t)) {
-        #error "Unimplemented error handling for insufficient FIFO data"
+        qemu_log_mask(LOG_GUEST_ERROR, "TPM: Insufficient fifo DATA\n ");
+        return;
     }
 
     // Unmarshal command header from FIFO
