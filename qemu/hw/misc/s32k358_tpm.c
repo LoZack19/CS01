@@ -26,7 +26,6 @@ typedef uint8_t BYTE;
 typedef uint16_t UINT16;
 typedef uint32_t UINT32;
 
-
 #define TPM_CC_GetRandom 0x0000017B
 typedef uint32_t TPM_CC;
 
@@ -53,7 +52,7 @@ typedef struct {
 
 /* Input structures */
 typedef struct {
-    UINT16 bytesRequested ; // Number of random bytes requested
+    UINT16 bytesRequested; // Number of random bytes requested
 } GetRandom_In;
 
 /* Output structures */
@@ -61,7 +60,7 @@ typedef struct {
     TPM2B_DIGEST randomBytes; // Random bytes generated
 } GetRandom_Out;
 
-void tpm_error_response(S32k358TPMState *s, TPM_RC rc) {
+static void tpm_error_response(S32k358TPMState *s, TPM_RC rc) {
     tpm_rsp_header_t rsp_header;
 
     rsp_header.tag = TPM_ST_NO_SESSIONS; // No sessions for this response
@@ -77,7 +76,7 @@ void tpm_error_response(S32k358TPMState *s, TPM_RC rc) {
     s->tpm_sts |= R_TPM_STS_commandReady_MASK;
 }
 
-void tpm_success_response(S32k358TPMState *s, uint8_t *data, size_t size) {
+static void tpm_success_response(S32k358TPMState *s, uint8_t *data, size_t size) {
     tpm_rsp_header_t rsp_header;
 
     rsp_header.tag = TPM_ST_NO_SESSIONS; // No sessions for this response
@@ -98,7 +97,15 @@ void tpm_success_response(S32k358TPMState *s, uint8_t *data, size_t size) {
 
 /* Functionalities */
 
-TPM_RC TPM2_GetRandom (
+static void CryptRandomGenerate(UINT16 size, BYTE *buffer) {
+    // This function should generate 'size' random bytes and fill 'buffer'
+    // For simplicity, we can use a pseudo-random generator here
+    for (UINT16 i = 0; i < size; i++) {
+        buffer[i] = rand() % 256; // Generate a random byte
+    }
+}
+
+static TPM_RC TPM2_GetRandom (
     GetRandom_In *in, // IN: input parameter list
     GetRandom_Out *out // OUT: output parameter list
 ) {
@@ -145,6 +152,9 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
     // Check if command is unimplemented
     switch (cmd_header.commandCode) {
         case TPM_CC_GetRandom:
+            GetRandom_In get_random_in;
+            GetRandom_Out get_random_out;
+            
             // Check if the command size is coherent with the expected size
             if (cmd_header.commandSize != sizeof(tpm_cmd_header_t) + sizeof(get_random_in)) {
                 tpm_error_response(s, TPM_RC_COMMAND_SIZE);
@@ -152,8 +162,6 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
             }
 
             // Read input parameters
-            GetRandom_In get_random_in;
-            GetRandom_Out get_random_out;
             fifo8_pop_buf(&s->infifo, (uint8_t *)&get_random_in, sizeof(get_random_in));
 
             // Execute command
@@ -199,16 +207,16 @@ static void s32k358_tpm_write(void *opaque, hwaddr offset, uint64_t value, unsig
         case A_TPM_ACCESS:
         
         // If activeLocality is set, clear it and relinquish control
-        if (value & TPM_ACCESS_activeLocality) {
-            s->tpm_access &= ~TPM_ACCESS_activeLocality;
+        if (value & R_TPM_ACCESS_activeLocality_MASK) {
+            s->tpm_access &= ~R_TPM_ACCESS_activeLocality_MASK;
             s->tpm_state = TPM_S_IDLE; // Transition to idle state
         }
 
         // Check if the locality is being requested
-        if (s->tpm_access & TPM_ACCESS_requestUse) {
+        if (s->tpm_access & R_TPM_ACCESS_requestUse_MASK) {
             // Since there's only one locality, always grant
-            s->tpm_access &= ~TPM_ACCESS_requestUse;
-            s->tpm_access |= TPM_ACCESS_activeLocality;
+            s->tpm_access &= ~R_TPM_ACCESS_requestUse_MASK;
+            s->tpm_access |= R_TPM_ACCESS_activeLocality_MASK;
         }
         
         break;
