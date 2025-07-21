@@ -2,6 +2,12 @@
 #include <stddef.h>
 #include <string.h>
 #include "S32K358.h"
+#include "Lpuart_Uart_Ip.h"
+#include "IntCtrl_Ip.h"
+#include "FreeRTOS.h"
+
+#define LPUART_INSTANCE         (3U)    // Usare LPUART3
+
 
 // MMIO Register Definitions
 #define TPM_BASE         0xFED40000
