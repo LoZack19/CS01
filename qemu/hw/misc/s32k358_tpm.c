@@ -264,23 +264,11 @@ static const MemoryRegionOps s32k358_tpm_ops = {
     .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
-static const VMStateDescription s32k358_tpm_vmstate = {
-    .name = "s32k358_tpm",
-    .version_id = 1,
-    .minimum_version_id = 1,
-    .fields = (const VMStateField[]) {
-        VMSTATE_UINT8(status, S32k358TPMState),
-        VMSTATE_UINT8(control, S32k358TPMState),
-        VMSTATE_UINT8(data, S32k358TPMState),
-        VMSTATE_END_OF_LIST()
-    }
-};
-
 static void s32k358_tpm_reset(DeviceState *d)
 {
     S32k358TPMState *s = S32K358_TPM(d);
 
-    s->state = TPM_STATE_RST;
+    s->tpm_state = TPM_STATE_RST;
 
     s->tpm_access = TPM_ACCESS_RST;
     s->tpm_int_enable = TPM_INT_ENABLE_RST;
@@ -299,7 +287,7 @@ static void s32k358_tpm_reset(DeviceState *d)
     fifo8_reset(&s->infifo);
     fifo8_reset(&s->outfifo);
 
-    s->state = TPM_S_IDLE; /* Ready to do stuff */
+    s->tpm_state = TPM_S_IDLE; /* Ready to do stuff */
 }
 
 static void s32k358_tpm_init(Object *obj)
@@ -320,7 +308,6 @@ static void s32k358_tpm_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->vmsd = &s32k358_tpm_vmstate;
     device_class_set_legacy_reset(dc, s32k358_tpm_reset);
 }
 
