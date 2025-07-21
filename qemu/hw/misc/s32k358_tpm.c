@@ -214,7 +214,7 @@ static void s32k358_tpm_write(void *opaque, hwaddr offset, uint64_t value, unsig
             }
 
             // Check if the locality is being requested
-            if (s->tpm_access & R_TPM_ACCESS_requestUse_MASK) {
+            if (value & R_TPM_ACCESS_requestUse_MASK) {
                 // Since there's only one locality, always grant
                 qemu_log_mask(LOG_GUEST_ERROR, "%s: Locality requested, granting access\n", __func__);
                 s->tpm_access &= ~R_TPM_ACCESS_requestUse_MASK;
@@ -240,7 +240,7 @@ static void s32k358_tpm_write(void *opaque, hwaddr offset, uint64_t value, unsig
                     
             // If commandReady is set, transition status to ready
             // Now bytes can be accepted in the input FIFO
-            if (s->tpm_sts & R_TPM_STS_commandReady_MASK) {
+            if (value & R_TPM_STS_commandReady_MASK) {
                 if (s->tpm_state == TPM_S_CMPL) {
                     s->tpm_state = TPM_S_IDLE; // Transition to idle state
                 } else {
@@ -249,7 +249,7 @@ static void s32k358_tpm_write(void *opaque, hwaddr offset, uint64_t value, unsig
             }
 
             // If tpmGo is set, transition to execution state
-            if (s->tpm_state == TPM_S_RECV && s->tpm_sts & R_TPM_STS_tpmGo_MASK) {
+            if (s->tpm_state == TPM_S_RECV && value & R_TPM_STS_tpmGo_MASK) {
                 s->tpm_state = TPM_S_EXEC;
                 s32k358_tpm_process_input(s);
             }
