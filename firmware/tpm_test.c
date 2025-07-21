@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
+#include "S32K358.h"
 
 // MMIO Register Definitions
 #define TPM_BASE         0x40000000
@@ -28,9 +29,7 @@ uint8_t tpm_cmd[] = {
 };
 
 // TODO: Replace with actual expected response from TPM implementation
-uint8_t tpm_rsp_expected[] = {
-    // Fill this in after running and capturing a real response
-};
+uint8_t tpm_rsp_expected[] = {0x00};
 
 // Add TPM2_GetRandom command (request 8 random bytes)
 uint8_t tpm_getrandom_cmd[] = {
@@ -41,12 +40,10 @@ uint8_t tpm_getrandom_cmd[] = {
 };
 
 // TODO: Replace with actual expected response from your TPM implementation for GetRandom
-uint8_t tpm_getrandom_rsp_expected[] = {
-    // Fill this in after running and capturing a real response
-};
+uint8_t tpm_getrandom_rsp_expected[] = {0x00};
 
 // Requests access to TPM locality 0 and waits until it is granted.
-void tpm_wait_access() {
+void tpm_wait_access(void) {
     TPM_ACCESS = TPM_ACCESS_REQUEST_USE;
     while (!(TPM_ACCESS & TPM_ACCESS_ACTIVE_LOCAL));
 }
@@ -87,7 +84,7 @@ void tpm_read_response(uint8_t* buf, size_t max_len, size_t* actual_len) {
     *actual_len = total;
 }
 
-int main() {
+int main(void) {
     uint8_t rsp_buf[4096];
     size_t rsp_len;
 
@@ -140,4 +137,4 @@ int main() {
     // 14. Success: loop forever to indicate test passed
     while (1);
     return 0;
-} 
+}
