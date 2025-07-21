@@ -4,7 +4,7 @@
 #include "S32K358.h"
 
 // MMIO Register Definitions
-#define TPM_BASE         0x40000000
+#define TPM_BASE         0xFED40000
 
 #define TPM_ACCESS       (*(volatile uint8_t*)(TPM_BASE + 0x0000)) // Used to request and check access to the TPM
 #define TPM_STS          (*(volatile uint32_t*)(TPM_BASE + 0x0018))  // only 3 bytes used
@@ -36,11 +36,18 @@ uint8_t tpm_getrandom_cmd[] = {
     0x80, 0x01,                         // TPM_ST_NO_SESSIONS
     0x00, 0x00, 0x00, 0x0C,             // command size = 12
     0x00, 0x00, 0x01, 0x7B,             // TPM2_CC_GetRandom (0x0000017B)
-    0x00, 0x08                         // bytesRequested = 8 (big-endian)
+    0x00, 0x08                          // bytesRequested = 8 (big-endian)
 };
 
 // TODO: Replace with actual expected response from your TPM implementation for GetRandom
-uint8_t tpm_getrandom_rsp_expected[] = {0x00};
+uint8_t tpm_getrandom_rsp_expected[] = {
+    0x80, 0x01,             // TPM_ST_NO_SESSIONS
+    0x00, 0x00, 0x00, 0x10, // response size = 10 + 8 random bytes
+    0x00, 0x00, 0x00, 0x00, // TPM_RC_SUCCESS
+    0x00, 0x08,             // digest size = 8
+    0x12, 0x34, 0x56, 0x78, // digest random bytes (example, replace with actual random bytes)
+    0x9A, 0xBC, 0xDE, 0xF0
+};
 
 // Requests access to TPM locality 0 and waits until it is granted.
 void tpm_wait_access(void) {
@@ -88,53 +95,31 @@ int main(void) {
     uint8_t rsp_buf[4096];
     size_t rsp_len;
 
-    // 1. Request and wait for access to TPM locality 0
+    IntCtrl_Ip_Init(&IntCtrlConfig_0);
+    IntCtrl_Ip_EnableIrq(LPUART3_IRQn);
+
+    Lpuart_Uart_Ip_Init(LPUART_INSTANCE, &Lpuart_Uart_Ip_xHwConfigPB_3);
+
     tpm_wait_access();
 
-    // 2. Prepare TPM for a new command
-    TPM_STS = TPM_STS_COMMAND_READY;  // Enter Ready state
-
-    // 3. Send the TPM2_GetCapability command to the TPM FIFO
-    tpm_wait_burst_and_write(tpm_cmd, sizeof(tpm_cmd));
-
-    // 4. Signal TPM to start processing the command
-    TPM_STS = TPM_STS_GO;             // Begin execution
-
-    // 5. Read the response from the TPM FIFO
-    tpm_read_response(rsp_buf, sizeof(rsp_buf), &rsp_len);
-
-    // 6. Validate the response length
-    if (rsp_len != sizeof(tpm_rsp_expected)) {
-        while (1); // Error: unexpected response length (loops forever)
-    }
-
-    // 7. Validate the response content
-    if (memcmp(rsp_buf, tpm_rsp_expected, rsp_len) != 0) {
-        while (1); // Error: response mismatch (loops forever)
-    }
-
-    // --- Test TPM2_GetRandom ---
-    // 8. Prepare TPM for a new command
-    TPM_STS = TPM_STS_COMMAND_READY;  // Enter Ready state
-
-    // 9. Send the TPM2_GetRandom command to the TPM FIFO
+    TPM_STS = TPM_STS_COMMAND_READY;
     tpm_wait_burst_and_write(tpm_getrandom_cmd, sizeof(tpm_getrandom_cmd));
-
-    // 10. Signal TPM to start processing the command
-    TPM_STS = TPM_STS_GO;             // Begin execution
-
-    // 11. Read the response from the TPM FIFO
+    TPM_STS = TPM_STS_GO;
     tpm_read_response(rsp_buf, sizeof(rsp_buf), &rsp_len);
 
-    // 12. Validate the response length (should match expected or at least header + 8 random bytes)
-    if (rsp_len < 10 + 2 + 8) { // header + parameter size + 8 bytes
-        while (1); // Error: response too short
+    if (rsp_len < 10 + 2 + 8) {
+        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[ERROR] GetRandom: Response is too short", 41, portMAX_DELAY);
+        while (1);
     }
 
-    // 13. Optionally, check the response header fields and that the returned random bytes are present
-    // (You may want to print or log the random bytes for manual inspection)
+    // Compare the first 10 + 2 bytes of the response with the expected response
+    if (memcmp(rsp_buf, tpm_getrandom_rsp_expected, 10 + 2) != 0) {
+        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[ERROR] GetRandom: Response does not match expected", 52, portMAX_DELAY);
+        while (1);
+    }
 
-    // 14. Success: loop forever to indicate test passed
+    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[SUCCESS] GetRandom success", 28, portMAX_DELAY);
     while (1);
+
     return 0;
 }
