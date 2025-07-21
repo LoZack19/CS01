@@ -61,6 +61,8 @@ static void s32k358_mcu_initfn(Object *obj)
         object_initialize_child(obj, "lpuart[*]", &s->lpuart[i],
                                 TYPE_S32K358_LPUART);
     }
+
+    object_initialize_child(obj, "tpm", &s->tpm, TYPE_S32K358_TPM);
 }
 
 static void create_program_flash(S32K358State *s)

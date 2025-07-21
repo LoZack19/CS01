@@ -108,11 +108,19 @@ int main(void) {
     Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Starting TPM Test", 25, portMAX_DELAY);
 
     tpm_wait_access();
+    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Access granted to TPM locality 0", 40, portMAX_DELAY);
 
     TPM_STS = TPM_STS_COMMAND_READY;
+    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Sending TPM command", 27, portMAX_DELAY);
+    
     tpm_wait_burst_and_write(tpm_getrandom_cmd, sizeof(tpm_getrandom_cmd));
+    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Command sent, waiting for response", 42, portMAX_DELAY);
+
     TPM_STS = TPM_STS_GO;
+    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Command execution started", 33, portMAX_DELAY);
+
     tpm_read_response(rsp_buf, sizeof(rsp_buf), &rsp_len);
+    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Response received", 25, portMAX_DELAY);
 
     if (rsp_len < 10 + 2 + 8) {
         Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[ERROR] GetRandom: Response is too short", 41, portMAX_DELAY);
