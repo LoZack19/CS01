@@ -1,0 +1,8 @@
+{
+    "files.associations": {
+        "object.h": "c",
+        "*.inc": "c",
+        "s32k358_tpm.h": "c",
+        "fifo8.h": "c"
+    }
+}
