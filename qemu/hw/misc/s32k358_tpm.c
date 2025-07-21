@@ -207,18 +207,19 @@ static void s32k358_tpm_write(void *opaque, hwaddr offset, uint64_t value, unsig
     switch (offset) {
         case A_TPM_ACCESS:
         
-        // If activeLocality is set, clear it and relinquish control
-        if (value & R_TPM_ACCESS_activeLocality_MASK) {
-            s->tpm_access &= ~R_TPM_ACCESS_activeLocality_MASK;
-            s->tpm_state = TPM_S_IDLE; // Transition to idle state
-        }
+            // If activeLocality is set, clear it and relinquish control
+            if (value & R_TPM_ACCESS_activeLocality_MASK) {
+                s->tpm_access &= ~R_TPM_ACCESS_activeLocality_MASK;
+                s->tpm_state = TPM_S_IDLE; // Transition to idle state
+            }
 
-        // Check if the locality is being requested
-        if (s->tpm_access & R_TPM_ACCESS_requestUse_MASK) {
-            // Since there's only one locality, always grant
-            s->tpm_access &= ~R_TPM_ACCESS_requestUse_MASK;
-            s->tpm_access |= R_TPM_ACCESS_activeLocality_MASK;
-        }
+            // Check if the locality is being requested
+            if (s->tpm_access & R_TPM_ACCESS_requestUse_MASK) {
+                // Since there's only one locality, always grant
+                qemu_log_mask(LOG_GUEST_ERROR, "%s: Locality requested, granting access\n", __func__);
+                s->tpm_access &= ~R_TPM_ACCESS_requestUse_MASK;
+                s->tpm_access |= R_TPM_ACCESS_activeLocality_MASK;
+            }
         
         break;
         case A_TPM_DATA_FIFO:
