@@ -23,7 +23,7 @@
 
 #define S32K358_NUM_LPUART 16
 
-#define TPM_TIS_LOC0 0xFED40000
+#define TPM_TIS_LOC0 0x40000000
 
 static const hwaddr lpuart_addr[] = {
     0x40328000, // lpuart[0]

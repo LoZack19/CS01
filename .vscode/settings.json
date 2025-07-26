@@ -3,6 +3,7 @@
         "object.h": "c",
         "*.inc": "c",
         "s32k358_tpm.h": "c",
-        "fifo8.h": "c"
+        "fifo8.h": "c",
+        "s32k358_mcu.h": "c"
     }
 }
