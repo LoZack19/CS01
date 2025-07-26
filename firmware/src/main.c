@@ -29,7 +29,7 @@
 // This command queries the TPM for its properties.
 uint8_t tpm_cmd[] = {
     0x80, 0x01,                         // TPM_ST_NO_SESSIONS
-    0x00, 0x00, 0x00, 0x0C,             // command size = 12
+    0x00, 0x00, 0x00, 0x0E,             // command size = 14
     0x00, 0x00, 0x01, 0x7A,             // TPM2_CC_GetCapability
     0x00, 0x00, 0x00, 0x06              // TPM_CAP_TPM_PROPERTIES
 };
@@ -105,35 +105,35 @@ int main(void) {
     IntCtrl_Ip_EnableIrq(LPUART3_IRQn);
 
     Lpuart_Uart_Ip_Init(LPUART_INSTANCE, &Lpuart_Uart_Ip_xHwConfigPB_3);
-    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Starting TPM Test", 25, portMAX_DELAY);
+    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Starting TPM Test\n", 25, portMAX_DELAY);
 
     tpm_wait_access();
-    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Access granted to TPM locality 0", 40, portMAX_DELAY);
+    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Access granted to TPM locality 0\n", 40, portMAX_DELAY);
 
     TPM_STS = TPM_STS_COMMAND_READY;
-    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Sending TPM command", 27, portMAX_DELAY);
+    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Sending TPM command\n", 27, portMAX_DELAY);
 
     tpm_wait_burst_and_write(tpm_getrandom_cmd, sizeof(tpm_getrandom_cmd));
-    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Command sent, waiting for response", 42, portMAX_DELAY);
+    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Command sent, waiting for response\n", 42, portMAX_DELAY);
 
     TPM_STS = TPM_STS_GO;
-    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Command execution started", 33, portMAX_DELAY);
+    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Command execution started\n", 33, portMAX_DELAY);
 
     tpm_read_response(rsp_buf, sizeof(rsp_buf), &rsp_len);
-    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Response received", 25, portMAX_DELAY);
+    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Response received\n", 25, portMAX_DELAY);
 
     if (rsp_len < 10 + 2 + 8) {
-        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[ERROR] GetRandom: Response is too short", 41, portMAX_DELAY);
+        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[ERROR] GetRandom: Response is too short\n", 41, portMAX_DELAY);
         while (1);
     }
 
     // Compare the first 10 + 2 bytes of the response with the expected response
     if (memcmp(rsp_buf, tpm_getrandom_rsp_expected, 10 + 2) != 0) {
-        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[ERROR] GetRandom: Response does not match expected", 52, portMAX_DELAY);
+        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[ERROR] GetRandom: Response does not match expected\n", 52, portMAX_DELAY);
         while (1);
     }
 
-    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[SUCCESS] GetRandom success", 28, portMAX_DELAY);
+    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[SUCCESS] GetRandom success\n", 28, portMAX_DELAY);
     while (1);
 
     return 0;
