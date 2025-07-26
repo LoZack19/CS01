@@ -24,7 +24,45 @@
 ## Compilation
 
 ```bash
-cd CS01/qemu
+cd ./qemu
 ./configure --enable-debug --target-list=arm-softmmu
 make -j8
+```
+
+## Running and debugging
+
+### Running qemu
+
+```bash
+./build/qemu-system-arm -kernel ../firmware/bin/tpm_test.elf -machine s32k3x8evb-q289 -nographic -d guest_errors -serial none -serial none -serial none -serial mon:stdio
+```
+
+### Debugging qemu
+
+```bash
+gdb ./build/qemu-system-arm
+```
+
+```gdb
+(gdb) run -kernel ../firmware/bin/tpm_test.elf -machine s32k3x8evb-q289 -nographic -d guest_errors -serial none -serial none -serial none -serial mon:stdio
+```
+
+### Debugging firmware
+
+- **qemu terminal**
+
+```bash
+./build/qemu-system-arm -kernel ../firmware/bin/tpm_test.elf -machine s32k3x8evb-q289 -nographic -d guest_errors -serial none -serial none -serial none -serial mon:stdio -s -S
+```
+
+- **gdb terminal**
+
+```bash
+cd ./firmware/bin/
+gdb-multiarch -q
+```
+
+```gdb
+(gdb) file tpm_test.elf
+(gdb) target remote localhost:1234
 ```
