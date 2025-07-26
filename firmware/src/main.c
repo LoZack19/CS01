@@ -10,7 +10,7 @@
 
 
 // MMIO Register Definitions
-#define TPM_BASE         0xFED40000
+#define TPM_BASE         0x40000000
 
 #define TPM_ACCESS       (*(volatile uint8_t*)(TPM_BASE + 0x0000)) // Used to request and check access to the TPM
 #define TPM_STS          (*(volatile uint32_t*)(TPM_BASE + 0x0018))  // only 3 bytes used
@@ -112,7 +112,7 @@ int main(void) {
 
     TPM_STS = TPM_STS_COMMAND_READY;
     Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Sending TPM command", 27, portMAX_DELAY);
-    
+
     tpm_wait_burst_and_write(tpm_getrandom_cmd, sizeof(tpm_getrandom_cmd));
     Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Command sent, waiting for response", 42, portMAX_DELAY);
 
