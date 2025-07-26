@@ -252,6 +252,25 @@ static void s32k358_tpm_write(void *opaque, hwaddr offset, uint64_t value, unsig
             if (s->tpm_state == TPM_S_RECV && value & R_TPM_STS_tpmGo_MASK) {
                 s->tpm_state = TPM_S_EXEC;
                 s32k358_tpm_process_input(s);
+                // --- INIZIO BLOCCO FAKE RESPONSE ---
+        {
+                static const uint8_t fake_rsp[20] = {
+    0x80, 0x01,             // tag = TPM_ST_NO_SESSIONS
+    0x00, 0x00, 0x00, 0x14, // responseSize = 20
+    0x00, 0x00, 0x00, 0x00, // responseCode = TPM_RC_SUCCESS
+    0x00, 0x08,             // randomBytes.size = 8
+    // 8 byte di “random” (qualsiasi valore fittizio)
+    0xDE, 0xAD, 0xBE, 0xEF,
+    0xCA, 0xFE, 0xBA, 0xBE
+};
+
+            fifo8_reset(&s->outfifo);
+            for (int i = 0; i < sizeof(fake_rsp); i++) {
+                fifo8_push(&s->outfifo, fake_rsp[i]);
+            }
+            s->tpm_sts |= R_TPM_STS_dataAvail_MASK;
+        }
+        // --- FINE BLOCCO FAKE RESPONSE ---
             }
 
             break;
