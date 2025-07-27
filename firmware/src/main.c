@@ -103,7 +103,9 @@ void print_response(const uint8_t* rsp, size_t len) {
         if (i > 0 && i % 16 == 0) {
             Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"\n", 1, portMAX_DELAY);
         }
-        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)&rsp[i], 1, portMAX_DELAY);
+        char hexbuf[6];
+        int hexlen = snprintf(hexbuf, sizeof(hexbuf), "0x%02X ", rsp[i]);
+        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)hexbuf, hexlen, portMAX_DELAY);
     }
     Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"\n", 1, portMAX_DELAY);
 }
