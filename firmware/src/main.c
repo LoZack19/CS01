@@ -97,6 +97,17 @@ void tpm_read_response(uint8_t* buf, size_t max_len, size_t* actual_len) {
     *actual_len = total;
 }
 
+// Function to print a response packet on the console for debugging purposes
+void print_response(const uint8_t* rsp, size_t len) {
+    for (size_t i = 0; i < len; ++i) {
+        if (i > 0 && i % 16 == 0) {
+            Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"\n", 1, portMAX_DELAY);
+        }
+        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)&rsp[i], 1, portMAX_DELAY);
+    }
+    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"\n", 1, portMAX_DELAY);
+}
+
 int main(void) {
     uint8_t rsp_buf[4096];
     size_t rsp_len;
@@ -130,6 +141,13 @@ int main(void) {
     // Compare the first 10 + 2 bytes of the response with the expected response
     if (memcmp(rsp_buf, tpm_getrandom_rsp_expected, 10 + 2) != 0) {
         Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[ERROR] GetRandom: Response does not match expected\n", 52, portMAX_DELAY);
+
+        // Print expected and actual responses for debugging
+        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Expected response:\n", 27, portMAX_DELAY);
+        print_response(tpm_getrandom_rsp_expected, 10 + 2);
+        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Actual response:\n", 26, portMAX_DELAY);
+        print_response(rsp_buf, rsp_len);
+
         while (1);
     }
 
