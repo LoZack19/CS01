@@ -103,7 +103,9 @@ void print_response(const uint8_t* rsp, size_t len) {
         if (i > 0 && i % 16 == 0) {
             Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"\n", 1, portMAX_DELAY);
         }
-        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)&rsp[i], 1, portMAX_DELAY);
+        char hexbuf[6];
+        int hexlen = snprintf(hexbuf, sizeof(hexbuf), "0x%02X ", rsp[i]);
+        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)hexbuf, hexlen, portMAX_DELAY);
     }
     Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"\n", 1, portMAX_DELAY);
 }
@@ -141,13 +143,6 @@ int main(void) {
     // Compare the first 10 + 2 bytes of the response with the expected response
     if (memcmp(rsp_buf, tpm_getrandom_rsp_expected, 10 + 2) != 0) {
         Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[ERROR] GetRandom: Response does not match expected\n", 52, portMAX_DELAY);
-
-        // Print expected and actual responses for debugging
-        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Expected response:\n", 27, portMAX_DELAY);
-        print_response(tpm_getrandom_rsp_expected, 10 + 2);
-        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Actual response:\n", 26, portMAX_DELAY);
-        print_response(rsp_buf, rsp_len);
-
         while (1);
     }
 
