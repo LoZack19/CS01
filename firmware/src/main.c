@@ -140,9 +140,16 @@ int main(void) {
         while (1);
     }
 
-    // Compare the first 10 + 2 bytes of the response with the expected response
+     // Compare the first 10 + 2 bytes of the response with the expected response
     if (memcmp(rsp_buf, tpm_getrandom_rsp_expected, 10 + 2) != 0) {
         Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[ERROR] GetRandom: Response does not match expected\n", 52, portMAX_DELAY);
+
+        // Print expected and actual responses for debugging
+        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Expected response:\n", 27, portMAX_DELAY);
+        print_response(tpm_getrandom_rsp_expected, 10 + 2);
+        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Actual response:\n", 26, portMAX_DELAY);
+        print_response(rsp_buf, rsp_len);
+
         while (1);
     }
 
