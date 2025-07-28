@@ -5,9 +5,9 @@
 #include "Lpuart_Uart_Ip.h"
 #include "IntCtrl_Ip.h"
 #include "FreeRTOS.h"
+#include <stdio.h>
 
 #define LPUART_INSTANCE         (3U)    // Usare LPUART3
-
 
 // MMIO Register Definitions
 #define TPM_BASE         0x40000000
@@ -34,24 +34,21 @@ uint8_t tpm_cmd[] = {
     0x00, 0x00, 0x00, 0x06              // TPM_CAP_TPM_PROPERTIES
 };
 
-// TODO: Replace with actual expected response from TPM implementation
-uint8_t tpm_rsp_expected[] = {0x00};
-
 // Add TPM2_GetRandom command (request 8 random bytes)
 uint8_t tpm_getrandom_cmd[] = {
     0x80, 0x01,                         // TPM_ST_NO_SESSIONS
-    0x00, 0x00, 0x00, 0x0E,             // command size = 12
+    0x00, 0x00, 0x00, 0x0E,             // command size = 14
     0x00, 0x00, 0x01, 0x7B,             // TPM2_CC_GetRandom (0x0000017B)
     0x00, 0x08                          // bytesRequested = 8 (big-endian)
 };
 
-// TODO: Replace with actual expected response from your TPM implementation for GetRandom
+// Expected response for TPM2_GetRandom (example 8 random bytes)
 uint8_t tpm_getrandom_rsp_expected[] = {
     0x80, 0x01,             // TPM_ST_NO_SESSIONS
-    0x00, 0x00, 0x00, 0x10, // response size = 10 + 8 random bytes
+    0x00, 0x00, 0x00, 0x14, // response size = 20 bytes
     0x00, 0x00, 0x00, 0x00, // TPM_RC_SUCCESS
-    0x00, 0x08,             // digest size = 8
-    0x12, 0x34, 0x56, 0x78, // digest random bytes (example, replace with actual random bytes)
+    0x00, 0x08,             // digest size = 8 bytes
+    0x12, 0x34, 0x56, 0x78,
     0x9A, 0xBC, 0xDE, 0xF0
 };
 
@@ -135,18 +132,16 @@ int main(void) {
     tpm_read_response(rsp_buf, sizeof(rsp_buf), &rsp_len);
     Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Response received\n", 25, portMAX_DELAY);
 
-    if (rsp_len < 10 + 2 + 8) {
+    if (rsp_len < sizeof(tpm_getrandom_rsp_expected)) {
         Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[ERROR] GetRandom: Response is too short\n", 41, portMAX_DELAY);
         while (1);
     }
 
-     // Compare the first 10 + 2 bytes of the response with the expected response
-    if (memcmp(rsp_buf, tpm_getrandom_rsp_expected, 10 + 2) != 0) {
+    if (memcmp(rsp_buf, tpm_getrandom_rsp_expected, sizeof(tpm_getrandom_rsp_expected)) != 0) {
         Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[ERROR] GetRandom: Response does not match expected\n", 52, portMAX_DELAY);
 
-        // Print expected and actual responses for debugging
         Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Expected response:\n", 27, portMAX_DELAY);
-        print_response(tpm_getrandom_rsp_expected, 10 + 2);
+        print_response(tpm_getrandom_rsp_expected, sizeof(tpm_getrandom_rsp_expected));
         Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Actual response:\n", 26, portMAX_DELAY);
         print_response(rsp_buf, rsp_len);
 
