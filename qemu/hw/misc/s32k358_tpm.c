@@ -99,6 +99,21 @@ static void tpm_rsp_header_marshal(Fifo8 *fifo, const tpm_rsp_header_t *header) 
     write_be32(fifo, header->responseCode);
 }
 
+// Unmarshal a GetRandom input structure from the FIFO
+static void get_random_in_unmarshal(Fifo8 *fifo, uint8_t *in) {
+    GetRandom_In *get_random_in = (GetRandom_In *)in;
+    get_random_in->bytesRequested = read_be16(fifo);
+}
+
+// Marshal a GetRandom output structure to the FIFO
+static void get_random_out_marshal(Fifo8 *fifo, const uint8_t *out) {
+    const GetRandom_Out *get_random_out = (const GetRandom_Out *)out;
+    write_be16(fifo, get_random_out->randomBytes.size);
+    for (UINT16 i = 0; i < get_random_out->randomBytes.size; i++) {
+        fifo8_push(fifo, get_random_out->randomBytes.buffer[i]);
+    }
+}
+
 /* Response management */
 
 static void tpm_error_response(S32k358TPMState *s, TPM_RC rc) {
@@ -108,8 +123,8 @@ static void tpm_error_response(S32k358TPMState *s, TPM_RC rc) {
     rsp_header.responseSize = sizeof(rsp_header);
     rsp_header.responseCode = rc;
 
-    // Push the response header to the output FIFO
-    fifo8_push_all(&s->outfifo, (uint8_t *)&rsp_header, sizeof(rsp_header));
+    // Marshal the response header onto the output FIFO
+    tpm_rsp_header_marshal(&s->outfifo, &rsp_header);
 
     // Update status to indicate data is available
     s->tpm_state = TPM_S_CMPL; // Transition to complete state
@@ -117,23 +132,26 @@ static void tpm_error_response(S32k358TPMState *s, TPM_RC rc) {
     s->tpm_sts |= R_TPM_STS_commandReady_MASK;
 }
 
-static void tpm_success_response(S32k358TPMState *s, uint8_t *data, size_t size) {
+// Generate a successful response with data
+static void tpm_success_response(S32k358TPMState *s, const uint8_t *data, size_t size, void marshal_func(Fifo8 *fifo, const uint8_t *data)) {
     tpm_rsp_header_t rsp_header;
 
     rsp_header.tag = TPM_ST_NO_SESSIONS; // No sessions for this response
     rsp_header.responseSize = sizeof(rsp_header) + size;
     rsp_header.responseCode = TPM_RC_SUCCESS;
 
-    // Push the response header to the output FIFO
-    fifo8_push_all(&s->outfifo, (uint8_t *)&rsp_header, sizeof(rsp_header));
+    // Marshal the response header onto the output FIFO
+    tpm_rsp_header_marshal(&s->outfifo, &rsp_header);
 
-    // Push the data to the output FIFO
-    fifo8_push_all(&s->outfifo, data, size);
+    // Marshal the actual data onto the output FIFO
+    marshal_func(&s->outfifo, data);
 
     // Update status to indicate data is available
     s->tpm_state = TPM_S_CMPL; // Transition to complete state
     s->tpm_sts |= R_TPM_STS_dataAvail_MASK;
     s->tpm_sts |= R_TPM_STS_commandReady_MASK;
+    
+    qemu_log_mask(LOG_GUEST_ERROR, "(INFO) TPM: Command executed successfully, response sent\n");
 }
 
 /* Functionalities */
@@ -181,7 +199,7 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
 
     // Check if fifo is not full enough and report error condition if so
     if (fifo8_num_used(&s->infifo) < sizeof(tpm_cmd_header_t)) {
-        qemu_log_mask(LOG_GUEST_ERROR, "[ERROR] TPM: Insufficient fifo DATA\n ");
+        qemu_log_mask(LOG_GUEST_ERROR, "(ERROR) TPM: Insufficient fifo DATA\n ");
         return;
     }
 
@@ -190,14 +208,14 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
 
     // Check if tag is valid
     if (cmd_header.tag != TPM_ST_NO_SESSIONS && cmd_header.tag != TPM_ST_SESSIONS) {
-        qemu_log_mask(LOG_GUEST_ERROR, "[ERROR] TPM: Command header tag is not valid. Received 0x%04X\n", cmd_header.tag);
+        qemu_log_mask(LOG_GUEST_ERROR, "(ERROR) TPM: Command header tag is not valid. Received 0x%04X\n", cmd_header.tag);
         tpm_error_response(s, TPM_RC_BAD_TAG);
         return;
     }
 
     // Check if infifo has enough data for the command size
     if (fifo8_num_used(&s->infifo) < (cmd_header.commandSize - sizeof(tpm_cmd_header_t))) {
-        qemu_log_mask(LOG_GUEST_ERROR, "[ERROR] TPM: FIFO does not have enough data wrt the specified command size\n");
+        qemu_log_mask(LOG_GUEST_ERROR, "(ERROR) TPM: FIFO does not have enough data wrt the specified command size\n");
         tpm_error_response(s, TPM_RC_COMMAND_SIZE);
         return;
     }
@@ -215,21 +233,22 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
                 return;
             }
 
-            // Read input parameters
-            fifo8_pop_buf(&s->infifo, (uint8_t *)&get_random_in, sizeof(get_random_in));
+            // Unmarshal the GetRandom input
+            get_random_in_unmarshal(&s->infifo, (uint8_t *)&get_random_in);
 
             // Execute command
             TPM_RC rc = TPM2_GetRandom(&get_random_in, &get_random_out);
 
             // Generate response
-            if (rc != TPM_RC_SUCCESS)
+            if (rc != TPM_RC_SUCCESS) {
                 tpm_error_response(s, rc);
-            else
-                tpm_success_response(s,(uint8_t*)&get_random_out, sizeof(get_random_out));
-            
+            } else {
+                tpm_success_response(s, (const uint8_t *)&get_random_out, sizeof(get_random_out), get_random_out_marshal);
+            }
+
             return;
         default: /* unimplemented command */
-            qemu_log_mask(LOG_GUEST_ERROR, "[ERROR] TPM: Unimplemented command\n");
+            qemu_log_mask(LOG_GUEST_ERROR, "(ERROR) TPM: Unimplemented command\n");
             tpm_error_response(s, TPM_RC_COMMAND_CODE);
             return;
     }
@@ -306,25 +325,6 @@ static void s32k358_tpm_write(void *opaque, hwaddr offset, uint64_t value, unsig
             if (s->tpm_state == TPM_S_RECV && value & R_TPM_STS_tpmGo_MASK) {
                 s->tpm_state = TPM_S_EXEC;
                 s32k358_tpm_process_input(s);
-                // --- INIZIO BLOCCO FAKE RESPONSE ---
-        {
-                static const uint8_t fake_rsp[] = {
-                    0x80, 0x01,             // tag = TPM_ST_NO_SESSIONS
-                    0x00, 0x00, 0x00, 0x14, // responseSize = 20
-                    0x00, 0x00, 0x00, 0x00, // responseCode = TPM_RC_SUCCESS
-                    0x00, 0x08,             // randomBytes.size = 8
-                    // 8 byte di “random” (qualsiasi valore fittizio)
-                    0x12, 0x34, 0x56, 0x78, // digest random bytes (example, replace with actual random bytes)
-                    0x9A, 0xBC, 0xDE, 0xF0
-                };
-
-            fifo8_reset(&s->outfifo);
-            for (int i = 0; i < sizeof(fake_rsp); i++) {
-                fifo8_push(&s->outfifo, fake_rsp[i]);
-            }
-            s->tpm_sts |= R_TPM_STS_dataAvail_MASK;
-        }
-        // --- FINE BLOCCO FAKE RESPONSE ---
             }
 
             break;
