@@ -110,12 +110,21 @@ static TPM_RC TPM2_GetRandom (
     GetRandom_Out *out // OUT: output parameter list
 ) {
     // Command Output
-    // if the requested bytes exceed the output buffer size, generates the
+    // if the requested bytes exceed the output buffer size, generate the
     // maximum bytes that the output buffer allows
-    if(in->bytesRequested > sizeof(TPMU_HA))
+    if(in->bytesRequested > sizeof(TPMU_HA)) {
+        // Log that the requested size is too large
+        qemu_log_mask(LOG_GUEST_ERROR, "TPM2_GetRandom: Requested size %u exceeds maximum %zu, truncating\n",
+                      in->bytesRequested, sizeof(TPMU_HA));
+                      
         out->randomBytes.size = sizeof(TPMU_HA);
-    else
+    } else {
+        // Log that the requested size is within limits
+        qemu_log_mask(LOG_GUEST_ERROR, "TPM2_GetRandom: Requested size %u is within limits, generating random bytes\n",
+                      in->bytesRequested);
+
         out->randomBytes.size = in->bytesRequested;
+    }
     
     CryptRandomGenerate(out->randomBytes.size, out->randomBytes.buffer);
     
@@ -131,7 +140,7 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
 
     // Check if fifo is not full enough and report error condition if so
     if (fifo8_num_used(&s->infifo) < sizeof(tpm_cmd_header_t)) {
-        qemu_log_mask(LOG_GUEST_ERROR, "TPM: Insufficient fifo DATA\n ");
+        qemu_log_mask(LOG_GUEST_ERROR, "[ERROR] TPM: Insufficient fifo DATA\n ");
         return;
     }
 
@@ -140,12 +149,14 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
 
     // Check if tag is valid
     if (cmd_header.tag != TPM_ST_NO_SESSIONS && cmd_header.tag != TPM_ST_SESSIONS) {
+        qemu_log_mask(LOG_GUEST_ERROR, "[ERROR] TPM: Command header tag is not valid. Received 0x%04X\n", cmd_header.tag);
         tpm_error_response(s, TPM_RC_BAD_TAG);
         return;
     }
 
     // Check if infifo has enough data for the command size
     if (fifo8_num_used(&s->infifo) < (cmd_header.commandSize - sizeof(tpm_cmd_header_t))) {
+        qemu_log_mask(LOG_GUEST_ERROR, "[ERROR] TPM: FIFO does not have enough data wrt the specified command size\n");
         tpm_error_response(s, TPM_RC_COMMAND_SIZE);
         return;
     }
@@ -153,6 +164,7 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
     // Check if command is unimplemented
     switch (cmd_header.commandCode) {
         case TPM_CC_GetRandom:
+
             GetRandom_In get_random_in;
             GetRandom_Out get_random_out;
             
@@ -176,6 +188,7 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
             
             return;
         default: /* unimplemented command */
+            qemu_log_mask(LOG_GUEST_ERROR, "[ERROR] TPM: Unimplemented command\n");
             tpm_error_response(s, TPM_RC_COMMAND_CODE);
             return;
     }

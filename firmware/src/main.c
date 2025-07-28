@@ -142,7 +142,7 @@ int main(void) {
 
         Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Expected response:\n", 27, portMAX_DELAY);
         print_response(tpm_getrandom_rsp_expected, sizeof(tpm_getrandom_rsp_expected));
-        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Actual response:\n", 26, portMAX_DELAY);
+        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Actual response:\n", 25, portMAX_DELAY);
         print_response(rsp_buf, rsp_len);
 
         while (1);
