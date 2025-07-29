@@ -107,6 +107,14 @@ void print_response(const uint8_t* rsp, size_t len) {
     Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"\n", 1, portMAX_DELAY);
 }
 
+// Function to report expected response and actual response for debugging
+void report_expected_response(const uint8_t* expected, const uint8_t* actual, size_t len) {
+    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[DEBUG] Expected Response: ", 28, portMAX_DELAY);
+    print_response(expected, len);
+    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[DEBUG] Actual Response: ", 26, portMAX_DELAY);
+    print_response(actual, len);
+}
+
 int main(void) {
     uint8_t rsp_buf[4096];
     size_t rsp_len;
@@ -134,17 +142,13 @@ int main(void) {
 
     if (rsp_len < sizeof(tpm_getrandom_rsp_expected)) {
         Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[ERROR] GetRandom: Response is too short\n", 41, portMAX_DELAY);
+        report_expected_response(tpm_getrandom_rsp_expected, rsp_buf, rsp_len);
         while (1);
     }
 
     if (memcmp(rsp_buf, tpm_getrandom_rsp_expected, sizeof(tpm_getrandom_rsp_expected)) != 0) {
         Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[ERROR] GetRandom: Response does not match expected\n", 52, portMAX_DELAY);
-
-        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Expected response:\n", 27, portMAX_DELAY);
-        print_response(tpm_getrandom_rsp_expected, sizeof(tpm_getrandom_rsp_expected));
-        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Actual response:\n", 25, portMAX_DELAY);
-        print_response(rsp_buf, rsp_len);
-
+        report_expected_response(tpm_getrandom_rsp_expected, rsp_buf, rsp_len);
         while (1);
     }
 
