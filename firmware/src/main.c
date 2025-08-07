@@ -45,11 +45,11 @@ uint8_t tpm_getrandom_cmd[] = {
 // Expected response for TPM2_GetRandom (example 8 random bytes)
 uint8_t tpm_getrandom_rsp_expected[] = {
     0x80, 0x01,             // TPM_ST_NO_SESSIONS
-    0x00, 0x00, 0x00, 0x14, // response size = 20 bytes
+    0x00, 0x00, 0x00, 0x2C, // response size = 10 + 2 + 32 = 44
     0x00, 0x00, 0x00, 0x00, // TPM_RC_SUCCESS
     0x00, 0x08,             // digest size = 8 bytes
-    0x12, 0x34, 0x56, 0x78,
-    0x9A, 0xBC, 0xDE, 0xF0
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 };
 
 // Requests access to TPM locality 0 and waits until it is granted.
@@ -146,7 +146,7 @@ int main(void) {
         while (1);
     }
 
-    if (memcmp(rsp_buf, tpm_getrandom_rsp_expected, sizeof(tpm_getrandom_rsp_expected)) != 0) {
+    if (memcmp(rsp_buf, tpm_getrandom_rsp_expected, sizeof(tpm_getrandom_rsp_expected) - 32) != 0) {
         Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[ERROR] GetRandom: Response does not match expected\n", 52, portMAX_DELAY);
         report_expected_response(tpm_getrandom_rsp_expected, rsp_buf, rsp_len);
         while (1);

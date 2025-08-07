@@ -13,6 +13,8 @@
 #include "hw/registerfields.h"
 #include "include/qemu/fifo8.h"
 
+#define __packed __attribute__((packed))
+
 #define TYPE_S32K358_TPM                  "s32k358_tpm"
 OBJECT_DECLARE_SIMPLE_TYPE(S32k358TPMState, S32K358_TPM)
 
@@ -108,35 +110,38 @@ typedef uint16_t UINT16;
 typedef uint32_t UINT32;
 
 // Structured types
-typedef union {
-    // Our hash digest types
+
+#define SHA256_DIGEST_SIZE 32
+
+typedef union __packed {
+    BYTE sha256[SHA256_DIGEST_SIZE];
 } TPMU_HA;
 
-typedef struct {
+typedef struct __packed {
     UINT16 size;
     BYTE buffer[sizeof(TPMU_HA)];
 } TPM2B_DIGEST;
 
 // Headers
-typedef struct {
+typedef struct __packed {
     TPMI_ST_COMMAND_TAG tag;
     UINT32 commandSize;
     TPM_CC commandCode;
 } tpm_cmd_header_t;
 
-typedef struct {
+typedef struct __packed {
     TPM_ST tag;
     UINT32 responseSize;
     TPM_RC responseCode;
 } tpm_rsp_header_t;
 
 // Input structures
-typedef struct {
+typedef struct __packed {
     UINT16 bytesRequested;
 } GetRandom_In;
 
 // Output structures
-typedef struct {
+typedef struct __packed {
     TPM2B_DIGEST randomBytes;
 } GetRandom_Out;
 
