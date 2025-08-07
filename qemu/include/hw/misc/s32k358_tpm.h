@@ -84,4 +84,85 @@ REG32(TPM_XDATA_FIFO,   0x0080)  // Extended Data FIFO Register (ReadFIFO / Writ
 REG32(TPM_DID_VID,      0x0F00)  // Device ID and Vendor ID Register
 REG8(TPM_RID,           0x0F04)  // Revision ID Register
 
+/* TPM specific types */
+
+// Basic definitions
+
+typedef uint32_t TPM_CC;
+#define TPM_CC_GetRandom 0x0000017B
+
+typedef uint32_t TPM_RC;
+#define TPM_RC_SUCCESS 0x000
+#define TPM_RC_BAD_TAG 0x01E
+#define RC_VER1 0x100
+#define TPM_RC_COMMAND_SIZE (RC_VER1 + 0x42)
+#define TPM_RC_COMMAND_CODE (RC_VER1 + 0x43)
+
+typedef uint16_t TPM_ST;
+typedef uint16_t TPMI_ST_COMMAND_TAG;
+#define TPM_ST_NO_SESSIONS 0x8001
+#define TPM_ST_SESSIONS    0x8002
+
+typedef uint8_t BYTE;
+typedef uint16_t UINT16;
+typedef uint32_t UINT32;
+
+// Structured types
+typedef union {
+    // Our hash digest types
+} TPMU_HA;
+
+typedef struct {
+    UINT16 size;
+    BYTE buffer[sizeof(TPMU_HA)];
+} TPM2B_DIGEST;
+
+// Headers
+typedef struct {
+    TPMI_ST_COMMAND_TAG tag;
+    UINT32 commandSize;
+    TPM_CC commandCode;
+} tpm_cmd_header_t;
+
+typedef struct {
+    TPM_ST tag;
+    UINT32 responseSize;
+    TPM_RC responseCode;
+} tpm_rsp_header_t;
+
+// Input structures
+typedef struct {
+    UINT16 bytesRequested;
+} GetRandom_In;
+
+// Output structures
+typedef struct {
+    TPM2B_DIGEST randomBytes;
+} GetRandom_Out;
+
+/* Marshalling and unmarshalling layer */
+
+// Endianness conversion functions
+UINT16 read_be16(Fifo8 *fifo);
+UINT32 read_be32(Fifo8 *fifo);
+void write_be16(Fifo8 *fifo, UINT16 value);
+void write_be32(Fifo8 *fifo, UINT32 value);
+
+// Marshalling and unmarshalling functions
+void tpm_cmd_header_unmarshal(Fifo8 *fifo, tpm_cmd_header_t *header);
+void tpm_rsp_header_marshal(Fifo8 *fifo, const tpm_rsp_header_t *header);
+
+// Command specific marshalling functions
+void get_random_in_unmarshal(Fifo8 *fifo, uint8_t *in);
+void get_random_out_marshal(Fifo8 *fifo, const uint8_t *out);
+
+/* TPM Commands */
+
+// Response functions
+void tpm_error_response(S32k358TPMState *s, TPM_RC rc);
+void tpm_success_response(S32k358TPMState *s, const uint8_t *data, size_t size, void marshal_func(Fifo8 *fifo, const uint8_t *data));
+
+// TPM Commands
+TPM_RC TPM2_GetRandom(GetRandom_In *in, GetRandom_Out *out);
+
 #endif
