@@ -49,8 +49,7 @@ static void CryptRandomGenerate(UINT16 size, BYTE *buffer) {
 
 /* TPM Commands */
 
-TPM_RC TPM2_GetRandom (GetRandom_In *in, GetRandom_Out *out) {
-
+TPM_RC TPM2_GetRandom(GetRandom_In *in, GetRandom_Out *out) {
     // Truncate size to maximum supported digest size
     if(in->bytesRequested > sizeof(TPMU_HA)) {
         qemu_log_mask(LOG_GUEST_ERROR,
