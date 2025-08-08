@@ -32,6 +32,9 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
     // Check if infifo has enough data for the command size
     if (fifo8_num_used(&s->infifo) < (cmd_header.commandSize - sizeof(tpm_cmd_header_t))) {
         qemu_log_mask(LOG_GUEST_ERROR, "(ERROR) TPM: FIFO does not have enough data wrt the specified command size\n");
+        qemu_log_mask(LOG_GUEST_ERROR, "(INFO) TPM: Command size: %u, Header size: %zu\n",cmd_header.commandSize, sizeof(tpm_cmd_header_t));
+        qemu_log_mask(LOG_GUEST_ERROR, "(INFO) TPM: FIFO used size: %u, FIFO available size: %u\n",
+                      fifo8_num_used(&s->infifo), fifo8_num_free(&s->infifo));
         tpm_error_response(s, TPM_RC_COMMAND_SIZE);
         return;
     }

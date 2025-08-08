@@ -37,7 +37,7 @@ uint8_t tpm_cmd[] = {
 // Add TPM2_GetRandom command (request 8 random bytes)
 uint8_t tpm_getrandom_cmd[] = {
     0x80, 0x01,                         // TPM_ST_NO_SESSIONS
-    0x00, 0x00, 0x00, 0x0E,             // command size = 14
+    0x00, 0x00, 0x00, 0x0C,             // command size = 12
     0x00, 0x00, 0x01, 0x7B,             // TPM2_CC_GetRandom (0x0000017B)
     0x00, 0x08                          // bytesRequested = 8 (big-endian)
 };
