@@ -92,6 +92,7 @@ REG8(TPM_RID,           0x0F04)  // Revision ID Register
 
 typedef uint32_t TPM_CC;
 #define TPM_CC_GetRandom 0x0000017B
+#define TPM_CC_CreatePrimary 0x00000143
 
 typedef uint32_t TPM_RC;
 #define TPM_RC_SUCCESS 0x000
@@ -109,6 +110,30 @@ typedef uint8_t BYTE;
 typedef uint16_t UINT16;
 typedef uint32_t UINT32;
 
+typedef TPM2B_DIGEST TPM2B_AUTH;
+
+#define LABEL_MAX_BUFFER 1024
+#define MAX_SYM_DATA 128
+#define MAX_ECC_KEY_BYTES 32
+#define MAX_RSA_KEY_BYTES 256
+
+typedef UINT16 TPM_ALG_ID; 
+typedef UINT16 TPM_KEY_BITS;         
+typedef UINT32 TPMA_OBJECT;     
+
+typedef TPM_ALG_ID  TPMI_ALG_PUBLIC; 
+typedef TPM_ALG_ID  TPMI_ALG_HASH; 
+typedef TPM_ALG_ID  TPMI_ALG_KEYEDHASH_SCHEME; 
+typedef TPM_ALG_ID  TPMI_ALG_KDF;
+typedef TPM_ALG_ID  TPMI_ALG_SYM_OBJECT;
+typedef TPM_ALG_ID  TPMI_ALG_SYM_MODE;
+typedef TPM_ALG_ID  TPMI_ALG_ASYM_SCHEME;
+typedef TPM_ALG_ID  TPMI_ALG_RSA_SCHEME;
+
+typedef TPM_KEY_BITS TPMI_RSA_KEY_BITS;
+
+typedef TPMS_SCHEME_HASH TPMS_SCHEME_HMAC; 
+
 // Structured types
 
 #define SHA256_DIGEST_SIZE 32
@@ -121,6 +146,168 @@ typedef struct __packed {
     UINT16 size;
     BYTE buffer[sizeof(TPMU_HA)];
 } TPM2B_DIGEST;
+
+typedef struct __packed {
+    UINT16 size;
+    BYTE buffer[sizeof(LABEL_MAX_BUFFER)];
+} TPM2B_LABEL;
+
+typedef struct __packed {
+    TPM2B_LABEL label;
+    TPM2B_LABEL context;
+} TPMS_DERIVE;
+
+typedef struct __packed {
+    BYTE create[MAX_SYM_DATA];
+    TPMS_DERIVE derive;
+} TPMU_SENSITIVE_CREATE;
+
+typedef struct __packed {
+    UINT16 size;
+    BYTE buffer[sizeof(TPMU_SENSITIVE_CREATE)];
+} TPM2B_SENSITIVE_DATA;
+
+typedef struct __packed {
+    TPM2B_AUTH auth;
+    TPM2B_SENSITIVE_DATA data;
+} TPMS_SENSITIVE_CREATE;
+
+typedef struct __packed {
+    UINT16 size;
+    TPMS_SENSITIVE_CREATE sensitive;
+} TPM2B_SENSITIVE_CREATE;
+
+typedef struct __packed {
+    TPMI_ALG_HASH hashAlg;
+} TPMS_SCHEME_HASH;
+
+typedef struct __packed {
+    TPMI_ALG_HASH hashAlg; 
+    TPMI_ALG_KDF kdf; 
+} TPMS_SCHEME_XOR;
+
+typedef union __packed {
+    TPMS_SCHEME_HMAC hmac;
+    TPMS_SCHEME_XOR xor;
+    null;
+} TPMU_SCHEME_KEYEDHASH;
+
+typedef struct __packed {
+    TPMI_ALG_KEYEDHASH_SCHEME scheme; 
+    TPMU_SCHEME_KEYEDHASH details; 
+} TPMT_KEYEDHASH_SCHEME;
+
+typedef struct __packed {
+    TPMT_KEYEDHASH_SCHEME scheme; 
+} TPMS_KEYEDHASH_PARMS;
+
+typedef union __packed {
+    TPM_KEY_BITS sym;
+    TPMI_ALG_HASH xor;
+    null;
+} TPMU_SYM_KEY_BITS;
+
+typedef union __packed {
+    null;
+} TPMU_SYM_DETAILS;
+
+typedef union __packed {
+    TPMI_ALG_SYM_MODE sym; // modalità standard
+    null;
+} TPMU_SYM_MODE;
+
+typedef struct __packed {
+    TPMI_ALG_SYM_OBJECT algorithm; 
+    TPMU_SYM_KEY_BITS keyBits; 
+    TPMU_SYM_MODE mode;
+    TPMU_SYM_DETAILS details; 
+} TPMT_SYM_DEF_OBJECT;
+
+typedef struct __packed {
+    TPMT_SYM_DEF_OBJECT sym; 
+} TPMS_SYMCIPHER_PARMS;
+
+typedef struct __packed {
+    TPMI_ALG_RSA_SCHEME scheme;
+    TPMU_ASYM_SCHEME details;
+} TPMT_RSA_SCHEME;
+
+typedef struct __packed {
+    TPMT_SYM_DEF_OBJECT symmetric;
+    TPMT_RSA_SCHEME scheme;
+    TPMI_RSA_KEY_BITS keyBits;
+    UINT32 exponent;
+} TPMS_RSA_PARMS;
+
+typedef struct __packed {
+    UINT16 size;
+    BYTE buffer[sizeof(MAX_ECC_KEY_BYTES)];
+} TPM2B_ECC_PARAMETER;
+
+typedef struct __packed {
+    TPM2B_ECC_PARAMETER x;
+    TPM2B_ECC_PARAMETER y;
+} TPMS_ECC_PARMS;
+
+typedef struct __packed {
+    TPM2B_ECC_PARAMETER x;
+    TPM2B_ECC_PARAMETER y;
+} TPMS_ECC_POINT;
+
+typedef union __packed {
+    TPMS_SCHEME_HASH anySig;
+    null;
+} TPMU_ASYM_SCHEME;
+
+typedef struct __packed {
+    TPMI_ALG_ASYM_SCHEME scheme;
+    TPMU_ASYM_SCHEME details;
+} TPMT_ASYM_SCHEME;
+
+typedef struct __packed {
+    TPMT_SYM_DEF_OBJECT symmetric;
+    TPMT_ASYM_SCHEME scheme;
+} TPMS_ASYM_PARMS;
+
+typedef union __packed {
+    TPMS_KEYEDHASH_PARMS keyedHashDetail;
+    TPMS_SYMCIPHER_PARMS symDetail;
+    TPMS_RSA_PARMS rsaDetail;
+    TPMS_ECC_PARMS eccDetail;
+    TPMS_ASYM_PARMS asymDetail;
+} TPMU_PUBLIC_PARMS;
+
+typedef struct __packed {
+    UINT16 size;
+    BYTE buffer[sizeof(MAX_RSA_KEY_BYTES)];
+} TPM2B_PUBLIC_KEY_RSA;
+
+typedef struct __packed {
+    UINT16 size;
+    TPMS_ECC_POINT point;
+} TPM2B_ECC_POINT;
+
+typedef union __packed {
+    TPM2B_DIGEST keyedHash;
+    TPM2B_DIGEST sym;
+    TPM2B_PUBLIC_KEY_RSA rsa;
+    TPM2B_ECC_POINT ecc;
+    TPMS_DERIVE derive;
+} TPMU_PUBLIC_ID;
+
+typedef struct __packed {
+    TPMI_ALG_PUBLIC type; 
+    TPMI_ALG_HASH nameAlg; 
+    TPMA_OBJECT objectAttributes;
+    TPM2B_DIGEST authPolicy;
+    TPMU_PUBLIC_PARMS parameters;
+    TPMU_PUBLIC_ID unique;
+} TPMT_PUBLIC;
+
+typedef struct __packed {
+    UINT16 size;
+    TPMT_PUBLIC publicArea;
+} TPM2B_PUBLIC;
 
 // Headers
 typedef struct __packed {
@@ -135,15 +322,50 @@ typedef struct __packed {
     TPM_RC responseCode;
 } tpm_rsp_header_t;
 
+typedef struct __packed {
+    UINT16 size;
+    BYTE buffer[sizeof(TPMT_HA)];
+} TPM2B_DATA;
+
+typedef struct __packed {
+    TPMI_ALG_HASH hashAlg;
+    TPMU_HA digest;
+} TPMT_HA;
+
+typedef struct __packed {
+    UINT32 count;
+    TPMS_PCR_SELECTION pcrSelections[sizeof(HASH_COUNT)];
+} TPML_PCR_SELECTION;
+
+typedef struct __packed {
+    TPMI_ALG_HASH hash;
+    BYTE sizeofSelect;
+    BYTE pcrSelect[sizeof(PCR_SELECT_MAX)];
+} TPMS_PCR_SELECTION;
+
 // Input structures
 typedef struct __packed {
     UINT16 bytesRequested;
 } GetRandom_In;
 
+typedef struct __packed {
+    TPM2B_SENSITIVE_CREATE inSensitive;
+    TPM2B_PUBLIC inPublic;
+    TPM2B_DATA outsideInfo;
+    TPML_PCR_SELECTION creationPCR;
+} CreatePrimary_In;
+
 // Output structures
 typedef struct __packed {
     TPM2B_DIGEST randomBytes;
 } GetRandom_Out;
+
+typedef struct __packed {
+    TPM2B_PUBLIC outPublic;
+    TPM2B_CREATION_DATA creationData;
+    TPM2B_DIGEST creationHash;
+    TPMT_TK_CREATION creationTicket;
+} CreatePrimary_Out;
 
 /* Marshalling and unmarshalling layer */
 
