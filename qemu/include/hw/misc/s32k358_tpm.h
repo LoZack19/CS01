@@ -105,6 +105,7 @@ typedef uint16_t TPM_ST;
 typedef uint16_t TPMI_ST_COMMAND_TAG;
 #define TPM_ST_NO_SESSIONS 0x8001
 #define TPM_ST_SESSIONS    0x8002
+#define TPM_ST_CREATION 0x8021
 
 typedef uint8_t BYTE;
 typedef uint16_t UINT16;
@@ -116,10 +117,19 @@ typedef TPM2B_DIGEST TPM2B_AUTH;
 #define MAX_SYM_DATA 128
 #define MAX_ECC_KEY_BYTES 32
 #define MAX_RSA_KEY_BYTES 256
+#define TPM2_MAX_PCRS    24
+#define HASH_COUNT 3  // es: SHA1, SHA256, SHA384
 
+#define PCR_SELECT_MAX ((TPM2_MAX_PCRS + 7) / 8)
+
+typedef BYTE TPMA_LOCALITY;
 typedef UINT16 TPM_ALG_ID; 
 typedef UINT16 TPM_KEY_BITS;         
+typedef UINT16 TPM_ST;
 typedef UINT32 TPMA_OBJECT;     
+typedef UINT32 TPM_HANDLE;
+
+typedef TPM_HANDLE TPMI_RH_HIERARCHY;
 
 typedef TPM_ALG_ID  TPMI_ALG_PUBLIC; 
 typedef TPM_ALG_ID  TPMI_ALG_HASH; 
@@ -342,6 +352,37 @@ typedef struct __packed {
     BYTE sizeofSelect;
     BYTE pcrSelect[sizeof(PCR_SELECT_MAX)];
 } TPMS_PCR_SELECTION;
+
+typedef struct __packed {
+    UINT16 size;
+    TPMS_CREATION_DATA creationData;
+} TPM2B_CREATION_DATA;
+
+typedef struct __packed {
+    TPML_PCR_SELECTION pcrSelect;
+    TPM2B_DIGEST pcrDigest;
+    TPMA_LOCALITY locality;
+    TPM_ALG_ID parentNameAlg;
+    TPM2B_NAME parentName;
+    TPM2B_NAME parenQualifiedName;
+    TPM2B_DATA outsideInfo;
+} TPMS_CREATION_DATA;
+
+typedef struct __packed {
+    TPM_ST tag{TPM_ST_CREATION};
+    TPMI_RH_HIERARCHY hierarchy;
+    TPM2B_DIGEST digest;
+} TPMT_TK_CREATION;
+
+typedef struct __packed {
+    UINT16 size;
+    BYTE name[sizeof(TPMU_NAME)];
+} TPM2B_NAME;
+
+typedef union __packed {
+    TPMT_HA digest;
+    TPM_HANDLE handle;
+} TPMU_NAME;
 
 // Input structures
 typedef struct __packed {
