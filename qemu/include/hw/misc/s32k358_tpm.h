@@ -319,19 +319,6 @@ typedef struct __packed {
     TPMT_PUBLIC publicArea;
 } TPM2B_PUBLIC;
 
-// Headers
-typedef struct __packed {
-    TPMI_ST_COMMAND_TAG tag;
-    UINT32 commandSize;
-    TPM_CC commandCode;
-} tpm_cmd_header_t;
-
-typedef struct __packed {
-    TPM_ST tag;
-    UINT32 responseSize;
-    TPM_RC responseCode;
-} tpm_rsp_header_t;
-
 typedef struct __packed {
     UINT16 size;
     BYTE buffer[sizeof(TPMT_HA)];
@@ -384,6 +371,19 @@ typedef union __packed {
     TPM_HANDLE handle;
 } TPMU_NAME;
 
+// Headers
+typedef struct __packed {
+    TPMI_ST_COMMAND_TAG tag;
+    UINT32 commandSize;
+    TPM_CC commandCode;
+} tpm_cmd_header_t;
+
+typedef struct __packed {
+    TPM_ST tag;
+    UINT32 responseSize;
+    TPM_RC responseCode;
+} tpm_rsp_header_t;
+
 // Input structures
 typedef struct __packed {
     UINT16 bytesRequested;
@@ -406,6 +406,7 @@ typedef struct __packed {
     TPM2B_CREATION_DATA creationData;
     TPM2B_DIGEST creationHash;
     TPMT_TK_CREATION creationTicket;
+    TPM2B_NAME name; 
 } CreatePrimary_Out;
 
 /* Marshalling and unmarshalling layer */
