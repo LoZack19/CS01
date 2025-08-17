@@ -65,6 +65,133 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
             }
 
             return;
+
+        case TPM_CC_Sign:
+            {
+                Sign_In sign_in;
+                Sign_Out sign_out;
+                
+                if (cmd_header.commandSize != sizeof(tpm_cmd_header_t) + sizeof(sign_in)) {
+                    tpm_error_response(s, TPM_RC_COMMAND_SIZE);
+                    return;
+                }
+
+                sign_in_unmarshal(&s->infifo, (uint8_t *)&sign_in);
+                TPM_RC rc = TPM2_Sign(&sign_in, &sign_out);
+
+                if (rc != TPM_RC_SUCCESS) {
+                    tpm_error_response(s, rc);
+                } else {
+                    tpm_success_response(s, (const uint8_t *)&sign_out, sizeof(sign_out), sign_out_marshal);
+                }
+            }
+            return;
+
+        case TPM_CC_VerifySignature:
+            {
+                VerifySignature_In verify_in;
+                VerifySignature_Out verify_out;
+                
+                if (cmd_header.commandSize != sizeof(tpm_cmd_header_t) + sizeof(verify_in)) {
+                    tpm_error_response(s, TPM_RC_COMMAND_SIZE);
+                    return;
+                }
+
+                verify_signature_in_unmarshal(&s->infifo, (uint8_t *)&verify_in);
+                TPM_RC rc = TPM2_VerifySignature(&verify_in, &verify_out);
+
+                if (rc != TPM_RC_SUCCESS) {
+                    tpm_error_response(s, rc);
+                } else {
+                    tpm_success_response(s, (const uint8_t *)&verify_out, sizeof(verify_out), verify_signature_out_marshal);
+                }
+            }
+            return;
+
+        case TPM_CC_Hash:
+            {
+                Hash_In hash_in;
+                Hash_Out hash_out;
+                
+                if (cmd_header.commandSize != sizeof(tpm_cmd_header_t) + sizeof(hash_in)) {
+                    tpm_error_response(s, TPM_RC_COMMAND_SIZE);
+                    return;
+                }
+
+                hash_in_unmarshal(&s->infifo, (uint8_t *)&hash_in);
+                TPM_RC rc = TPM2_Hash(&hash_in, &hash_out);
+
+                if (rc != TPM_RC_SUCCESS) {
+                    tpm_error_response(s, rc);
+                } else {
+                    tpm_success_response(s, (const uint8_t *)&hash_out, sizeof(hash_out), hash_out_marshal);
+                }
+            }
+            return;
+
+        case TPM_CC_EncryptDecrypt2:
+            {
+                EncryptDecrypt2_In encrypt_in;
+                EncryptDecrypt2_Out encrypt_out;
+                
+                if (cmd_header.commandSize != sizeof(tpm_cmd_header_t) + sizeof(encrypt_in)) {
+                    tpm_error_response(s, TPM_RC_COMMAND_SIZE);
+                    return;
+                }
+
+                encrypt_decrypt2_in_unmarshal(&s->infifo, (uint8_t *)&encrypt_in);
+                TPM_RC rc = TPM2_EncryptDecrypt2(&encrypt_in, &encrypt_out);
+
+                if (rc != TPM_RC_SUCCESS) {
+                    tpm_error_response(s, rc);
+                } else {
+                    tpm_success_response(s, (const uint8_t *)&encrypt_out, sizeof(encrypt_out), encrypt_decrypt2_out_marshal);
+                }
+            }
+            return;
+
+        case TPM_CC_RSA_Encrypt:
+            {
+                RSA_Encrypt_In rsa_encrypt_in;
+                RSA_Encrypt_Out rsa_encrypt_out;
+                
+                if (cmd_header.commandSize != sizeof(tpm_cmd_header_t) + sizeof(rsa_encrypt_in)) {
+                    tpm_error_response(s, TPM_RC_COMMAND_SIZE);
+                    return;
+                }
+
+                rsa_encrypt_in_unmarshal(&s->infifo, (uint8_t *)&rsa_encrypt_in);
+                TPM_RC rc = TPM2_RSA_Encrypt(&rsa_encrypt_in, &rsa_encrypt_out);
+
+                if (rc != TPM_RC_SUCCESS) {
+                    tpm_error_response(s, rc);
+                } else {
+                    tpm_success_response(s, (const uint8_t *)&rsa_encrypt_out, sizeof(rsa_encrypt_out), rsa_encrypt_out_marshal);
+                }
+            }
+            return;
+
+        case TPM_CC_RSA_Decrypt:
+            {
+                RSA_Decrypt_In rsa_decrypt_in;
+                RSA_Decrypt_Out rsa_decrypt_out;
+                
+                if (cmd_header.commandSize != sizeof(tpm_cmd_header_t) + sizeof(rsa_decrypt_in)) {
+                    tpm_error_response(s, TPM_RC_COMMAND_SIZE);
+                    return;
+                }
+
+                rsa_decrypt_in_unmarshal(&s->infifo, (uint8_t *)&rsa_decrypt_in);
+                TPM_RC rc = TPM2_RSA_Decrypt(&rsa_decrypt_in, &rsa_decrypt_out);
+
+                if (rc != TPM_RC_SUCCESS) {
+                    tpm_error_response(s, rc);
+                } else {
+                    tpm_success_response(s, (const uint8_t *)&rsa_decrypt_out, sizeof(rsa_decrypt_out), rsa_decrypt_out_marshal);
+                }
+            }
+            return;
+
         default: /* unimplemented command */
             qemu_log_mask(LOG_GUEST_ERROR, "(ERROR) TPM: Unimplemented command\n");
             tpm_error_response(s, TPM_RC_COMMAND_CODE);

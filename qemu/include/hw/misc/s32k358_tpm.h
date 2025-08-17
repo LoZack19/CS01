@@ -31,7 +31,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(S32k358TPMState, S32K358_TPM)
 #define TPM_INT_STATUS_RST      0x00000000
 #define TPM_INTF_CAPS_RST       0x00000000
 #define TPM_STS_RST             0x00000000
-    #define TPM_STS_burstCount_RST      64
+#define TPM_STS_burstCount_RST      64
 #define TPM_DATA_FIFO_RST       0x00000000
 #define TPM_INTERFACE_ID_RST    0x00000000
 #define TPM_XDATA_FIFO_RST      0x00000000
@@ -69,17 +69,17 @@ struct S32k358TPMState {
 };
 
 REG8(TPM_ACCESS,        0x0000)  // Access Control Register
-    FIELD(TPM_ACCESS, requestUse, 1, 1)
-    FIELD(TPM_ACCESS, activeLocality, 5, 1)
+FIELD(TPM_ACCESS, requestUse, 1, 1)
+FIELD(TPM_ACCESS, activeLocality, 5, 1)
 REG32(TPM_INT_ENABLE,   0x0008)  // Interrupt Enable Register
 REG8(TPM_INT_VECTOR,    0x000C)  // Interrupt Vector Register
 REG32(TPM_INT_STATUS,   0x0010)  // Interrupt Status Register
 REG32(TPM_INTF_CAPS,    0x0014)  // Interface Capabilities Register
 REG32(TPM_STS,          0x0018)  // Status Register
-    FIELD(TPM_STS, burstCount, 8, 16)
-    FIELD(TPM_STS, commandReady, 6, 1) // Start receiving
-    FIELD(TPM_STS, tpmGo, 5, 1) // Start command execution
-    FIELD(TPM_STS, dataAvail, 4, 1)
+FIELD(TPM_STS, burstCount, 8, 16)
+FIELD(TPM_STS, commandReady, 6, 1) // Start receiving
+FIELD(TPM_STS, tpmGo, 5, 1) // Start command execution
+FIELD(TPM_STS, dataAvail, 4, 1)
 REG32(TPM_DATA_FIFO,    0x0024)  // Data Register (ReadFIFO / WriteFIFO depending on direction)
 REG32(TPM_INTERFACE_ID, 0x0030)  // Interface ID Register
 REG32(TPM_XDATA_FIFO,   0x0080)  // Extended Data FIFO Register (ReadFIFO / WriteFIFO depending on direction)
@@ -92,6 +92,12 @@ REG8(TPM_RID,           0x0F04)  // Revision ID Register
 
 typedef uint32_t TPM_CC;
 #define TPM_CC_GetRandom 0x0000017B
+#define TPM_CC_Sign 0x0000015D
+#define TPM_CC_VerifySignature 0x00000177
+#define TPM_CC_Hash 0x0000017D
+#define TPM_CC_EncryptDecrypt2 0x00000143
+#define TPM_CC_RSA_Encrypt 0x00000173
+#define TPM_CC_RSA_Decrypt 0x00000174
 
 typedef uint32_t TPM_RC;
 #define TPM_RC_SUCCESS 0x000
@@ -99,6 +105,12 @@ typedef uint32_t TPM_RC;
 #define RC_VER1 0x100
 #define TPM_RC_COMMAND_SIZE (RC_VER1 + 0x42)
 #define TPM_RC_COMMAND_CODE (RC_VER1 + 0x43)
+#define TPM_RC_KEY 0x00000027
+#define TPM_RC_SIGNATURE 0x00000026
+#define TPM_RC_HASH 0x00000028
+#define TPM_RC_VALUE 0x00000004
+#define TPM_RC_ALG 0x0000001E
+#define TPM_RC_MODE 0x0000001F
 
 typedef uint16_t TPM_ST;
 typedef uint16_t TPMI_ST_COMMAND_TAG;
@@ -106,6 +118,7 @@ typedef uint16_t TPMI_ST_COMMAND_TAG;
 #define TPM_ST_SESSIONS    0x8002
 
 typedef uint8_t BYTE;
+typedef uint8_t UINT8;
 typedef uint16_t UINT16;
 typedef uint32_t UINT32;
 
@@ -145,6 +158,118 @@ typedef struct __packed {
     TPM2B_DIGEST randomBytes;
 } GetRandom_Out;
 
+// Cryptographic operation structures
+typedef struct __packed {
+    UINT16 dataSize;
+    BYTE data[256]; // Max data size for simplicity
+} TPM2B_DATA;
+
+typedef struct __packed {
+    UINT16 signatureSize;
+    BYTE signature[256]; // Max signature size (supports RSA-2048 signatures)
+} TPM2B_SIGNATURE;
+
+typedef struct __packed {
+    UINT16 keySize;
+    BYTE key[256]; // Max key size
+} TPM2B_KEY;
+
+// Sign command
+typedef struct __packed {
+    TPM2B_KEY keyHandle;
+    TPM2B_DATA data;
+} Sign_In;
+
+typedef struct __packed {
+    TPM2B_SIGNATURE signature;
+} Sign_Out;
+
+// VerifySignature command
+typedef struct __packed {
+    TPM2B_KEY keyHandle;
+    TPM2B_DATA data;
+    TPM2B_SIGNATURE signature;
+} VerifySignature_In;
+
+typedef struct __packed {
+    UINT8 verification;
+} VerifySignature_Out;
+
+// Hash command
+typedef struct __packed {
+    TPM2B_DATA data;
+} Hash_In;
+
+typedef struct __packed {
+    TPM2B_DIGEST digest;
+} Hash_Out;
+
+// TPM 2.0 Symmetric Algorithm Types
+#define TPM_ALG_AES     0x0006
+#define TPM_ALG_SM4     0x0012
+#define TPM_ALG_CAMELLIA 0x0013
+#define TPM_ALG_TDES    0x0010
+
+// TPM 2.0 Symmetric Modes
+#define TPM_ALG_ECB     0x0044
+#define TPM_ALG_CBC     0x0042
+#define TPM_ALG_CFB     0x0043
+#define TPM_ALG_OFB     0x0045
+#define TPM_ALG_CTR     0x0040
+#define TPM_ALG_XTS     0x0041
+
+// TPM 2.0 Symmetric Definition Object (TPMT_SYM_DEF_OBJECT)
+typedef struct __packed {
+    UINT16 algorithm;             // TPM_ALG_* algorithm (AES, SM4, etc.)
+    UINT16 mode;                  // TPM_ALG_* mode (ECB, CBC, etc.)
+    UINT16 keyBits;               // Key size in bits
+} TPMT_SYM_DEF_OBJECT;
+
+// TPM 2.0 IV structure
+typedef struct __packed {
+    UINT16 ivSize;
+    BYTE iv[16]; // Max IV size for AES
+} TPM2B_IV;
+
+// TPM 2.0 Max Buffer (larger than TPM2B_DATA)
+typedef struct __packed {
+    UINT16 bufferSize;
+    BYTE buffer[1024]; // Larger buffer for symmetric operations
+} TPM2B_MAX_BUFFER;
+
+// EncryptDecrypt2 command (TPM 2.0 compliant)
+typedef struct __packed {
+    TPM2B_KEY keyHandle;          // Symmetric key handle
+    UINT8 decrypt;                // 0=encrypt, 1=decrypt
+    TPMT_SYM_DEF_OBJECT symDef;   // Symmetric definition
+    TPM2B_IV ivIn;                // Input IV (for chaining modes)
+    TPM2B_MAX_BUFFER inData;      // Data to encrypt/decrypt
+} EncryptDecrypt2_In;
+
+typedef struct __packed {
+    TPM2B_MAX_BUFFER outData;     // Encrypted/decrypted data
+    TPM2B_IV ivOut;               // Output IV (for chaining modes)
+} EncryptDecrypt2_Out;
+
+// RSA Encrypt/Decrypt commands
+typedef struct __packed {
+    TPM2B_KEY keyHandle;
+    TPM2B_DATA data;
+} RSA_Encrypt_In;
+
+typedef struct __packed {
+    TPM2B_DATA encrypted;
+} RSA_Encrypt_Out;
+
+typedef struct __packed {
+    TPM2B_KEY keyHandle;
+    TPM2B_DATA encrypted;
+} RSA_Decrypt_In;
+
+typedef struct __packed {
+    TPM2B_DATA decrypted;
+} RSA_Decrypt_Out;
+
 /* Marshalling and unmarshalling layer */
 
 // Endianness conversion functions
@@ -161,6 +286,20 @@ void tpm_rsp_header_marshal(Fifo8 *fifo, const tpm_rsp_header_t *header);
 void get_random_in_unmarshal(Fifo8 *fifo, uint8_t *in);
 void get_random_out_marshal(Fifo8 *fifo, const uint8_t *out);
 
+// Cryptographic operation marshaling functions
+void sign_in_unmarshal(Fifo8 *fifo, uint8_t *in);
+void sign_out_marshal(Fifo8 *fifo, const uint8_t *out);
+void verify_signature_in_unmarshal(Fifo8 *fifo, uint8_t *in);
+void verify_signature_out_marshal(Fifo8 *fifo, const uint8_t *out);
+void hash_in_unmarshal(Fifo8 *fifo, uint8_t *in);
+void hash_out_marshal(Fifo8 *fifo, const uint8_t *out);
+void encrypt_decrypt2_in_unmarshal(Fifo8 *fifo, uint8_t *in);
+void encrypt_decrypt2_out_marshal(Fifo8 *fifo, const uint8_t *out);
+void rsa_encrypt_in_unmarshal(Fifo8 *fifo, uint8_t *in);
+void rsa_encrypt_out_marshal(Fifo8 *fifo, const uint8_t *out);
+void rsa_decrypt_in_unmarshal(Fifo8 *fifo, uint8_t *in);
+void rsa_decrypt_out_marshal(Fifo8 *fifo, const uint8_t *out);
+
 /* TPM Commands */
 
 // Response functions
@@ -169,5 +308,11 @@ void tpm_success_response(S32k358TPMState *s, const uint8_t *data, size_t size, 
 
 // TPM Commands
 TPM_RC TPM2_GetRandom(GetRandom_In *in, GetRandom_Out *out);
+TPM_RC TPM2_Sign(Sign_In *in, Sign_Out *out);
+TPM_RC TPM2_VerifySignature(VerifySignature_In *in, VerifySignature_Out *out);
+TPM_RC TPM2_Hash(Hash_In *in, Hash_Out *out);
+TPM_RC TPM2_EncryptDecrypt2(EncryptDecrypt2_In *in, EncryptDecrypt2_Out *out);
+TPM_RC TPM2_RSA_Encrypt(RSA_Encrypt_In *in, RSA_Encrypt_Out *out);
+TPM_RC TPM2_RSA_Decrypt(RSA_Decrypt_In *in, RSA_Decrypt_Out *out);
 
 #endif
