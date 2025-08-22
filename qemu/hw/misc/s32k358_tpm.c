@@ -44,7 +44,7 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
 
             GetRandom_In get_random_in;
             GetRandom_Out get_random_out;
-            
+
             // Check if the command size is coherent with the expected size
             if (cmd_header.commandSize != sizeof(tpm_cmd_header_t) + sizeof(get_random_in)) {
                 tpm_error_response(s, TPM_RC_COMMAND_SIZE);
@@ -64,6 +64,37 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
                 tpm_success_response(s, (const uint8_t *)&get_random_out, sizeof(get_random_out), get_random_out_marshal);
             }
 
+            return;
+        case TPM_CC_CreatePrimary:
+            CreatePrimary_In createprimary_in;
+            CreatePrimary_Out createprimary_out;
+
+            // ⚠️ La dimensione attesa varia molto, perché gli input hanno campi variabili (2B + buffer)
+            // quindi NON puoi fare un semplice check fisso come con GetRandom.
+            // Per ora saltiamo il check rigoroso:
+            if (cmd_header.commandSize < sizeof(tpm_cmd_header_t)) {
+                tpm_error_response(s, TPM_RC_COMMAND_SIZE);
+                return;
+            }
+
+            // Unmarshal l’input (da implementare in createprimary_in_unmarshal)
+            createprimary_in_unmarshal(&s->infifo, &createprimary_in);
+
+            // Esegui il comando TPM2_CreatePrimary (da implementare)
+            TPM_RC rc = TPM2_CreatePrimary(&createprimary_in, &createprimary_out);
+
+            // Risposta
+            if (rc != TPM_RC_SUCCESS) {
+                tpm_error_response(s, rc);
+            } else {
+                // Marshalling dell’output (da implementare)
+                tpm_success_response(
+                    s,
+                    (const uint8_t *)&createprimary_out,
+                    sizeof(createprimary_out),   // ⚠️ attento: output size variabile
+                    createprimary_out_marshal
+                );
+            }
             return;
         default: /* unimplemented command */
             qemu_log_mask(LOG_GUEST_ERROR, "(ERROR) TPM: Unimplemented command\n");
@@ -97,7 +128,7 @@ static void s32k358_tpm_write(void *opaque, hwaddr offset, uint64_t value, unsig
     S32k358TPMState *s = opaque;
     switch (offset) {
         case A_TPM_ACCESS:
-        
+
             // If activeLocality is set, clear it and relinquish control
             if (value & R_TPM_ACCESS_activeLocality_MASK) {
                 s->tpm_access &= ~R_TPM_ACCESS_activeLocality_MASK;
@@ -111,7 +142,7 @@ static void s32k358_tpm_write(void *opaque, hwaddr offset, uint64_t value, unsig
                 s->tpm_access &= ~R_TPM_ACCESS_requestUse_MASK;
                 s->tpm_access |= R_TPM_ACCESS_activeLocality_MASK;
             }
-        
+
         break;
         case A_TPM_DATA_FIFO:
             if (fifo8_is_full(&s->infifo)) {
@@ -128,7 +159,7 @@ static void s32k358_tpm_write(void *opaque, hwaddr offset, uint64_t value, unsig
             }
             break;
         case A_TPM_STS:
-                    
+
             // If commandReady is set, transition status to ready
             // Now bytes can be accepted in the input FIFO
             if (value & R_TPM_STS_commandReady_MASK) {
@@ -187,7 +218,7 @@ static void s32k358_tpm_init(Object *obj)
 {
     S32k358TPMState *s = S32K358_TPM(obj);
     SysBusDevice *sbd = SYS_BUS_DEVICE(obj);
-    
+
     fifo8_create(&s->infifo, S32K358_TPM_INFIFO_SIZE);
     fifo8_create(&s->outfifo, S32K358_TPM_OUTFIFO_SIZE);
 

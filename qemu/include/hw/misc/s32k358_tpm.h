@@ -123,17 +123,17 @@ typedef TPM2B_DIGEST TPM2B_AUTH;
 #define PCR_SELECT_MAX ((TPM2_MAX_PCRS + 7) / 8)
 
 typedef BYTE TPMA_LOCALITY;
-typedef UINT16 TPM_ALG_ID; 
-typedef UINT16 TPM_KEY_BITS;         
+typedef UINT16 TPM_ALG_ID;
+typedef UINT16 TPM_KEY_BITS;
 typedef UINT16 TPM_ST;
-typedef UINT32 TPMA_OBJECT;     
+typedef UINT32 TPMA_OBJECT;
 typedef UINT32 TPM_HANDLE;
 
 typedef TPM_HANDLE TPMI_RH_HIERARCHY;
 
-typedef TPM_ALG_ID  TPMI_ALG_PUBLIC; 
-typedef TPM_ALG_ID  TPMI_ALG_HASH; 
-typedef TPM_ALG_ID  TPMI_ALG_KEYEDHASH_SCHEME; 
+typedef TPM_ALG_ID  TPMI_ALG_PUBLIC;
+typedef TPM_ALG_ID  TPMI_ALG_HASH;
+typedef TPM_ALG_ID  TPMI_ALG_KEYEDHASH_SCHEME;
 typedef TPM_ALG_ID  TPMI_ALG_KDF;
 typedef TPM_ALG_ID  TPMI_ALG_SYM_OBJECT;
 typedef TPM_ALG_ID  TPMI_ALG_SYM_MODE;
@@ -142,7 +142,7 @@ typedef TPM_ALG_ID  TPMI_ALG_RSA_SCHEME;
 
 typedef TPM_KEY_BITS TPMI_RSA_KEY_BITS;
 
-typedef TPMS_SCHEME_HASH TPMS_SCHEME_HMAC; 
+typedef TPMS_SCHEME_HASH TPMS_SCHEME_HMAC;
 
 // Structured types
 
@@ -192,8 +192,8 @@ typedef struct __packed {
 } TPMS_SCHEME_HASH;
 
 typedef struct __packed {
-    TPMI_ALG_HASH hashAlg; 
-    TPMI_ALG_KDF kdf; 
+    TPMI_ALG_HASH hashAlg;
+    TPMI_ALG_KDF kdf;
 } TPMS_SCHEME_XOR;
 
 typedef union __packed {
@@ -203,8 +203,8 @@ typedef union __packed {
 } TPMU_SCHEME_KEYEDHASH;
 
 typedef struct __packed {
-    TPMI_ALG_KEYEDHASH_SCHEME scheme; 
-    TPMU_SCHEME_KEYEDHASH details; 
+    TPMI_ALG_KEYEDHASH_SCHEME scheme;
+    TPMU_SCHEME_KEYEDHASH details;
 } TPMT_KEYEDHASH_SCHEME;
 
 typedef struct __packed {
@@ -425,6 +425,9 @@ void tpm_rsp_header_marshal(Fifo8 *fifo, const tpm_rsp_header_t *header);
 void get_random_in_unmarshal(Fifo8 *fifo, uint8_t *in);
 void get_random_out_marshal(Fifo8 *fifo, const uint8_t *out);
 
+void create_primary_in_unmarshal(Fifo8 *fifo, uint8_t *in);
+void create_primary_out_marshal(Fifo8 *fifo, const uint8_t *out);
+
 /* TPM Commands */
 
 // Response functions
@@ -433,5 +436,6 @@ void tpm_success_response(S32k358TPMState *s, const uint8_t *data, size_t size, 
 
 // TPM Commands
 TPM_RC TPM2_GetRandom(GetRandom_In *in, GetRandom_Out *out);
+TPM_RC TPM2_CreatePrimary(CreatePrimary_In *in, CreatePrimary_Out *out);
 
 #endif
