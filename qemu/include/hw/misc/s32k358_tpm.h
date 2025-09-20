@@ -88,29 +88,90 @@ REG8(TPM_RID,           0x0F04)  // Revision ID Register
 
 /* TPM specific types */
 
+// Constants
+
+#define TPM_NT_ORDINARY 0x0
+#define TPM_NT_COUNTER 0x1
+#define TPM_NT_BITS 0x2
+#define TPM_NT_EXTEND 0x4
+#define TPM_NT_PIN_FAIL 0x8
+#define TPM_NT_PIN_PASS 0x9
+
 // Basic definitions
 
 typedef uint32_t TPM_CC;
 #define TPM_CC_GetRandom 0x0000017B
+#define TPM_CC_NV_DefineSpace 0x0000012A
 
+// Response Codes
 typedef uint32_t TPM_RC;
-#define TPM_RC_SUCCESS 0x000
-#define TPM_RC_BAD_TAG 0x01E
-#define RC_VER1 0x100
-#define TPM_RC_COMMAND_SIZE (RC_VER1 + 0x42)
-#define TPM_RC_COMMAND_CODE (RC_VER1 + 0x43)
+#define TPM_RC_SUCCESS      (TPM_RC)0x000
+#define TPM_RC_H            (TPM_RC)(0x000)  /* Error due to handle */
+#define TPM_RC_P            (TPM_RC)(0x040)  /* Error due to parameter */
+#define TPM_RC_(n)          (TPM_RC)((n) << 8)
+#define TPM_RC_1            (TPM_RC)(TPM_RC_(1))  /* first (modifier) */
+#define TPM_RC_2            (TPM_RC)(TPM_RC_(2))  /* second (modifier) */
+#define TPM_RC_3            (TPM_RC)(TPM_RC_(3))  /* third (modifier) */
+#define TPM_RC_BAD_TAG      (TPM_RC)0x01E
+#define RC_VER1             (TPM_RC)0x100
+#define TPM_RC_COMMAND_SIZE (TPM_RC)(RC_VER1 + 0x42)
+#define TPM_RC_COMMAND_CODE (TPM_RC)(RC_VER1 + 0x43)
+#define TPM_RC_NV_DEFINED   (TPM_RC)(RC_VER1 + 0x4C)
+#define RC_FMT1             (TPM_RC)(0x080)
+#define TPM_RC_ATTRIBUTES   (TPM_RC)(RC_FMT1 + 0x002)
+#define TPM_RCS_ATTRIBUTES  (TPM_RC)(RC_FMT1 + 0x002)
+#define TPM_RC_HIERARCHY    (TPM_RC)(RC_FMT1 + 0x005)
+#define TPM_RCS_HIERARCHY   (TPM_RC)(RC_FMT1 + 0x005)
+#define TPM_RC_HANDLE       (TPM_RC)(RC_FMT1 + 0x00B)
+#define TPM_RCS_HANDLE      (TPM_RC)(RC_FMT1 + 0x00B)
+#define TPM_RCS_SIZE        (TPM_RC)(RC_FMT1 + 0x015)
+
+
+// Response Code Modifiers
+#define RC_NV_DefineSpace_authHandle (TPM_RC_H + TPM_RC_1)
+#define RC_NV_DefineSpace_auth       (TPM_RC_P + TPM_RC_1)
+#define RC_NV_DefineSpace_publicInfo (TPM_RC_P + TPM_RC_2)
 
 typedef uint16_t TPM_ST;
 typedef uint16_t TPMI_ST_COMMAND_TAG;
 #define TPM_ST_NO_SESSIONS 0x8001
 #define TPM_ST_SESSIONS    0x8002
 
+typedef uint8_t BOOL;
 typedef uint8_t BYTE;
+typedef uint8_t UINT8;
 typedef uint16_t UINT16;
 typedef uint32_t UINT32;
 
-// Structured types
+typedef UINT8 TPM_HT;
 
+typedef UINT16 TPM_ALG_ID;
+
+typedef UINT32 TPM_HANDLE;
+
+// Restriction of basic types
+#define TPM_RH_OWNER 0x40000001
+#define TPM_RH_PLATFORM 0x4000000C
+typedef TPM_HANDLE TPMI_RH_PROVISION;
+
+#define TPM_HT_NV_INDEX 0x01
+#define HR_SHIFT 24
+#define HR_NV_INDEX (TPM_HT_NV_INDEX << HR_SHIFT)
+#define NV_INDEX_FIRST (HR_NV_INDEX + 0)
+#define NV_INDEX_LAST (NV_INDEX_FIRST + 0x00FFFFFF)
+typedef TPM_HANDLE TPMI_RH_NV_LEGACY_INDEX;
+
+/* #define TPM_ALG_!ALG.H */
+#define TPM_ALG_NULL 0x0010
+typedef TPM_ALG_ID TPMI_ALG_HASH;
+
+// Access to bitfields
+#define IS_ATTRIBUTE(a, type, b)    ((a.b) != 0)
+#define SET_ATTRIBUTE(a, type, b)   (a.b = SET)
+#define CLEAR_ATTRIBUTE(a, type, b) (a.b = CLEAR)
+#define GET_ATTRIBUTE(a, type, b)   (a.b)
+
+// Structured types
 #define SHA256_DIGEST_SIZE 32
 
 typedef union __packed {
@@ -121,6 +182,49 @@ typedef struct __packed {
     UINT16 size;
     BYTE buffer[sizeof(TPMU_HA)];
 } TPM2B_DIGEST;
+
+#define MAX_NV_INDEX_SIZE 512
+typedef struct __packed {
+    TPMI_RH_NV_LEGACY_INDEX nvIndex;
+    TPMI_ALG_HASH nameAlg;
+    TPMA_NV attributes;
+    TPM2B_DIGEST authPolicy;
+    UINT16 dataSize;  // {:MAX_NV_INDEX_SIZE}
+} TPMS_NV_PUBLIC;
+
+typedef struct __packed {
+    UINT16 size;  // needs validation against actual size
+    TPMS_NV_PUBLIC nvPublic;
+} TPM2B_NV_PUBLIC;
+
+typedef struct __packed {
+    UINT32 PPWRITE             : 1;
+    UINT32 OWNERWRITE          : 1;
+    UINT32 AUTHWRITE           : 1;
+    UINT32 POLICYWRITE         : 1;
+    UINT32 TPM_NT              : 4;
+    UINT32 Reserved_bits_at_8  : 2;
+    UINT32 POLICY_DELETE       : 1;
+    UINT32 WRITELOCKED         : 1;
+    UINT32 WRITEALL            : 1;
+    UINT32 WRITEDEFINE         : 1;
+    UINT32 WRITE_STCLEAR       : 1;
+    UINT32 GLOBALLOCK          : 1;
+    UINT32 PPREAD              : 1;
+    UINT32 OWNERREAD           : 1;
+    UINT32 AUTHREAD            : 1;
+    UINT32 POLICYREAD          : 1;
+    UINT32 Reserved_bits_at_20 : 5;
+    UINT32 NO_DA               : 1;
+    UINT32 ORDERLY             : 1;
+    UINT32 CLEAR_STCLEAR       : 1;
+    UINT32 READLOCKED          : 1;
+    UINT32 WRITTEN             : 1;
+    UINT32 PLATFORMCREATE      : 1;
+    UINT32 READ_STCLEAR        : 1;
+} TPMA_NV;
+
+typedef TPM2B_DIGEST TPM2B_AUTH;
 
 // Headers
 typedef struct __packed {
@@ -140,6 +244,12 @@ typedef struct __packed {
     UINT16 bytesRequested;
 } GetRandom_In;
 
+typedef struct __packed {
+    TPMI_RH_PROVISION authHandle;
+    TPM2B_AUTH auth;
+    TPM2B_NV_PUBLIC publicInfo;
+} NV_DefineSpace_In;
+
 // Output structures
 typedef struct __packed {
     TPM2B_DIGEST randomBytes;
@@ -148,6 +258,7 @@ typedef struct __packed {
 /* Marshalling and unmarshalling layer */
 
 // Endianness conversion functions
+UINT8 read_be8(Fifo8 *fifo);
 UINT16 read_be16(Fifo8 *fifo);
 UINT32 read_be32(Fifo8 *fifo);
 void write_be16(Fifo8 *fifo, UINT16 value);
@@ -158,6 +269,7 @@ void tpm_cmd_header_unmarshal(Fifo8 *fifo, tpm_cmd_header_t *header);
 void tpm_rsp_header_marshal(Fifo8 *fifo, const tpm_rsp_header_t *header);
 
 // Command specific marshalling functions
+void nv_define_space_in_unmarshal(Fifo8 *fifo, uint8_t *in);
 void get_random_in_unmarshal(Fifo8 *fifo, uint8_t *in);
 void get_random_out_marshal(Fifo8 *fifo, const uint8_t *out);
 
@@ -169,5 +281,8 @@ void tpm_success_response(S32k358TPMState *s, const uint8_t *data, size_t size, 
 
 // TPM Commands
 TPM_RC TPM2_GetRandom(GetRandom_In *in, GetRandom_Out *out);
+
+// Non-volatile Storage
+TPM_RC TPM2_NV_DefineSpace(NV_DefineSpace_In *in);
 
 #endif

@@ -65,6 +65,31 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
             }
 
             return;
+        
+        case TPM_CC_NV_DefineSpace:
+            NV_DefineSpace_In nv_define_space_in;
+
+            // Check if the command size is coherent with the expected size
+            if (cmd_header.commandSize != sizeof(tpm_cmd_header_t) + sizeof(nv_define_space_in)) {
+                tpm_error_response(s, TPM_RC_COMMAND_SIZE);
+                return;
+            }
+
+            // Unmarshal the NV_DefineSpace input
+            nv_define_space_in_unmarshal(&s->infifo, (uint8_t *)&nv_define_space_in);
+
+            // Execute command
+            TPM_RC rc = TPM2_NV_DefineSpace(&nv_define_space_in);
+
+            // Generate response
+            if (rc != TPM_RC_SUCCESS) {
+                tpm_error_response(s, rc);
+            } else {
+                tpm_success_response(s, NULL, 0, NULL);
+            }
+
+            return;
+
         default: /* unimplemented command */
             qemu_log_mask(LOG_GUEST_ERROR, "(ERROR) TPM: Unimplemented command\n");
             tpm_error_response(s, TPM_RC_COMMAND_CODE);
