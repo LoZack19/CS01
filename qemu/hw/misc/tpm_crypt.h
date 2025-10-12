@@ -32,6 +32,32 @@ void CryptDecrypt(const uint8_t *encrypted, uint16_t dataSize,
                   const uint8_t *key, uint16_t keySize,
                   uint8_t *decrypted);
 
+/* AES mode wrappers without padding (lengths must be multiples per mode rules) */
+void TPM_AES_ECB_Encrypt(const uint8_t *in, size_t dataSize,
+                         const uint8_t *key, uint16_t keySize,
+                         uint8_t *out);
+void TPM_AES_ECB_Decrypt(const uint8_t *in, size_t dataSize,
+                         const uint8_t *key, uint16_t keySize,
+                         uint8_t *out);
+void TPM_AES_CBC_Encrypt(const uint8_t *in, size_t dataSize,
+                         const uint8_t *key, uint16_t keySize,
+                         const uint8_t *iv, uint8_t *out, uint8_t *ivOut);
+void TPM_AES_CBC_Decrypt(const uint8_t *in, size_t dataSize,
+                         const uint8_t *key, uint16_t keySize,
+                         const uint8_t *iv, uint8_t *out, uint8_t *ivOut);
+void TPM_AES_CFB_Encrypt(const uint8_t *in, size_t dataSize,
+                         const uint8_t *key, uint16_t keySize,
+                         const uint8_t *iv, uint8_t *out, uint8_t *ivOut);
+void TPM_AES_CFB_Decrypt(const uint8_t *in, size_t dataSize,
+                         const uint8_t *key, uint16_t keySize,
+                         const uint8_t *iv, uint8_t *out, uint8_t *ivOut);
+void TPM_AES_OFB_Process(const uint8_t *in, size_t dataSize,
+                         const uint8_t *key, uint16_t keySize,
+                         const uint8_t *iv, uint8_t *out, uint8_t *ivOut);
+void TPM_AES_CTR_Process(const uint8_t *in, size_t dataSize,
+                         const uint8_t *key, uint16_t keySize,
+                         const uint8_t *iv, uint8_t *out, uint8_t *ivOut);
+
 /* PKCS#7 padding helpers */
 uint16_t PKCS7_Pad(const uint8_t *data, uint16_t dataSize, uint8_t *out);
 uint16_t PKCS7_Unpad(const uint8_t *data, uint16_t dataSize, uint8_t *out);

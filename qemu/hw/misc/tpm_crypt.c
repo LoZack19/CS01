@@ -324,6 +324,169 @@ static void AES_DecryptBlock(const BYTE *ciphertext, const BYTE *roundKeys, UINT
     AES_InvShiftRows(state); AES_InvSubBytes(state); AES_AddRoundKey(state, roundKeys); memcpy(plaintext, state, 16);
 }
 
+/* Mode helpers (no padding) */
+static void AES_CBC_Encrypt(const BYTE *plaintext, size_t dataSize, const BYTE *key, UINT16 keySize,
+                            const BYTE *iv, BYTE *ciphertext, BYTE *ivOut) {
+    UINT16 numRounds = (keySize == 16) ? 10 : (keySize == 24) ? 12 : 14;
+    BYTE roundKeys[240];
+    AES_KeyExpansion(key, keySize, roundKeys);
+    BYTE currentIV[16];
+    memcpy(currentIV, iv, 16);
+    for (size_t i = 0; i < dataSize; i += 16) {
+        BYTE block[16];
+        for (int j = 0; j < 16; j++) {
+            block[j] = plaintext[i + j] ^ currentIV[j];
+        }
+        AES_EncryptBlock(block, roundKeys, numRounds, &ciphertext[i]);
+        memcpy(currentIV, &ciphertext[i], 16);
+    }
+    memcpy(ivOut, currentIV, 16);
+}
+
+static void AES_CBC_Decrypt(const BYTE *ciphertext, size_t dataSize, const BYTE *key, UINT16 keySize,
+                            const BYTE *iv, BYTE *plaintext, BYTE *ivOut) {
+    UINT16 numRounds = (keySize == 16) ? 10 : (keySize == 24) ? 12 : 14;
+    BYTE roundKeys[240];
+    AES_KeyExpansion(key, keySize, roundKeys);
+    BYTE currentIV[16];
+    memcpy(currentIV, iv, 16);
+    for (size_t i = 0; i < dataSize; i += 16) {
+        BYTE block[16];
+        BYTE nextIV[16];
+        memcpy(nextIV, &ciphertext[i], 16);
+        AES_DecryptBlock(&ciphertext[i], roundKeys, numRounds, block);
+        for (int j = 0; j < 16; j++) {
+            plaintext[i + j] = block[j] ^ currentIV[j];
+        }
+        memcpy(currentIV, nextIV, 16);
+    }
+    memcpy(ivOut, currentIV, 16);
+}
+
+static void AES_CFB_Encrypt(const BYTE *plaintext, size_t dataSize, const BYTE *key, UINT16 keySize,
+                            const BYTE *iv, BYTE *ciphertext, BYTE *ivOut) {
+    UINT16 numRounds = (keySize == 16) ? 10 : (keySize == 24) ? 12 : 14;
+    BYTE roundKeys[240];
+    AES_KeyExpansion(key, keySize, roundKeys);
+    BYTE currentIV[16];
+    memcpy(currentIV, iv, 16);
+    size_t fullBlocks = dataSize / 16;
+    for (size_t i = 0; i < fullBlocks; i++) {
+        BYTE encryptedIV[16];
+        AES_EncryptBlock(currentIV, roundKeys, numRounds, encryptedIV);
+        for (int j = 0; j < 16; j++) {
+            ciphertext[i * 16 + j] = plaintext[i * 16 + j] ^ encryptedIV[j];
+        }
+        memcpy(currentIV, &ciphertext[i * 16], 16);
+    }
+    size_t remainingBytes = dataSize % 16;
+    if (remainingBytes > 0) {
+        BYTE encryptedIV[16];
+        BYTE oldIV[16];
+        memcpy(oldIV, currentIV, 16);
+        AES_EncryptBlock(currentIV, roundKeys, numRounds, encryptedIV);
+        for (size_t j = 0; j < remainingBytes; j++) {
+            ciphertext[fullBlocks * 16 + j] = plaintext[fullBlocks * 16 + j] ^ encryptedIV[j];
+        }
+        memmove(currentIV, oldIV + remainingBytes, 16 - remainingBytes);
+        memcpy(currentIV + (16 - remainingBytes), &ciphertext[fullBlocks * 16], remainingBytes);
+    }
+    memcpy(ivOut, currentIV, 16);
+}
+
+static void AES_CFB_Decrypt(const BYTE *ciphertext, size_t dataSize, const BYTE *key, UINT16 keySize,
+                            const BYTE *iv, BYTE *plaintext, BYTE *ivOut) {
+    UINT16 numRounds = (keySize == 16) ? 10 : (keySize == 24) ? 12 : 14;
+    BYTE roundKeys[240];
+    AES_KeyExpansion(key, keySize, roundKeys);
+    BYTE currentIV[16];
+    memcpy(currentIV, iv, 16);
+    size_t fullBlocks = dataSize / 16;
+    for (size_t i = 0; i < fullBlocks; i++) {
+        BYTE encryptedIV[16];
+        AES_EncryptBlock(currentIV, roundKeys, numRounds, encryptedIV);
+        for (int j = 0; j < 16; j++) {
+            plaintext[i * 16 + j] = ciphertext[i * 16 + j] ^ encryptedIV[j];
+        }
+        memcpy(currentIV, &ciphertext[i * 16], 16);
+    }
+    size_t remainingBytes = dataSize % 16;
+    if (remainingBytes > 0) {
+        BYTE encryptedIV[16];
+        BYTE oldIV[16];
+        memcpy(oldIV, currentIV, 16);
+        AES_EncryptBlock(currentIV, roundKeys, numRounds, encryptedIV);
+        for (size_t j = 0; j < remainingBytes; j++) {
+            plaintext[fullBlocks * 16 + j] = ciphertext[fullBlocks * 16 + j] ^ encryptedIV[j];
+        }
+        memmove(currentIV, oldIV + remainingBytes, 16 - remainingBytes);
+        memcpy(currentIV + (16 - remainingBytes), &ciphertext[fullBlocks * 16], remainingBytes);
+    }
+    memcpy(ivOut, currentIV, 16);
+}
+
+static void AES_OFB_Process(const BYTE *input, size_t dataSize, const BYTE *key, UINT16 keySize,
+                            const BYTE *iv, BYTE *output, BYTE *ivOut) {
+    UINT16 numRounds = (keySize == 16) ? 10 : (keySize == 24) ? 12 : 14;
+    BYTE roundKeys[240];
+    AES_KeyExpansion(key, keySize, roundKeys);
+    BYTE currentIV[16];
+    memcpy(currentIV, iv, 16);
+    size_t fullBlocks = dataSize / 16;
+    for (size_t i = 0; i < fullBlocks; i++) {
+        BYTE encryptedIV[16];
+        AES_EncryptBlock(currentIV, roundKeys, numRounds, encryptedIV);
+        for (int j = 0; j < 16; j++) {
+            output[i * 16 + j] = input[i * 16 + j] ^ encryptedIV[j];
+        }
+        memcpy(currentIV, encryptedIV, 16);
+    }
+    size_t remainingBytes = dataSize % 16;
+    if (remainingBytes > 0) {
+        BYTE encryptedIV[16];
+        AES_EncryptBlock(currentIV, roundKeys, numRounds, encryptedIV);
+        for (size_t j = 0; j < remainingBytes; j++) {
+            output[fullBlocks * 16 + j] = input[fullBlocks * 16 + j] ^ encryptedIV[j];
+        }
+        memcpy(currentIV, encryptedIV, 16);
+    }
+    memcpy(ivOut, currentIV, 16);
+}
+
+static void AES_CTR_Process(const BYTE *input, size_t dataSize, const BYTE *key, UINT16 keySize,
+                            const BYTE *iv, BYTE *output, BYTE *ivOut) {
+    UINT16 numRounds = (keySize == 16) ? 10 : (keySize == 24) ? 12 : 14;
+    BYTE roundKeys[240];
+    AES_KeyExpansion(key, keySize, roundKeys);
+    BYTE counter[16];
+    memcpy(counter, iv, 16);
+    size_t fullBlocks = dataSize / 16;
+    for (size_t i = 0; i < fullBlocks; i++) {
+        BYTE encryptedCounter[16];
+        AES_EncryptBlock(counter, roundKeys, numRounds, encryptedCounter);
+        for (int j = 0; j < 16; j++) {
+            output[i * 16 + j] = input[i * 16 + j] ^ encryptedCounter[j];
+        }
+        for (int j = 15; j >= 0; j--) {
+            counter[j]++;
+            if (counter[j] != 0) break;
+        }
+    }
+    size_t remainingBytes = dataSize % 16;
+    if (remainingBytes > 0) {
+        BYTE encryptedCounter[16];
+        AES_EncryptBlock(counter, roundKeys, numRounds, encryptedCounter);
+        for (size_t j = 0; j < remainingBytes; j++) {
+            output[fullBlocks * 16 + j] = input[fullBlocks * 16 + j] ^ encryptedCounter[j];
+        }
+        for (int j = 15; j >= 0; j--) {
+            counter[j]++;
+            if (counter[j] != 0) break;
+        }
+    }
+    memcpy(ivOut, counter, 16);
+}
+
 void CryptEncrypt(const BYTE *data, UINT16 dataSize, const BYTE *key, UINT16 keySize, BYTE *encrypted) {
     if (keySize != 16 && keySize != 24 && keySize != 32) { qemu_log_mask(LOG_GUEST_ERROR, "CryptEncrypt: Invalid AES key size %u\n", keySize); return; }
     UINT16 numRounds = (keySize == 16) ? 10 : (keySize == 24) ? 12 : 14;
@@ -359,6 +522,62 @@ UINT16 PKCS7_Unpad(const BYTE *data, UINT16 dataSize, BYTE *out) {
     if (pad == 0 || pad > 16) { return 0; }
     for (UINT8 i = 0; i < pad; i++) { if (out[dataSize - 1 - i] != pad) { return 0; } }
     return dataSize - pad;
+}
+
+void TPM_AES_ECB_Encrypt(const uint8_t *in, size_t dataSize,
+                         const uint8_t *key, uint16_t keySize,
+                         uint8_t *out) {
+    uint16_t numRounds = (keySize == 16) ? 10 : (keySize == 24) ? 12 : 14;
+    BYTE roundKeys[240]; AES_KeyExpansion((const BYTE *)key, keySize, roundKeys);
+    for (size_t i = 0; i < dataSize; i += 16) {
+        AES_EncryptBlock((const BYTE *)&in[i], roundKeys, numRounds, (BYTE *)&out[i]);
+    }
+}
+
+void TPM_AES_ECB_Decrypt(const uint8_t *in, size_t dataSize,
+                         const uint8_t *key, uint16_t keySize,
+                         uint8_t *out) {
+    uint16_t numRounds = (keySize == 16) ? 10 : (keySize == 24) ? 12 : 14;
+    BYTE roundKeys[240]; AES_KeyExpansion((const BYTE *)key, keySize, roundKeys);
+    for (size_t i = 0; i < dataSize; i += 16) {
+        AES_DecryptBlock((const BYTE *)&in[i], roundKeys, numRounds, (BYTE *)&out[i]);
+    }
+}
+
+void TPM_AES_CBC_Encrypt(const uint8_t *in, size_t dataSize,
+                         const uint8_t *key, uint16_t keySize,
+                         const uint8_t *iv, uint8_t *out, uint8_t *ivOut) {
+    AES_CBC_Encrypt((const BYTE *)in, dataSize, (const BYTE *)key, keySize, (const BYTE *)iv, (BYTE *)out, (BYTE *)ivOut);
+}
+
+void TPM_AES_CBC_Decrypt(const uint8_t *in, size_t dataSize,
+                         const uint8_t *key, uint16_t keySize,
+                         const uint8_t *iv, uint8_t *out, uint8_t *ivOut) {
+    AES_CBC_Decrypt((const BYTE *)in, dataSize, (const BYTE *)key, keySize, (const BYTE *)iv, (BYTE *)out, (BYTE *)ivOut);
+}
+
+void TPM_AES_CFB_Encrypt(const uint8_t *in, size_t dataSize,
+                         const uint8_t *key, uint16_t keySize,
+                         const uint8_t *iv, uint8_t *out, uint8_t *ivOut) {
+    AES_CFB_Encrypt((const BYTE *)in, dataSize, (const BYTE *)key, keySize, (const BYTE *)iv, (BYTE *)out, (BYTE *)ivOut);
+}
+
+void TPM_AES_CFB_Decrypt(const uint8_t *in, size_t dataSize,
+                         const uint8_t *key, uint16_t keySize,
+                         const uint8_t *iv, uint8_t *out, uint8_t *ivOut) {
+    AES_CFB_Decrypt((const BYTE *)in, dataSize, (const BYTE *)key, keySize, (const BYTE *)iv, (BYTE *)out, (BYTE *)ivOut);
+}
+
+void TPM_AES_OFB_Process(const uint8_t *in, size_t dataSize,
+                         const uint8_t *key, uint16_t keySize,
+                         const uint8_t *iv, uint8_t *out, uint8_t *ivOut) {
+    AES_OFB_Process((const BYTE *)in, dataSize, (const BYTE *)key, keySize, (const BYTE *)iv, (BYTE *)out, (BYTE *)ivOut);
+}
+
+void TPM_AES_CTR_Process(const uint8_t *in, size_t dataSize,
+                         const uint8_t *key, uint16_t keySize,
+                         const uint8_t *iv, uint8_t *out, uint8_t *ivOut) {
+    AES_CTR_Process((const BYTE *)in, dataSize, (const BYTE *)key, keySize, (const BYTE *)iv, (BYTE *)out, (BYTE *)ivOut);
 }
 
 
