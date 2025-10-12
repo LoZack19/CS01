@@ -6,6 +6,11 @@
         "fifo8.h": "c",
         "s32k358_mcu.h": "c",
         "log.h": "c",
-        "sysbus.h": "c"
+        "sysbus.h": "c",
+        "array": "c",
+        "string_view": "c",
+        "initializer_list": "c",
+        "ranges": "c",
+        "utility": "c"
     }
 }

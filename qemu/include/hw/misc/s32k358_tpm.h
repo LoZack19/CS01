@@ -37,12 +37,15 @@ OBJECT_DECLARE_SIMPLE_TYPE(S32k358TPMState, S32K358_TPM)
 #define TPM_XDATA_FIFO_RST      0x00000000
 #define TPM_DID_VID_RST         0x00000000
 #define TPM_RID_RST             0x00
+
+
     /* the NULL address should be reserved, as such I chose to define
      * the first valid address as 0x04. This is not in the specification
      * but I beliieve that it is not against the specification either.
      * - Mateus
      */ 
-#define TPM_FIRST_VALID_ADDR    0x04
+#define S32K358_TPM_NV_MEM_SIZE 1024
+#define S32K358_TPM_NV_MEM_FIRST_VALID_ADDR 0x04
 
 struct S32k358TPMState {
     SysBusDevice parent_obj;
@@ -71,7 +74,7 @@ struct S32k358TPMState {
     uint8_t tpm_rid;
 
     // Fields for the NV index implementation
-    uint8_t *mem;
+    uint8_t mem[S32K358_TPM_NV_MEM_SIZE];
     uint32_t nvmem_size;
     char *filename;
 
@@ -127,6 +130,7 @@ typedef uint32_t TPM_RC;
 #define RC_VER1             (TPM_RC)0x100
 #define TPM_RC_COMMAND_SIZE (TPM_RC)(RC_VER1 + 0x42)
 #define TPM_RC_COMMAND_CODE (TPM_RC)(RC_VER1 + 0x43)
+#define TPM_RC_NV_SPACE     (TPM_RC)(RC_VER1 + 0x04B)
 #define TPM_RC_NV_DEFINED   (TPM_RC)(RC_VER1 + 0x4C)
 #define RC_FMT1             (TPM_RC)(0x080)
 #define TPM_RC_ATTRIBUTES   (TPM_RC)(RC_FMT1 + 0x002)
