@@ -80,7 +80,7 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
             nv_define_space_in_unmarshal(&s->infifo, (uint8_t *)&nv_define_space_in);
 
             // Execute command
-            rc = TPM2_NV_DefineSpace(&nv_define_space_in, s);
+            rc = TPM2_NV_DefineSpace(&nv_define_space_in);
 
             // Generate response
             if (rc != TPM_RC_SUCCESS) {
@@ -177,6 +177,8 @@ static void s32k358_tpm_write(void *opaque, hwaddr offset, uint64_t value, unsig
     }
 }
 
+// #error "Missing realize function. It should call NvInit!"
+
 static const MemoryRegionOps s32k358_tpm_ops = {
     .read = s32k358_tpm_read,
     .write = s32k358_tpm_write,
@@ -209,6 +211,14 @@ static void s32k358_tpm_reset(DeviceState *d)
     s->tpm_state = TPM_S_IDLE; /* Ready to do stuff */
 }
 
+static void s32k358_tpm_realize(DeviceState *dev, Error **errp)
+{
+    S32k358TPMState *s = S32K358_TPM(dev);
+
+    // Initialize NvStorage Module
+    NvInit(s->mem, s->nvmem_size, &s->gc);
+}
+
 static void s32k358_tpm_init(Object *obj)
 {
     S32k358TPMState *s = S32K358_TPM(obj);
@@ -226,6 +236,7 @@ static void s32k358_tpm_init(Object *obj)
 static void s32k358_tpm_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
+    dc->realize = s32k358_tpm_realize;
 
     device_class_set_legacy_reset(dc, s32k358_tpm_reset);
 }
