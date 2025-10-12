@@ -1,4 +1,7 @@
 #include "include/hw/misc/s32k358_tpm.h"
+#define static_assert(X) ({ extern int __attribute__((error("assertion failure: '" #X "' not true"))) compile_time_check(); ((X)?0:compile_time_check()),0; })
+
+
 
 
 int NvRead(S32k358TPMState *s, void *dest, uint32_t addr, size_t size)
@@ -9,7 +12,7 @@ int NvRead(S32k358TPMState *s, void *dest, uint32_t addr, size_t size)
    return size;
 }
 
-int Write(S32k358TPMState *s, void *src, uint32_t addr, size_t size)
+int NvWrite(S32k358TPMState *s, void *src, uint32_t addr, size_t size)
 {
    if (addr + size > s->nvmem_size)
        return 0;
@@ -23,13 +26,13 @@ NvWriteNvListEnd(S32k358TPMState *s, NV_REF end)
     // Marker is initialized with zeros
     BYTE   listEndMarker[sizeof(NV_LIST_TERMINATOR)] = {0};
     UINT64 maxCount                                  = NvReadMaxCount();
-    //
+
     // This is a constant check that can be resolved at compile time.
-    MUST_BE(sizeof(UINT64) <= sizeof(NV_LIST_TERMINATOR) - sizeof(UINT32));
+    static_assert(sizeof(UINT64) <= sizeof(NV_LIST_TERMINATOR) - sizeof(UINT32));
 
     // Copy the maxCount value to the marker buffer
-    MemoryCopy(&listEndMarker[sizeof(UINT32)], &maxCount, sizeof(UINT64));
-    pAssert(end + sizeof(NV_LIST_TERMINATOR) <= s_evictNvEnd);
+    memcpy(&listEndMarker[sizeof(UINT32)], &maxCount, sizeof(UINT64));
+    assert(end + sizeof(NV_LIST_TERMINATOR) <= s_evictNvEnd);
 
     // Write it to memory
     NvWrite(end, sizeof(NV_LIST_TERMINATOR), &listEndMarker);
