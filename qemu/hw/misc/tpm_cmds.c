@@ -1,4 +1,5 @@
-#include "include/hw/misc/s32k358_tpm.h"
+#include "hw/misc/s32k358_tpm.h"
+#include "hw/misc/tpm_crypt.h"
 #include <string.h>
 #include <stdlib.h>
 
@@ -41,346 +42,6 @@ void tpm_success_response(S32k358TPMState *s, const uint8_t *data, size_t size, 
     qemu_log_mask(LOG_GUEST_ERROR, "(INFO) TPM: Command executed successfully, response sent\n");
 }
 
-/* Auxilliary functions */
-
-static void CryptRandomGenerate(UINT16 size, BYTE *buffer) {
-    for (UINT16 i = 0; i < size; i++) {
-        buffer[i] = rand() % 0x100;
-    }
-}
-
-/* RSA-PSS-SHA256 Implementation */
-
-// SHA-256 constants (FIPS 180-4)
-static const uint32_t K[64] = {
-    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
-    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
-    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
-};
-
-// SHA-256 initial hash values (FIPS 180-4)
-static const uint32_t H0[8] = {
-    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
-    0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
-};
-
-// SHA-256 helper functions (FIPS 180-4)
-static uint32_t Ch(uint32_t x, uint32_t y, uint32_t z) {
-    return (x & y) ^ (~x & z);
-}
-
-static uint32_t Maj(uint32_t x, uint32_t y, uint32_t z) {
-    return (x & y) ^ (x & z) ^ (y & z);
-}
-
-// Proper rotate right function
-static inline uint32_t rotr32(uint32_t x, unsigned n) {
-    return (x >> n) | (x << (32 - n));
-}
-
-// Correct SHA-256 sigma functions using proper rotates
-#define BIG_SIGMA0(x)   (rotr32((x), 2)  ^ rotr32((x), 13) ^ rotr32((x), 22))
-#define BIG_SIGMA1(x)   (rotr32((x), 6)  ^ rotr32((x), 11) ^ rotr32((x), 25))
-#define SMALL_SIGMA0(x) (rotr32((x), 7)  ^ rotr32((x), 18) ^ ((x) >> 3))
-#define SMALL_SIGMA1(x) (rotr32((x), 17) ^ rotr32((x), 19) ^ ((x) >> 10))
-
-// Convert byte array to 32-bit word (big-endian)
-static uint32_t bytes_to_word(const BYTE *bytes) {
-    return ((uint32_t)bytes[0] << 24) | ((uint32_t)bytes[1] << 16) | 
-           ((uint32_t)bytes[2] << 8) | (uint32_t)bytes[3];
-}
-
-// Convert 32-bit word to byte array (big-endian)
-static void word_to_bytes(uint32_t word, BYTE *bytes) {
-    bytes[0] = (word >> 24) & 0xFF;
-    bytes[1] = (word >> 16) & 0xFF;
-    bytes[2] = (word >> 8) & 0xFF;
-    bytes[3] = word & 0xFF;
-}
-
-// SHA-256 compression function (FIPS 180-4)
-static void sha256_compress(uint32_t state[8], const BYTE block[64]) {
-    uint32_t W[64];
-    uint32_t a, b, c, d, e, f, g, h;
-    uint32_t T1, T2;
-    int t;
-
-    // Prepare message schedule
-    for (t = 0; t < 16; t++) {
-        W[t] = bytes_to_word(&block[t * 4]);
-    }
-    
-    for (t = 16; t < 64; t++) {
-        W[t] = SMALL_SIGMA1(W[t-2]) + W[t-7] + SMALL_SIGMA0(W[t-15]) + W[t-16];
-    }
-
-    // Initialize working variables
-    a = state[0]; b = state[1]; c = state[2]; d = state[3];
-    e = state[4]; f = state[5]; g = state[6]; h = state[7];
-
-    // Main loop
-    for (t = 0; t < 64; t++) {
-        T1 = h + BIG_SIGMA1(e) + Ch(e, f, g) + K[t] + W[t];
-        T2 = BIG_SIGMA0(a) + Maj(a, b, c);
-        h = g; g = f; f = e; e = d + T1;
-        d = c; c = b; b = a; a = T1 + T2;
-    }
-
-    // Update state
-    state[0] += a; state[1] += b; state[2] += c; state[3] += d;
-    state[4] += e; state[5] += f; state[6] += g; state[7] += h;
-}
-
-// Full SHA-256 implementation (FIPS 180-4 compliant)
-static void SHA256_Calculate(const BYTE *data, size_t dataSize, BYTE *digest) {
-    uint32_t state[8];
-    BYTE block[64];
-    uint64_t bitLength = (uint64_t)dataSize * 8;
-    size_t remainingBytes = dataSize;
-    size_t offset = 0;
-    int i;
-
-    // Initialize hash values
-    for (i = 0; i < 8; i++) {
-        state[i] = H0[i];
-    }
-
-    // Process complete 512-bit blocks
-    while (remainingBytes >= 64) {
-        memcpy(block, &data[offset], 64);
-        sha256_compress(state, block);
-        offset += 64;
-        remainingBytes -= 64;
-    }
-
-    // Handle final block with padding
-    memset(block, 0, 64);
-    
-    if (remainingBytes > 0) {
-        memcpy(block, &data[offset], remainingBytes);
-    }
-
-    // Add padding bit
-    block[remainingBytes] = 0x80;
-
-    // Add length padding if needed
-    if (remainingBytes >= 56) {
-        // Need two blocks for padding
-        sha256_compress(state, block);
-        memset(block, 0, 64);
-    }
-
-    // Add bit length (big-endian)
-    block[63] = (bitLength >> 0) & 0xFF;
-    block[62] = (bitLength >> 8) & 0xFF;
-    block[61] = (bitLength >> 16) & 0xFF;
-    block[60] = (bitLength >> 24) & 0xFF;
-    block[59] = (bitLength >> 32) & 0xFF;
-    block[58] = (bitLength >> 40) & 0xFF;
-    block[57] = (bitLength >> 48) & 0xFF;
-    block[56] = (bitLength >> 56) & 0xFF;
-
-    // Final compression
-    sha256_compress(state, block);
-
-    // Convert state to digest (big-endian)
-    for (i = 0; i < 8; i++) {
-        word_to_bytes(state[i], &digest[i * 4]);
-    }
-}
-
-// Test function to verify SHA-256 implementation
-static void test_sha256_implementation(void) {
-    BYTE result[32];
-    
-    // Test vector 1: "abc" (FIPS 180-4 Appendix A.1)
-    BYTE test1[] = "abc";
-    BYTE expected1[32] = {
-        0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea,
-        0x41, 0x41, 0x40, 0xde, 0x5d, 0xae, 0x22, 0x23,
-        0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c,
-        0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00, 0x15, 0xad
-    };
-    
-    // Test vector 2: Empty string (FIPS 180-4 Appendix A.1)
-    BYTE expected2[32] = {
-        0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14,
-        0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24,
-        0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c,
-        0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55
-    };
-    
-    // Test vector 3: Multi-block message (448 bits = 56 bytes)
-    BYTE test3[] = "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq";
-    BYTE expected3[32] = {
-        0x24, 0x8d, 0x6a, 0x61, 0xd2, 0x06, 0x38, 0xb8,
-        0xe5, 0xc0, 0x26, 0x93, 0x0c, 0x3e, 0x60, 0x39,
-        0xa3, 0x3c, 0xe4, 0x59, 0x64, 0xff, 0x21, 0x67,
-        0xf6, 0xec, 0xed, 0xd4, 0x19, 0xdb, 0x06, 0xc1
-    };
-    
-    // Test vector 4: Long message (896 bits = 112 bytes)
-    BYTE test4[] = "abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu";
-    BYTE expected4[32] = {
-        0xcf, 0x5b, 0x16, 0xa7, 0x78, 0xaf, 0x83, 0x80,
-        0x03, 0x6c, 0xe5, 0x9e, 0x7b, 0x04, 0x92, 0x37,
-        0x0b, 0x24, 0x9b, 0x11, 0xe8, 0xf0, 0x7a, 0x51,
-        0xaf, 0xac, 0x45, 0x03, 0x7a, 0xfe, 0xe9, 0xd1
-    };
-    
-    // Test vector 5: Odd-length message (7 bytes)
-    BYTE test5[] = "1234567";
-    BYTE expected5[32] = {
-        0x8b, 0xb0, 0xcf, 0x6e, 0xb9, 0xb1, 0x7d, 0x0f,
-        0x7d, 0x22, 0xb4, 0x56, 0xf1, 0x21, 0x25, 0x7d,
-        0xc1, 0x25, 0x4e, 0x1f, 0x01, 0x66, 0x53, 0x70,
-        0x47, 0x63, 0x83, 0xea, 0x77, 0x6d, 0xf4, 0x14
-    };
-    
-    // Test vector 6: Single block (43 bytes)
-    BYTE test6[] = "The quick brown fox jumps over the lazy dog";
-    BYTE expected6[32] = {
-        0xd7, 0xa8, 0xfb, 0xb3, 0x07, 0xd7, 0x80, 0x94,
-        0x69, 0xca, 0x9a, 0xbc, 0xb0, 0x08, 0x2e, 0x4f,
-        0x8d, 0x56, 0x51, 0xe4, 0x6d, 0x3c, 0xdb, 0x76,
-        0x2d, 0x02, 0xd0, 0xbf, 0x37, 0xc9, 0xe5, 0x92
-    };
-    
-    // Run all tests
-    SHA256_Calculate(test1, 3, result);
-    qemu_log_mask(LOG_GUEST_ERROR, "SHA-256 Test 1 (abc): %s\n", 
-                  memcmp(result, expected1, 32) == 0 ? "PASS" : "FAIL");
-    
-    SHA256_Calculate((BYTE*)"", 0, result);
-    qemu_log_mask(LOG_GUEST_ERROR, "SHA-256 Test 2 (empty): %s\n", 
-                  memcmp(result, expected2, 32) == 0 ? "PASS" : "FAIL");
-    
-    SHA256_Calculate(test3, 56, result);
-    qemu_log_mask(LOG_GUEST_ERROR, "SHA-256 Test 3 (multi-block): %s\n", 
-                  memcmp(result, expected3, 32) == 0 ? "PASS" : "FAIL");
-    
-    SHA256_Calculate(test4, 112, result);
-    qemu_log_mask(LOG_GUEST_ERROR, "SHA-256 Test 4 (long message): %s\n", 
-                  memcmp(result, expected4, 32) == 0 ? "PASS" : "FAIL");
-    
-    SHA256_Calculate(test5, 7, result);
-    qemu_log_mask(LOG_GUEST_ERROR, "SHA-256 Test 5 (odd-length): %s\n", 
-                  memcmp(result, expected5, 32) == 0 ? "PASS" : "FAIL");
-    
-    SHA256_Calculate(test6, 43, result);
-    qemu_log_mask(LOG_GUEST_ERROR, "SHA-256 Test 6 (single block): %s\n", 
-                  memcmp(result, expected6, 32) == 0 ? "PASS" : "FAIL");
-}
-
-// PSS padding simulation (simplified)
-static void RSA_PSS_Pad(const BYTE *hash, UINT16 hashSize, BYTE *padded, UINT16 paddedSize) {
-    // Simplified PSS padding - in real implementation use proper PSS
-    memset(padded, 0, paddedSize);
-    
-    // PSS format: 0x00 || 0x01 || PS || 0x00 || hash || salt
-    padded[0] = 0x00;  // Leading zero
-    padded[1] = 0x01;  // PSS marker
-    
-    // Fill PS (padding string) with 0xFF
-    for (UINT16 i = 2; i < paddedSize - hashSize - 2; i++) {
-        padded[i] = 0xFF;
-    }
-    
-    // Add separator
-    padded[paddedSize - hashSize - 2] = 0x00;
-    
-    // Add hash
-    memcpy(&padded[paddedSize - hashSize - 1], hash, hashSize);
-    
-    // Add salt (simplified - just use last byte)
-    padded[paddedSize - 1] = 0xBC; // PSS trailer
-}
-
-// RSA private key operation simulation (simplified)
-static void RSA_Private_Encrypt(const BYTE *input, UINT16 inputSize, 
-                               const BYTE *privateKey, UINT16 keySize, 
-                               BYTE *output) {
-    // Simplified RSA private key operation - in real implementation use proper RSA
-    // This is a simulation that produces consistent results for testing
-    
-    // Use the private key as a seed for deterministic "encryption"
-    UINT32 seed = 0;
-    for (UINT16 i = 0; i < keySize && i < 4; i++) {
-        seed = (seed << 8) | privateKey[i];
-    }
-    
-    // Generate deterministic "encrypted" output
-    for (UINT16 i = 0; i < inputSize; i++) {
-        output[i] = input[i] ^ (seed & 0xFF);
-        seed = (seed * 1103515245 + 12345) & 0xFFFFFFFF; // Linear congruential generator
-    }
-}
-
-// RSA-PSS-SHA256 signature generation
-static void CryptSignRSA_PSS_SHA256(const BYTE *data, UINT16 dataSize, 
-                                   const BYTE *privateKey, UINT16 keySize, 
-                                   BYTE *signature) {
-    // Step 1: Hash the data with SHA-256
-    BYTE hash[SHA256_DIGEST_SIZE];
-    SHA256_Calculate(data, dataSize, hash);
-    
-    // Step 2: Apply RSA-PSS padding
-    UINT16 signatureSize = 256; // RSA-2048 signature size
-    BYTE padded[256];
-    RSA_PSS_Pad(hash, SHA256_DIGEST_SIZE, padded, signatureSize);
-    
-    // Step 3: Perform RSA private key operation
-    RSA_Private_Encrypt(padded, signatureSize, privateKey, keySize, signature);
-}
-
-// RSA-PSS-SHA256 signature verification
-static UINT8 CryptVerifySignatureRSA_PSS_SHA256(const BYTE *data, UINT16 dataSize, 
-                                               const BYTE *signature, UINT16 sigSize, 
-                                               const BYTE *publicKey, UINT16 keySize) {
-    // Step 1: Hash the data with SHA-256
-    BYTE hash[SHA256_DIGEST_SIZE];
-    SHA256_Calculate(data, dataSize, hash);
-    
-    // Step 2: "Decrypt" signature (simplified RSA public key operation)
-    UINT16 signatureSize = 256;
-    BYTE decrypted[256];
-    RSA_Private_Encrypt(signature, sigSize, publicKey, keySize, decrypted); // Reuse for simulation
-    
-    // Step 3: Verify PSS padding
-    // Check PSS format: 0x00 || 0x01 || PS || 0x00 || hash || salt
-    if (decrypted[0] != 0x00 || decrypted[1] != 0x01) {
-        return 0; // Invalid PSS format
-    }
-    
-    // Find separator
-    UINT16 separatorPos = 0;
-    for (UINT16 i = 2; i < signatureSize - SHA256_DIGEST_SIZE - 1; i++) {
-        if (decrypted[i] == 0x00) {
-            separatorPos = i;
-            break;
-        }
-        if (decrypted[i] != 0xFF) {
-            return 0; // Invalid PS padding
-        }
-    }
-    
-    if (separatorPos == 0) {
-        return 0; // Separator not found
-    }
-    
-    // Verify hash
-    if (memcmp(&decrypted[separatorPos + 1], hash, SHA256_DIGEST_SIZE) != 0) {
-        return 0; // Hash mismatch
-    }
-    
-    return 1; // Valid signature
-}
-
 /* TPM Commands */
 
 TPM_RC TPM2_GetRandom(GetRandom_In *in, GetRandom_Out *out) {
@@ -402,7 +63,7 @@ TPM_RC TPM2_GetRandom(GetRandom_In *in, GetRandom_Out *out) {
     }
     
     // Generate random bytes
-    CryptRandomGenerate(out->randomBytes.size, out->randomBytes.buffer);
+    CryptRandomGenerate((uint16_t)out->randomBytes.size, (uint8_t *)out->randomBytes.buffer);
     
     return TPM_RC_SUCCESS;
 }
@@ -411,7 +72,7 @@ TPM_RC TPM2_GetRandom(GetRandom_In *in, GetRandom_Out *out) {
 
 // SHA-256 hash function (improved implementation)
 static void CryptHash(const BYTE *data, UINT16 dataSize, BYTE *digest) {
-    SHA256_Calculate(data, dataSize, digest);
+    SHA256_Calculate((const uint8_t *)data, (size_t)dataSize, (uint8_t *)digest);
 }
 
 // TPM 2.0 AES S-box (SubBytes substitution table)
@@ -1018,8 +679,8 @@ TPM_RC TPM2_Sign(Sign_In *in, Sign_Out *out) {
     }
     
     // Generate signature
-    CryptSignRSA_PSS_SHA256(in->data.data, in->data.dataSize, in->keyHandle.key, in->keyHandle.keySize, out->signature.signature);
-    out->signature.signatureSize = 256; // Fixed signature size
+    CryptSignRSA_PSS_SHA256((const uint8_t *)in->data.data, (uint16_t)in->data.dataSize, (const uint8_t *)in->keyHandle.key, (uint16_t)in->keyHandle.keySize, (uint8_t *)out->signature.signature);
+    out->signature.signatureSize = TPM_MAX_SIGNATURE_SIZE; // Fixed signature size
     
     return TPM_RC_SUCCESS;
 }
@@ -1033,9 +694,9 @@ TPM_RC TPM2_VerifySignature(VerifySignature_In *in, VerifySignature_Out *out) {
     }
     
     // Verify signature
-    out->verification = CryptVerifySignatureRSA_PSS_SHA256(in->data.data, in->data.dataSize, 
-                                           in->signature.signature, in->signature.signatureSize,
-                                           in->keyHandle.key, in->keyHandle.keySize);
+    out->verification = CryptVerifySignatureRSA_PSS_SHA256((const uint8_t *)in->data.data, (uint16_t)in->data.dataSize, 
+                                           (const uint8_t *)in->signature.signature, (uint16_t)in->signature.signatureSize,
+                                           (const uint8_t *)in->keyHandle.key, (uint16_t)in->keyHandle.keySize);
     
     return TPM_RC_SUCCESS;
 }
@@ -1056,7 +717,7 @@ TPM_RC TPM2_Hash(Hash_In *in, Hash_Out *out) {
     }
     
     // Compute hash using full SHA-256 implementation
-    SHA256_Calculate(in->data.data, in->data.dataSize, out->digest.buffer);
+    SHA256_Calculate((const uint8_t *)in->data.data, (size_t)in->data.dataSize, (uint8_t *)out->digest.buffer);
     out->digest.size = SHA256_DIGEST_SIZE;
     
     return TPM_RC_SUCCESS;
@@ -1204,7 +865,7 @@ TPM_RC TPM2_RSA_Encrypt(RSA_Encrypt_In *in, RSA_Encrypt_Out *out) {
     }
     
     // Simple RSA encryption simulation (XOR-based)
-    CryptEncrypt(in->data.data, in->data.dataSize, in->keyHandle.key, in->keyHandle.keySize, out->encrypted.data);
+    CryptEncrypt((const uint8_t *)in->data.data, (uint16_t)in->data.dataSize, (const uint8_t *)in->keyHandle.key, (uint16_t)in->keyHandle.keySize, (uint8_t *)out->encrypted.data);
     out->encrypted.dataSize = in->data.dataSize;
     
     return TPM_RC_SUCCESS;
@@ -1219,7 +880,7 @@ TPM_RC TPM2_RSA_Decrypt(RSA_Decrypt_In *in, RSA_Decrypt_Out *out) {
     }
     
     // Simple RSA decryption simulation (XOR-based)
-    CryptDecrypt(in->encrypted.data, in->encrypted.dataSize, in->keyHandle.key, in->keyHandle.keySize, out->decrypted.data);
+    CryptDecrypt((const uint8_t *)in->encrypted.data, (uint16_t)in->encrypted.dataSize, (const uint8_t *)in->keyHandle.key, (uint16_t)in->keyHandle.keySize, (uint8_t *)out->decrypted.data);
     out->decrypted.dataSize = in->encrypted.dataSize;
     
     return TPM_RC_SUCCESS;

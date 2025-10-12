@@ -11,7 +11,7 @@
 #include "qemu/log.h"
 
 #include "hw/registerfields.h"
-#include "include/qemu/fifo8.h"
+#include "qemu/fifo8.h"
 
 #define __packed __attribute__((packed))
 
@@ -31,7 +31,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(S32k358TPMState, S32K358_TPM)
 #define TPM_INT_STATUS_RST      0x00000000
 #define TPM_INTF_CAPS_RST       0x00000000
 #define TPM_STS_RST             0x00000000
-#define TPM_STS_burstCount_RST      64
+    #define TPM_STS_burstCount_RST      64
 #define TPM_DATA_FIFO_RST       0x00000000
 #define TPM_INTERFACE_ID_RST    0x00000000
 #define TPM_XDATA_FIFO_RST      0x00000000
@@ -69,17 +69,17 @@ struct S32k358TPMState {
 };
 
 REG8(TPM_ACCESS,        0x0000)  // Access Control Register
-FIELD(TPM_ACCESS, requestUse, 1, 1)
-FIELD(TPM_ACCESS, activeLocality, 5, 1)
+    FIELD(TPM_ACCESS, requestUse, 1, 1)
+    FIELD(TPM_ACCESS, activeLocality, 5, 1)
 REG32(TPM_INT_ENABLE,   0x0008)  // Interrupt Enable Register
 REG8(TPM_INT_VECTOR,    0x000C)  // Interrupt Vector Register
 REG32(TPM_INT_STATUS,   0x0010)  // Interrupt Status Register
 REG32(TPM_INTF_CAPS,    0x0014)  // Interface Capabilities Register
 REG32(TPM_STS,          0x0018)  // Status Register
-FIELD(TPM_STS, burstCount, 8, 16)
-FIELD(TPM_STS, commandReady, 6, 1) // Start receiving
-FIELD(TPM_STS, tpmGo, 5, 1) // Start command execution
-FIELD(TPM_STS, dataAvail, 4, 1)
+    FIELD(TPM_STS, burstCount, 8, 16)
+    FIELD(TPM_STS, commandReady, 6, 1) // Start receiving
+    FIELD(TPM_STS, tpmGo, 5, 1) // Start command execution
+    FIELD(TPM_STS, dataAvail, 4, 1)
 REG32(TPM_DATA_FIFO,    0x0024)  // Data Register (ReadFIFO / WriteFIFO depending on direction)
 REG32(TPM_INTERFACE_ID, 0x0030)  // Interface ID Register
 REG32(TPM_XDATA_FIFO,   0x0080)  // Extended Data FIFO Register (ReadFIFO / WriteFIFO depending on direction)
@@ -122,9 +122,22 @@ typedef uint8_t UINT8;
 typedef uint16_t UINT16;
 typedef uint32_t UINT32;
 
+/* TPM 2.0 base/alias types for algorithm identifiers (per Part 2) */
+typedef UINT16 TPM_ALG_ID;
+typedef TPM_ALG_ID TPMI_ALG_SYM_OBJECT; /* allows +TPM_ALG_NULL in some contexts */
+typedef UINT16 TPMU_SYM_KEY_BITS;       /* union in spec; simplified as 16-bit for this model */
+typedef UINT16 TPMU_SYM_MODE;           /* union in spec; simplified as 16-bit for this model */
+
 // Structured types
 
 #define SHA256_DIGEST_SIZE 32
+
+/* Maximum sizes derived from TPM 2.0 data structures and our model */
+#define TPM_MAX_KEY_SIZE            256
+#define TPM_MAX_DATA_SIZE           256
+#define TPM_MAX_SIGNATURE_SIZE      256
+#define TPM_MAX_IV_SIZE             16
+#define TPM_MAX_MAX_BUFFER_SIZE     1024
 
 typedef union __packed {
     BYTE sha256[SHA256_DIGEST_SIZE];
@@ -161,17 +174,17 @@ typedef struct __packed {
 // Cryptographic operation structures
 typedef struct __packed {
     UINT16 dataSize;
-    BYTE data[256]; // Max data size for simplicity
+    BYTE data[TPM_MAX_DATA_SIZE]; // Max data size for simplicity
 } TPM2B_DATA;
 
 typedef struct __packed {
     UINT16 signatureSize;
-    BYTE signature[256]; // Max signature size (supports RSA-2048 signatures)
+    BYTE signature[TPM_MAX_SIGNATURE_SIZE]; // Max signature size (supports RSA-2048 signatures)
 } TPM2B_SIGNATURE;
 
 typedef struct __packed {
     UINT16 keySize;
-    BYTE key[256]; // Max key size
+    BYTE key[TPM_MAX_KEY_SIZE]; // Max key size
 } TPM2B_KEY;
 
 // Sign command
@@ -220,21 +233,21 @@ typedef struct __packed {
 
 // TPM 2.0 Symmetric Definition Object (TPMT_SYM_DEF_OBJECT)
 typedef struct __packed {
-    UINT16 algorithm;             // TPM_ALG_* algorithm (AES, SM4, etc.)
-    UINT16 mode;                  // TPM_ALG_* mode (ECB, CBC, etc.)
-    UINT16 keyBits;               // Key size in bits
+    TPMI_ALG_SYM_OBJECT algorithm; // TPM_ALG_* algorithm (AES, SM4, etc.)
+    TPMU_SYM_MODE       mode;      // Mode selector (ECB, CBC, CFB, OFB, CTR)
+    TPMU_SYM_KEY_BITS   keyBits;   // Key size in bits
 } TPMT_SYM_DEF_OBJECT;
 
 // TPM 2.0 IV structure
 typedef struct __packed {
     UINT16 ivSize;
-    BYTE iv[16]; // Max IV size for AES
+    BYTE iv[TPM_MAX_IV_SIZE]; // Max IV size for AES
 } TPM2B_IV;
 
 // TPM 2.0 Max Buffer (larger than TPM2B_DATA)
 typedef struct __packed {
     UINT16 bufferSize;
-    BYTE buffer[1024]; // Larger buffer for symmetric operations
+    BYTE buffer[TPM_MAX_MAX_BUFFER_SIZE]; // Larger buffer for symmetric operations
 } TPM2B_MAX_BUFFER;
 
 // EncryptDecrypt2 command (TPM 2.0 compliant)

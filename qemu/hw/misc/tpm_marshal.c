@@ -1,4 +1,4 @@
-#include "include/hw/misc/s32k358_tpm.h"
+#include "hw/misc/s32k358_tpm.h"
 
 UINT16 read_be16(Fifo8 *fifo) {
     return ((UINT16)fifo8_pop(fifo) << 8) | (UINT16)fifo8_pop(fifo);
@@ -60,13 +60,13 @@ void sign_in_unmarshal(Fifo8 *fifo, uint8_t *in) {
     
     // Unmarshal key handle
     sign_in->keyHandle.keySize = read_be16(fifo);
-    for (UINT16 i = 0; i < sign_in->keyHandle.keySize && i < 256; i++) {
+    for (UINT16 i = 0; i < sign_in->keyHandle.keySize && i < TPM_MAX_KEY_SIZE; i++) {
         sign_in->keyHandle.key[i] = fifo8_pop(fifo);
     }
     
     // Unmarshal data
     sign_in->data.dataSize = read_be16(fifo);
-    for (UINT16 i = 0; i < sign_in->data.dataSize && i < 256; i++) {
+    for (UINT16 i = 0; i < sign_in->data.dataSize && i < TPM_MAX_DATA_SIZE; i++) {
         sign_in->data.data[i] = fifo8_pop(fifo);
     }
 }
@@ -76,7 +76,7 @@ void sign_out_marshal(Fifo8 *fifo, const uint8_t *out) {
     
     // Marshal signature
     write_be16(fifo, sign_out->signature.signatureSize);
-    for (UINT16 i = 0; i < sign_out->signature.signatureSize && i < 256; i++) {
+    for (UINT16 i = 0; i < sign_out->signature.signatureSize && i < TPM_MAX_SIGNATURE_SIZE; i++) {
         fifo8_push(fifo, sign_out->signature.signature[i]);
     }
 }
@@ -87,19 +87,19 @@ void verify_signature_in_unmarshal(Fifo8 *fifo, uint8_t *in) {
     
     // Unmarshal key handle
     verify_in->keyHandle.keySize = read_be16(fifo);
-    for (UINT16 i = 0; i < verify_in->keyHandle.keySize && i < 256; i++) {
+    for (UINT16 i = 0; i < verify_in->keyHandle.keySize && i < TPM_MAX_KEY_SIZE; i++) {
         verify_in->keyHandle.key[i] = fifo8_pop(fifo);
     }
     
     // Unmarshal data
     verify_in->data.dataSize = read_be16(fifo);
-    for (UINT16 i = 0; i < verify_in->data.dataSize && i < 256; i++) {
+    for (UINT16 i = 0; i < verify_in->data.dataSize && i < TPM_MAX_DATA_SIZE; i++) {
         verify_in->data.data[i] = fifo8_pop(fifo);
     }
     
     // Unmarshal signature
     verify_in->signature.signatureSize = read_be16(fifo);
-    for (UINT16 i = 0; i < verify_in->signature.signatureSize && i < 256; i++) {
+    for (UINT16 i = 0; i < verify_in->signature.signatureSize && i < TPM_MAX_SIGNATURE_SIZE; i++) {
         verify_in->signature.signature[i] = fifo8_pop(fifo);
     }
 }
@@ -115,7 +115,7 @@ void hash_in_unmarshal(Fifo8 *fifo, uint8_t *in) {
     
     // Unmarshal data
     hash_in->data.dataSize = read_be16(fifo);
-    for (UINT16 i = 0; i < hash_in->data.dataSize && i < 256; i++) {
+    for (UINT16 i = 0; i < hash_in->data.dataSize && i < TPM_MAX_DATA_SIZE; i++) {
         hash_in->data.data[i] = fifo8_pop(fifo);
     }
 }
@@ -136,7 +136,7 @@ void encrypt_decrypt2_in_unmarshal(Fifo8 *fifo, uint8_t *in) {
     
     // Unmarshal key handle
     encrypt_in->keyHandle.keySize = read_be16(fifo);
-    for (UINT16 i = 0; i < encrypt_in->keyHandle.keySize && i < 256; i++) {
+    for (UINT16 i = 0; i < encrypt_in->keyHandle.keySize && i < TPM_MAX_KEY_SIZE; i++) {
         encrypt_in->keyHandle.key[i] = fifo8_pop(fifo);
     }
     
@@ -150,13 +150,13 @@ void encrypt_decrypt2_in_unmarshal(Fifo8 *fifo, uint8_t *in) {
     
     // Unmarshal input IV
     encrypt_in->ivIn.ivSize = read_be16(fifo);
-    for (UINT16 i = 0; i < encrypt_in->ivIn.ivSize && i < 16; i++) {
+    for (UINT16 i = 0; i < encrypt_in->ivIn.ivSize && i < TPM_MAX_IV_SIZE; i++) {
         encrypt_in->ivIn.iv[i] = fifo8_pop(fifo);
     }
     
     // Unmarshal input data
     encrypt_in->inData.bufferSize = read_be16(fifo);
-    for (UINT16 i = 0; i < encrypt_in->inData.bufferSize && i < 1024; i++) {
+    for (UINT16 i = 0; i < encrypt_in->inData.bufferSize && i < TPM_MAX_MAX_BUFFER_SIZE; i++) {
         encrypt_in->inData.buffer[i] = fifo8_pop(fifo);
     }
 }
@@ -166,13 +166,13 @@ void encrypt_decrypt2_out_marshal(Fifo8 *fifo, const uint8_t *out) {
     
     // Marshal output data
     write_be16(fifo, encrypt_out->outData.bufferSize);
-    for (UINT16 i = 0; i < encrypt_out->outData.bufferSize && i < 1024; i++) {
+    for (UINT16 i = 0; i < encrypt_out->outData.bufferSize && i < TPM_MAX_MAX_BUFFER_SIZE; i++) {
         fifo8_push(fifo, encrypt_out->outData.buffer[i]);
     }
     
     // Marshal output IV
     write_be16(fifo, encrypt_out->ivOut.ivSize);
-    for (UINT16 i = 0; i < encrypt_out->ivOut.ivSize && i < 16; i++) {
+    for (UINT16 i = 0; i < encrypt_out->ivOut.ivSize && i < TPM_MAX_IV_SIZE; i++) {
         fifo8_push(fifo, encrypt_out->ivOut.iv[i]);
     }
 }
@@ -183,13 +183,13 @@ void rsa_encrypt_in_unmarshal(Fifo8 *fifo, uint8_t *in) {
     
     // Unmarshal key handle
     rsa_encrypt_in->keyHandle.keySize = read_be16(fifo);
-    for (UINT16 i = 0; i < rsa_encrypt_in->keyHandle.keySize && i < 256; i++) {
+    for (UINT16 i = 0; i < rsa_encrypt_in->keyHandle.keySize && i < TPM_MAX_KEY_SIZE; i++) {
         rsa_encrypt_in->keyHandle.key[i] = fifo8_pop(fifo);
     }
     
     // Unmarshal data
     rsa_encrypt_in->data.dataSize = read_be16(fifo);
-    for (UINT16 i = 0; i < rsa_encrypt_in->data.dataSize && i < 256; i++) {
+    for (UINT16 i = 0; i < rsa_encrypt_in->data.dataSize && i < TPM_MAX_DATA_SIZE; i++) {
         rsa_encrypt_in->data.data[i] = fifo8_pop(fifo);
     }
 }
@@ -199,7 +199,7 @@ void rsa_encrypt_out_marshal(Fifo8 *fifo, const uint8_t *out) {
     
     // Marshal encrypted data
     write_be16(fifo, rsa_encrypt_out->encrypted.dataSize);
-    for (UINT16 i = 0; i < rsa_encrypt_out->encrypted.dataSize && i < 256; i++) {
+    for (UINT16 i = 0; i < rsa_encrypt_out->encrypted.dataSize && i < TPM_MAX_DATA_SIZE; i++) {
         fifo8_push(fifo, rsa_encrypt_out->encrypted.data[i]);
     }
 }
@@ -210,13 +210,13 @@ void rsa_decrypt_in_unmarshal(Fifo8 *fifo, uint8_t *in) {
     
     // Unmarshal key handle
     rsa_decrypt_in->keyHandle.keySize = read_be16(fifo);
-    for (UINT16 i = 0; i < rsa_decrypt_in->keyHandle.keySize && i < 256; i++) {
+    for (UINT16 i = 0; i < rsa_decrypt_in->keyHandle.keySize && i < TPM_MAX_KEY_SIZE; i++) {
         rsa_decrypt_in->keyHandle.key[i] = fifo8_pop(fifo);
     }
     
     // Unmarshal encrypted data
     rsa_decrypt_in->encrypted.dataSize = read_be16(fifo);
-    for (UINT16 i = 0; i < rsa_decrypt_in->encrypted.dataSize && i < 256; i++) {
+    for (UINT16 i = 0; i < rsa_decrypt_in->encrypted.dataSize && i < TPM_MAX_DATA_SIZE; i++) {
         rsa_decrypt_in->encrypted.data[i] = fifo8_pop(fifo);
     }
 }
@@ -226,7 +226,7 @@ void rsa_decrypt_out_marshal(Fifo8 *fifo, const uint8_t *out) {
     
     // Marshal decrypted data
     write_be16(fifo, rsa_decrypt_out->decrypted.dataSize);
-    for (UINT16 i = 0; i < rsa_decrypt_out->decrypted.dataSize && i < 256; i++) {
+    for (UINT16 i = 0; i < rsa_decrypt_out->decrypted.dataSize && i < TPM_MAX_DATA_SIZE; i++) {
         fifo8_push(fifo, rsa_decrypt_out->decrypted.data[i]);
     }
 }
