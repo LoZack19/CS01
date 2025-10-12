@@ -37,6 +37,12 @@ OBJECT_DECLARE_SIMPLE_TYPE(S32k358TPMState, S32K358_TPM)
 #define TPM_XDATA_FIFO_RST      0x00000000
 #define TPM_DID_VID_RST         0x00000000
 #define TPM_RID_RST             0x00
+    /* the NULL address should be reserved, as such I chose to define
+     * the first valid address as 0x04. This is not in the specification
+     * but I beliieve that it is not against the specification either.
+     * - Mateus
+     */ 
+#define TPM_FIRST_VALID_ADDR    0x04
 
 struct S32k358TPMState {
     SysBusDevice parent_obj;
@@ -63,6 +69,11 @@ struct S32k358TPMState {
     uint32_t tpm_xdata_fifo;
     uint32_t tpm_did_vid;
     uint8_t tpm_rid;
+
+    // Fields for the NV index implementation
+    uint8_t *mem;
+    uint32_t nvmem_size;
+    char *filename;
 
     Fifo8 infifo;
     Fifo8 outfifo;
@@ -151,6 +162,7 @@ typedef UINT32 TPM_HANDLE;
 
 // Restriction of basic types
 #define TPM_RH_OWNER 0x40000001
+#define TPM_RH_UNASSIGNED 0x40000008
 #define TPM_RH_PLATFORM 0x4000000C
 typedef TPM_HANDLE TPMI_RH_PROVISION;
 
@@ -164,6 +176,14 @@ typedef TPM_HANDLE TPMI_RH_NV_LEGACY_INDEX;
 /* #define TPM_ALG_!ALG.H */
 #define TPM_ALG_NULL 0x0010
 typedef TPM_ALG_ID TPMI_ALG_HASH;
+
+// Defines the end-of-list marker for NV. The list terminator is
+// a UINT32 of zero, followed by the current value of s_maxCounter which is a
+// 64-bit value. The structure is defined as an array of 3 UINT32 values so that
+// there is no padding between the  UINT32 list end marker and the UINT64 maxCounter
+// value.
+typedef UINT32 NV_LIST_TERMINATOR[3];
+
 
 // Access to bitfields
 #define IS_ATTRIBUTE(a, type, b)    ((a.b) != 0)
@@ -283,6 +303,6 @@ void tpm_success_response(S32k358TPMState *s, const uint8_t *data, size_t size, 
 TPM_RC TPM2_GetRandom(GetRandom_In *in, GetRandom_Out *out);
 
 // Non-volatile Storage
-TPM_RC TPM2_NV_DefineSpace(NV_DefineSpace_In *in);
+TPM_RC TPM2_NV_DefineSpace(NV_DefineSpace_In *in, S32k358TPMState *s);
 
 #endif

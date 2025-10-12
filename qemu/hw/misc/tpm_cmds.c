@@ -79,7 +79,7 @@ TPM_RC TPM2_GetRandom(GetRandom_In *in, GetRandom_Out *out) {
     return TPM_RC_SUCCESS;
 }
 
-TPM_RC TPM2_NV_DefineSpace(NV_DefineSpace_In* in) {
+TPM_RC TPM2_NV_DefineSpace(NV_DefineSpace_In* in, S32k358TPMState *s) {
     // This command only supports TPM_HT_NV_INDEX-typed NV indices.
     if (HandleGetType(in->publicInfo.nvPublic.nvIndex) != TPM_HT_NV_INDEX) {
         return TPM_RCS_HANDLE + RC_NV_DefineSpace_publicInfo;
@@ -90,5 +90,6 @@ TPM_RC TPM2_NV_DefineSpace(NV_DefineSpace_In* in) {
                          &in->publicInfo.nvPublic,
                          RC_NV_DefineSpace_authHandle,
                          RC_NV_DefineSpace_auth,
-                         RC_NV_DefineSpace_publicInfo);
+                         RC_NV_DefineSpace_publicInfo,
+                         s);
 }

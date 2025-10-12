@@ -79,7 +79,7 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
             nv_define_space_in_unmarshal(&s->infifo, (uint8_t *)&nv_define_space_in);
 
             // Execute command
-            TPM_RC rc = TPM2_NV_DefineSpace(&nv_define_space_in);
+            TPM_RC rc = TPM2_NV_DefineSpace(&nv_define_space_in, s);
 
             // Generate response
             if (rc != TPM_RC_SUCCESS) {
