@@ -1,10 +1,4 @@
 #include "include/hw/misc/s32k358_tpm.h"
-#define static_assert(X) ({ \
-        extern int \
-            __attribute__((error("assertion failure: '" #X "' not true"))) \
-            compile_time_check(); \
-        ((X) ? 0 : compile_time_check()) , 0; \
-    })
 
 /**
  * @brief Read into dest from addr in NV Memory of size size
@@ -16,6 +10,7 @@
  *  0      -> Failure
  *  Others -> Size of the data read
  */
+static
 int NvRead(S32k358TPMState *s, void *dest, uint32_t addr, size_t size)
 {
     if (addr + size > s->nvmem_size)
@@ -34,6 +29,7 @@ int NvRead(S32k358TPMState *s, void *dest, uint32_t addr, size_t size)
  *  0      -> Failure
  *  Others -> Size of the data written
  */
+static
 int NvWrite(S32k358TPMState *s, void *src, uint32_t addr, size_t size)
 {
     if (addr + size > s->nvmem_size)
@@ -42,8 +38,9 @@ int NvWrite(S32k358TPMState *s, void *src, uint32_t addr, size_t size)
     return size;
 }
 
+static
 UINT64 NvReadMaxCount(void) {
-    #error "Unimplemented function NvReadMaxCount()"
+    return 0;
 }
 
 /**
@@ -52,6 +49,7 @@ UINT64 NvReadMaxCount(void) {
  * @param[in] end Address of the first unused handle
  * @return Address after the list terminator
  */
+static
 NV_REF NvWriteNvListEnd(S32k358TPMState *s, NV_REF end)
 {
     // Marker is initialized with zeros
@@ -63,7 +61,7 @@ NV_REF NvWriteNvListEnd(S32k358TPMState *s, NV_REF end)
 
     // Copy the maxCount value to the marker buffer
     memcpy(&listEndMarker[sizeof(UINT32)], &maxCount, sizeof(UINT64));
-    assert(end + sizeof(NV_LIST_TERMINATOR) <= s_evictNvEnd);
+    assert(end + sizeof(NV_LIST_TERMINATOR) <= S32K358_TPM_NV_MEM_SIZE);
 
     // Write it to memory
     NvWrite(s, &listEndMarker, end, sizeof(NV_LIST_TERMINATOR));
@@ -77,7 +75,8 @@ NV_REF NvWriteNvListEnd(S32k358TPMState *s, NV_REF end)
  *   0      -> Failure
  *   Others -> Address of the first unused space
  */
-static NV_REF NvGetEnd(S32k358TPMState *s)
+static
+NV_REF NvGetEnd(S32k358TPMState *s)
 {
     // Step over the size field and point to the handle
     size_t addr = S32K358_TPM_NV_MEM_FIRST_VALID_ADDR + sizeof(UINT32);
@@ -97,7 +96,8 @@ static NV_REF NvGetEnd(S32k358TPMState *s)
  * @param[in] s TPM Device State
  * @return Size of the unused space
  */
-static UINT32 NvGetFreeBytes(S32k358TPMState *s)
+static
+UINT32 NvGetFreeBytes(S32k358TPMState *s)
 {
     // This does not have an overflow issue because NvGetEnd() cannot return a value
     // that is larger than s_evictNvEnd. This is because there is always a 'stop'
@@ -109,13 +109,16 @@ static UINT32 NvGetFreeBytes(S32k358TPMState *s)
 
 /**
  * @brief Register a new NV_INDEX into the first unused space
+ * @param[in] s TPM Device State
  * @param[in] totalSize Size of the entire entry (i.e. index and data)
  * @param[in] bufferSize Size of the initial buffer
  * @param[in] handle TPM_RH_UNASSIGNED or NV_INDEX reference
  * @param[in] entity Initial buffer (i.e. NV_INDEX witout data)
  * @return Response code TPM_RC_SUCCESS - Cannot Fail
  */
-static TPM_RC NvAdd(
+static
+TPM_RC NvAdd(
+    S32k358TPMState *s,
     UINT32 totalSize,
     UINT32 bufferSize,
     TPM_HANDLE handle,
@@ -125,7 +128,7 @@ static TPM_RC NvAdd(
     NV_REF nextAddr;
 
     // Get the end of data list
-    newAddr = NvGetEnd();
+    newAddr = NvGetEnd(s);
 
     // Step over the forward pointer
     nextAddr = newAddr + sizeof(UINT32);
@@ -150,7 +153,7 @@ static TPM_RC NvAdd(
     NvWrite(s, &totalSize, (UINT32)newAddr, sizeof(UINT32));
 
     // Write the list terminator
-    NvWriteNvListEnd(nextAddr);
+    NvWriteNvListEnd(s, nextAddr);
 
     return TPM_RC_SUCCESS;
 }
@@ -163,12 +166,13 @@ static TPM_RC NvAdd(
  * @param[in] isCounter TRUE if the index is a counter
  * @return TRUE if there is enough space
  */
-static BOOL NvTestSpace(S32k358TPMState *s,
+static
+BOOL NvTestSpace(S32k358TPMState *s,
                         UINT32 size,
                         BOOL   isIndex,
                         BOOL   isCounter)
 {
-    UINT32 remainBytes = NvGetFreeBytes();
+    UINT32 remainBytes = NvGetFreeBytes(s);
     UINT32 reserved = sizeof(UINT32)  /* forward pointer size */
         + sizeof(NV_LIST_TERMINATOR); /* list terminator size */
 
@@ -190,6 +194,7 @@ static BOOL NvTestSpace(S32k358TPMState *s,
  *  0      -> Failure
  *  Others -> Address of the handle
  */
+static
 NV_REF NvFindHandle(S32k358TPMState *s, TPM_HANDLE handle)
 {
     size_t addr = S32K358_TPM_NV_MEM_FIRST_VALID_ADDR + sizeof(UINT32);
@@ -211,11 +216,12 @@ NV_REF NvFindHandle(S32k358TPMState *s, TPM_HANDLE handle)
  * @param[in] auth Authorization token
  * @return Updated size
  */
+static
 UINT16 MemoryRemoveTrailingZeros(TPM2B_AUTH* auth)
 {
-    while ((auth->t.size > 0) && (auth->t.buffer[auth->t.size - 1] == 0))
-        auth->t.size--;
-    return auth->t.size;
+    while ((auth->size > 0) && (auth->buffer[auth->size - 1] == 0))
+        auth->size--;
+    return auth->size;
 }
 
 /**
@@ -225,6 +231,7 @@ UINT16 MemoryRemoveTrailingZeros(TPM2B_AUTH* auth)
  * @param[in] authValue The initial authorization value
  * @return Response code
  */
+static
 TPM_RC NvDefineIndex(S32k358TPMState *s,
               TPMS_NV_PUBLIC* publicArea,
               TPM2B_AUTH*     authValue)
@@ -244,7 +251,7 @@ TPM_RC NvDefineIndex(S32k358TPMState *s,
     // In this implementation, the only resource limitation is the available NV
     // space (and possibly RAM space). Other implementations may have other
     // limitations on counter or on NV slots
-    if (!NvTestSpace(entrySize, TRUE, IsNvCounterIndex(publicArea->attributes)))
+    if (!NvTestSpace(s, entrySize, TRUE, IsNvCounterIndex(publicArea->attributes)))
         return TPM_RC_NV_SPACE;
     
     // Copy input value to nvBuffer
@@ -254,7 +261,7 @@ TPM_RC NvDefineIndex(S32k358TPMState *s,
     nvIndex.authValue = *authValue;
 
     // Add index to NV memory
-    result = NvAdd(entrySize, sizeof(NV_INDEX), TPM_RH_UNASSIGNED, (BYTE*)&nvIndex);
+    result = NvAdd(s, entrySize, sizeof(NV_INDEX), TPM_RH_UNASSIGNED, (BYTE*)&nvIndex);
     return result;
 }
 
@@ -264,8 +271,14 @@ TPM_RC NvDefineIndex(S32k358TPMState *s,
  * @param[in] nvHandle Handle under test
  * @return TRUE if handle is already defined
  */
+static
 BOOL NvIndexIsDefined(S32k358TPMState *s, TPM_HANDLE nvHandle) {
     return (NvFindHandle(s, nvHandle) != 0);
+}
+
+static
+UINT16 CryptHashGetDigestSize(TPMI_ALG_HASH nameAlg) {
+    return 0;
 }
 
 /**
@@ -300,7 +313,7 @@ TPM_RC NvDefineSpace(
     
     
     // Check that the authPolicy is consistent with hash algorithm
-    if (publicInfo->authPolicy.t.size != 0 && publicInfo->authPolicy.t.size != nameSize)
+    if (publicInfo->authPolicy.size != 0 && publicInfo->authPolicy.size != nameSize)
         return TPM_RCS_SIZE + blamePublic;
     
     // Make sure that the authValue is not too large
@@ -311,7 +324,7 @@ TPM_RC NvDefineSpace(
     // clear, then we would not reach this point because ownerAuth
     // can't be given when shEnable is CLEAR. However, if phEnable
     // is SET but phEnableNV is CLEAR, we have to check here
-    if (authHandle == TPM_RH_PLATFORM && gc.phEnableNV == CLEAR)
+    if (authHandle == TPM_RH_PLATFORM && s->gc.phEnableNV == CLEAR)
         return TPM_RCS_HIERARCHY + blameAuthHandle;
     
     // Attribute checks
@@ -412,7 +425,7 @@ TPM_RC NvDefineSpace(
         return TPM_RCS_SIZE + blamePublic;
     
     // And finally, see if the index is already defined.
-    if (NvIndexIsDefined(publicInfo->nvIndex, s))
+    if (NvIndexIsDefined(s, publicInfo->nvIndex))
         return TPM_RC_NV_DEFINED;
 
     // Internal Data Update

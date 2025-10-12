@@ -42,11 +42,13 @@ void tpm_rsp_header_marshal(Fifo8 *fifo, const tpm_rsp_header_t *header) {
 }
 
 // Unmarshal a TPM_HANDLE from the FIFO
+static
 TPM_HANDLE read_be_TPM_HANDLE(Fifo8 *fifo) {
     return (TPM_HANDLE)read_be32(fifo);
 }
 
 // Unmarshal a TPM2B_DIGEST from the FIFO
+static
 TPM2B_DIGEST read_be_TPM2B_DIGEST(Fifo8 *fifo) {
     TPM2B_DIGEST auth;
     auth.size = read_be16(fifo);
@@ -59,11 +61,18 @@ TPM2B_DIGEST read_be_TPM2B_DIGEST(Fifo8 *fifo) {
 }
 
 // Unmarshal a TPMS_NV_PUBLIC from the FIFO
+#define force_cast(Y, X) { \
+    typeof (X) _temp = (X); \
+    Y = *(typeof (Y) *)&(_temp); \
+}
+
+static
 TPMS_NV_PUBLIC read_be_TPMS_NV_PUBLIC(Fifo8 *fifo) {
     TPMS_NV_PUBLIC nv_public;
+
     nv_public.nvIndex = read_be32(fifo);
     nv_public.nameAlg = read_be16(fifo);
-    nv_public.attributes = read_be32(fifo);
+    force_cast(nv_public.attributes, read_be32(fifo));
     nv_public.authPolicy = read_be_TPM2B_DIGEST(fifo);
     nv_public.dataSize = read_be16(fifo);
     
@@ -71,6 +80,7 @@ TPMS_NV_PUBLIC read_be_TPMS_NV_PUBLIC(Fifo8 *fifo) {
 }
 
 // Unmarshal a TPM2B_NV_PUBLIC from the FIFO
+static
 TPM2B_NV_PUBLIC read_be_TPM2B_NV_PUBLIC(Fifo8 *fifo) {
     TPM2B_NV_PUBLIC nv_public;
     nv_public.size = read_be16(fifo);

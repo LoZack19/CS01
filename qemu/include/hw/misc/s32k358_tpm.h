@@ -39,66 +39,14 @@ OBJECT_DECLARE_SIMPLE_TYPE(S32k358TPMState, S32K358_TPM)
 #define TPM_RID_RST             0x00
 
 
-    /* the NULL address should be reserved, as such I chose to define
-     * the first valid address as 0x04. This is not in the specification
-     * but I beliieve that it is not against the specification either.
-     * - Mateus
-     */ 
+/* The NULL address should be reserved, as such I chose to define
+ * the first valid address as 0x04. This is not in the specification
+ * but I beliieve that it is not against the specification either.
+ * - Mateus
+ */ 
 #define S32K358_TPM_NV_MEM_SIZE 1024
+#define MAX_NV_BUFFER_SIZE 1024
 #define S32K358_TPM_NV_MEM_FIRST_VALID_ADDR 0x04
-
-struct S32k358TPMState {
-    SysBusDevice parent_obj;
-
-    MemoryRegion iomem;
-
-    enum {
-        TPM_S_INIT,
-        TPM_S_IDLE,
-        TPM_S_READY,
-        TPM_S_RECV,
-        TPM_S_EXEC,
-        TPM_S_CMPL
-    } tpm_state;
-
-    uint8_t tpm_access;
-    uint32_t tpm_int_enable;
-    uint8_t tpm_int_vector;
-    uint32_t tpm_int_status;
-    uint32_t tpm_intf_caps;
-    uint32_t tpm_sts;
-    uint32_t tpm_data_fifo;
-    uint32_t tpm_interface_id;
-    uint32_t tpm_xdata_fifo;
-    uint32_t tpm_did_vid;
-    uint8_t tpm_rid;
-
-    // Fields for the NV index implementation
-    uint8_t mem[S32K358_TPM_NV_MEM_SIZE];
-    uint32_t nvmem_size;
-    char *filename;
-
-    Fifo8 infifo;
-    Fifo8 outfifo;
-};
-
-REG8(TPM_ACCESS,        0x0000)  // Access Control Register
-    FIELD(TPM_ACCESS, requestUse, 1, 1)
-    FIELD(TPM_ACCESS, activeLocality, 5, 1)
-REG32(TPM_INT_ENABLE,   0x0008)  // Interrupt Enable Register
-REG8(TPM_INT_VECTOR,    0x000C)  // Interrupt Vector Register
-REG32(TPM_INT_STATUS,   0x0010)  // Interrupt Status Register
-REG32(TPM_INTF_CAPS,    0x0014)  // Interface Capabilities Register
-REG32(TPM_STS,          0x0018)  // Status Register
-    FIELD(TPM_STS, burstCount, 8, 16)
-    FIELD(TPM_STS, commandReady, 6, 1) // Start receiving
-    FIELD(TPM_STS, tpmGo, 5, 1) // Start command execution
-    FIELD(TPM_STS, dataAvail, 4, 1)
-REG32(TPM_DATA_FIFO,    0x0024)  // Data Register (ReadFIFO / WriteFIFO depending on direction)
-REG32(TPM_INTERFACE_ID, 0x0030)  // Interface ID Register
-REG32(TPM_XDATA_FIFO,   0x0080)  // Extended Data FIFO Register (ReadFIFO / WriteFIFO depending on direction)
-REG32(TPM_DID_VID,      0x0F00)  // Device ID and Vendor ID Register
-REG8(TPM_RID,           0x0F04)  // Revision ID Register
 
 /* TPM specific types */
 
@@ -148,21 +96,26 @@ typedef uint32_t TPM_RC;
 #define RC_NV_DefineSpace_publicInfo (TPM_RC_P + TPM_RC_2)
 
 typedef uint16_t TPM_ST;
-typedef uint16_t TPMI_ST_COMMAND_TAG;
+
 #define TPM_ST_NO_SESSIONS 0x8001
 #define TPM_ST_SESSIONS    0x8002
+typedef uint16_t TPMI_ST_COMMAND_TAG;
 
+#define SET TRUE
+#define CLEAR FALSE
 typedef uint8_t BOOL;
 typedef uint8_t BYTE;
 typedef uint8_t UINT8;
 typedef uint16_t UINT16;
 typedef uint32_t UINT32;
+typedef uint64_t UINT64;
 
 typedef UINT8 TPM_HT;
 
 typedef UINT16 TPM_ALG_ID;
 
 typedef UINT32 TPM_HANDLE;
+typedef UINT32 NV_REF;
 
 // Restriction of basic types
 #define TPM_RH_OWNER 0x40000001
@@ -207,20 +160,6 @@ typedef struct __packed {
     BYTE buffer[sizeof(TPMU_HA)];
 } TPM2B_DIGEST;
 
-#define MAX_NV_INDEX_SIZE 512
-typedef struct __packed {
-    TPMI_RH_NV_LEGACY_INDEX nvIndex;
-    TPMI_ALG_HASH nameAlg;
-    TPMA_NV attributes;
-    TPM2B_DIGEST authPolicy;
-    UINT16 dataSize;  // {:MAX_NV_INDEX_SIZE}
-} TPMS_NV_PUBLIC;
-
-typedef struct __packed {
-    UINT16 size;  // needs validation against actual size
-    TPMS_NV_PUBLIC nvPublic;
-} TPM2B_NV_PUBLIC;
-
 typedef struct __packed {
     UINT32 PPWRITE             : 1;
     UINT32 OWNERWRITE          : 1;
@@ -248,7 +187,36 @@ typedef struct __packed {
     UINT32 READ_STCLEAR        : 1;
 } TPMA_NV;
 
+#define GET_TPM_NT(attributes) GET_ATTRIBUTE(attributes, TPMA_NV, TPM_NT)
+#define IsNvCounterIndex(attributes) (GET_TPM_NT(attributes) == TPM_NT_COUNTER)
+
+#define MAX_NV_INDEX_SIZE 512
+typedef struct __packed {
+    TPMI_RH_NV_LEGACY_INDEX nvIndex;
+    TPMI_ALG_HASH nameAlg;
+    TPMA_NV attributes;
+    TPM2B_DIGEST authPolicy;
+    UINT16 dataSize;  // {:MAX_NV_INDEX_SIZE}
+} TPMS_NV_PUBLIC;
+
+typedef struct __packed {
+    UINT16 size;  // needs validation against actual size
+    TPMS_NV_PUBLIC nvPublic;
+} TPM2B_NV_PUBLIC;
+
 typedef TPM2B_DIGEST TPM2B_AUTH;
+
+/* NV Types */
+
+typedef struct __packed {
+    TPMS_NV_PUBLIC publicArea;
+    TPM2B_AUTH authValue;
+} NV_INDEX;
+
+typedef struct __packed {
+    UINT32 size;
+    TPM_HANDLE handle;
+} NV_ENTRY_HEADER;
 
 // Headers
 typedef struct __packed {
@@ -297,6 +265,17 @@ void nv_define_space_in_unmarshal(Fifo8 *fifo, uint8_t *in);
 void get_random_in_unmarshal(Fifo8 *fifo, uint8_t *in);
 void get_random_out_marshal(Fifo8 *fifo, const uint8_t *out);
 
+/* NV Storage */
+
+TPM_RC NvDefineSpace(
+    S32k358TPMState *s,
+    TPMI_RH_PROVISION authHandle,
+    TPM2B_AUTH* auth,
+    TPMS_NV_PUBLIC* publicInfo,
+    TPM_RC blameAuthHandle,
+    TPM_RC blameAuth,
+    TPM_RC blamePublic);
+
 /* TPM Commands */
 
 // Response functions
@@ -308,5 +287,84 @@ TPM_RC TPM2_GetRandom(GetRandom_In *in, GetRandom_Out *out);
 
 // Non-volatile Storage
 TPM_RC TPM2_NV_DefineSpace(NV_DefineSpace_In *in, S32k358TPMState *s);
+
+#define shEnable_RESET TRUE
+#define ehEnable_RESET TRUE
+#define phEnableNV_RESET TRUE
+#define platformAlg_RESET TPM_ALG_NULL
+#define platformPolicy_RESET (TPM2B_DIGEST){0}
+#define platformAuth_RESET (TPM2B_AUTH){0}
+
+#define STATE_CLEAR_DATA_PADDING 0
+
+typedef struct __packed {
+    /* Hierarchy Control */
+    BOOL shEnable;
+    BOOL ehEnable;
+    BOOL phEnableNV;
+    TPMI_ALG_HASH platformAlg;
+    TPM2B_DIGEST platformPolicy;
+    TPM2B_AUTH platformAuth;
+    
+    /* PCR */
+
+    /* ACT */
+
+} state_clear_data;
+
+struct S32k358TPMState {
+    SysBusDevice parent_obj;
+
+    MemoryRegion iomem;
+
+    enum {
+        TPM_S_INIT,
+        TPM_S_IDLE,
+        TPM_S_READY,
+        TPM_S_RECV,
+        TPM_S_EXEC,
+        TPM_S_CMPL
+    } tpm_state;
+
+    uint8_t tpm_access;
+    uint32_t tpm_int_enable;
+    uint8_t tpm_int_vector;
+    uint32_t tpm_int_status;
+    uint32_t tpm_intf_caps;
+    uint32_t tpm_sts;
+    uint32_t tpm_data_fifo;
+    uint32_t tpm_interface_id;
+    uint32_t tpm_xdata_fifo;
+    uint32_t tpm_did_vid;
+    uint8_t tpm_rid;
+
+    // Fields for the NV index implementation
+    uint8_t mem[S32K358_TPM_NV_MEM_SIZE];
+    uint32_t nvmem_size;
+    char *filename;
+
+    state_clear_data gc;
+
+    Fifo8 infifo;
+    Fifo8 outfifo;
+};
+
+REG8(TPM_ACCESS,        0x0000)  // Access Control Register
+    FIELD(TPM_ACCESS, requestUse, 1, 1)
+    FIELD(TPM_ACCESS, activeLocality, 5, 1)
+REG32(TPM_INT_ENABLE,   0x0008)  // Interrupt Enable Register
+REG8(TPM_INT_VECTOR,    0x000C)  // Interrupt Vector Register
+REG32(TPM_INT_STATUS,   0x0010)  // Interrupt Status Register
+REG32(TPM_INTF_CAPS,    0x0014)  // Interface Capabilities Register
+REG32(TPM_STS,          0x0018)  // Status Register
+    FIELD(TPM_STS, burstCount, 8, 16)
+    FIELD(TPM_STS, commandReady, 6, 1) // Start receiving
+    FIELD(TPM_STS, tpmGo, 5, 1) // Start command execution
+    FIELD(TPM_STS, dataAvail, 4, 1)
+REG32(TPM_DATA_FIFO,    0x0024)  // Data Register (ReadFIFO / WriteFIFO depending on direction)
+REG32(TPM_INTERFACE_ID, 0x0030)  // Interface ID Register
+REG32(TPM_XDATA_FIFO,   0x0080)  // Extended Data FIFO Register (ReadFIFO / WriteFIFO depending on direction)
+REG32(TPM_DID_VID,      0x0F00)  // Device ID and Vendor ID Register
+REG8(TPM_RID,           0x0F04)  // Revision ID Register
 
 #endif

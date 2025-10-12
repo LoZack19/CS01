@@ -1,6 +1,6 @@
 #include "include/hw/misc/s32k358_tpm.h"
 
-static TPM_HT HandeGetType(TPM_HANDLE handle) {
+static TPM_HT HandleGetType(TPM_HANDLE handle) {
     return (TPM_HT)(handle >> HR_SHIFT);
 }
 
@@ -85,11 +85,11 @@ TPM_RC TPM2_NV_DefineSpace(NV_DefineSpace_In* in, S32k358TPMState *s) {
         return TPM_RCS_HANDLE + RC_NV_DefineSpace_publicInfo;
     }
 
-    return NvDefineSpace(in->authHandle,
-                         &in->auth,
-                         &in->publicInfo.nvPublic,
-                         RC_NV_DefineSpace_authHandle,
-                         RC_NV_DefineSpace_auth,
-                         RC_NV_DefineSpace_publicInfo,
-                         s);
+    return NvDefineSpace(s,
+        in->authHandle,
+        &in->auth,
+        &in->publicInfo.nvPublic,
+        RC_NV_DefineSpace_authHandle,
+        RC_NV_DefineSpace_auth,
+        RC_NV_DefineSpace_publicInfo);
 }

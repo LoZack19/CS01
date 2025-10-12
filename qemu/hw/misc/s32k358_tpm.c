@@ -10,6 +10,7 @@
 
 static void s32k358_tpm_process_input(S32k358TPMState *s) {
     tpm_cmd_header_t cmd_header;
+    TPM_RC rc;
 
     assert(s->tpm_state == TPM_S_EXEC);
 
@@ -55,7 +56,7 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
             get_random_in_unmarshal(&s->infifo, (uint8_t *)&get_random_in);
 
             // Execute command
-            TPM_RC rc = TPM2_GetRandom(&get_random_in, &get_random_out);
+            rc = TPM2_GetRandom(&get_random_in, &get_random_out);
 
             // Generate response
             if (rc != TPM_RC_SUCCESS) {
@@ -79,7 +80,7 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
             nv_define_space_in_unmarshal(&s->infifo, (uint8_t *)&nv_define_space_in);
 
             // Execute command
-            TPM_RC rc = TPM2_NV_DefineSpace(&nv_define_space_in, s);
+            rc = TPM2_NV_DefineSpace(&nv_define_space_in, s);
 
             // Generate response
             if (rc != TPM_RC_SUCCESS) {
