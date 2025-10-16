@@ -1,11 +1,13 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
+#include <stdbool.h>
 #include "S32K358.h"
 #include "Lpuart_Uart_Ip.h"
 #include "IntCtrl_Ip.h"
 #include "FreeRTOS.h"
 #include <stdio.h>
+#include "../../qemu/include/hw/misc/tpm2_spec_protocol.h"
 
 #define LPUART_INSTANCE         (3U)    // Usare LPUART3
 
@@ -25,94 +27,171 @@
 #define TPM_STS_DATA_AVAIL       0x10
 #define TPM_STS_EXPECT           0x08
 
-// Sample Command: TPM2_GetCapability
-// This command queries the TPM for its properties.
-uint8_t tpm_cmd[] = {
-    0x80, 0x01,                         // TPM_ST_NO_SESSIONS
-    0x00, 0x00, 0x00, 0x0E,             // command size = 14
-    0x00, 0x00, 0x01, 0x7A,             // TPM2_CC_GetCapability
-    0x00, 0x00, 0x00, 0x06              // TPM_CAP_TPM_PROPERTIES
-};
+// TPM Utilities
 
-// Add TPM2_GetRandom command (request 8 random bytes)
-uint8_t tpm_getrandom_cmd[] = {
-    0x80, 0x01,                         // TPM_ST_NO_SESSIONS
-    0x00, 0x00, 0x00, 0x0C,             // command size = 12
-    0x00, 0x00, 0x01, 0x7B,             // TPM2_CC_GetRandom (0x0000017B)
-    0x00, 0x08                          // bytesRequested = 8 (big-endian)
-};
+const char* string_from_TPM_RC(TPM_RC rc) {
+    switch (rc) {
+        // Cases are ordered by their numeric value for readability.
+        case TPM_RC_SUCCESS:      return "TPM_RC_SUCCESS";
+        case TPM_RC_BAD_TAG:      return "TPM_RC_BAD_TAG";
+        case TPM_RC_P:            return "TPM_RC_P";
+        case RC_FMT1:             return "RC_FMT1";
+        case TPM_RC_ATTRIBUTES:   return "TPM_RC_ATTRIBUTES";
+        case TPM_RC_HIERARCHY:    return "TPM_RC_HIERARCHY";
+        case TPM_RC_HANDLE:       return "TPM_RC_HANDLE";
+        case TPM_RCS_SIZE:        return "TPM_RCS_SIZE";
+        case TPM_RC_1:            return "TPM_RC_1";
+        case TPM_RC_COMMAND_SIZE: return "TPM_RC_COMMAND_SIZE";
+        case TPM_RC_COMMAND_CODE: return "TPM_RC_COMMAND_CODE";
+        case TPM_RC_NV_SPACE:     return "TPM_RC_NV_SPACE";
+        case TPM_RC_NV_DEFINED:   return "TPM_RC_NV_DEFINED";
+        case TPM_RC_2:            return "TPM_RC_2";
+        case TPM_RC_3:            return "TPM_RC_3";
+        default:                  return "UNKNOWN_RC";
+    }
+}
 
-// Expected response for TPM2_GetRandom (example 8 random bytes)
-uint8_t tpm_getrandom_rsp_expected[] = {
-    0x80, 0x01,             // TPM_ST_NO_SESSIONS
-    0x00, 0x00, 0x00, 0x2C, // response size = 10 + 2 + 32 = 44
-    0x00, 0x00, 0x00, 0x00, // TPM_RC_SUCCESS
-    0x00, 0x08,             // digest size = 8 bytes
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-};
+int assert_count = 0;
+int assert_failures = 0;
 
-// Requests access to TPM locality 0 and waits until it is granted.
+void assert(bool expression, const char* expected, const char* actual) {
+    if (!expression) {
+        Lpuart_Uart_Ip_S yncSend(LPUART_INSTANCE,
+                                (uint8_t *)"Expected: ", 10,
+                                portMAX_DELAY);
+        
+        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE,
+                                (uint8_t *)expected, strlen(expected),
+                                portMAX_DELAY);
+        
+        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE,
+                                (uint8_t *)"\nActual: ", 9,
+                                portMAX_DELAY);
+
+        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE,
+                                (uint8_t *)actual, strlen(actual),
+                                portMAX_DELAY);
+        
+        assert_failures++;
+    }
+    assert_count++;
+}
+
+// TPM Interface
+
+/**
+ * @brief Send data into TPM
+ * @param[in] data Data to be sent into the TPM
+ * @param[in] size Amount of data to be sent
+ */
+void tpm_send(const void *data, size_t size) {
+    for (size_t i = 0; i < size; i++) {        
+        // Warning: This write should be guarded by a busy wait to prevent
+        // writing on a full queue, but TPM does not leak this information
+        // thus our hands are tied
+        TPM_DATA_FIFO = ((uint8_t *)data)[i];
+    }
+}
+
+/**
+ * @brief Receive data from TPM
+ * @param[out] data Storage for the received data 
+ * @param[in] size Amount of data to retrieve
+ */
+void tpm_receive(void *data, size_t size) {
+    for (size_t i = 0; i < size; i++) {
+        // Warning: This read should be guarded by a busy wait to prevent
+        // reading from and empty queue, but TPM does not leak this information
+        // thus our hands are tied
+        ((uint8_t *)data)[i] = TPM_DATA_FIFO;
+    }
+}
+
+/**
+ * @brief Request TPM locality and busy wait until it's granted
+ */
+static inline
 void tpm_wait_access(void) {
     TPM_ACCESS = TPM_ACCESS_REQUEST_USE;
     while (!(TPM_ACCESS & TPM_ACCESS_ACTIVE_LOCAL));
 }
 
-// Writes the command to the TPM FIFO, handling burst size as reported by TPM_STS.
-void tpm_wait_burst_and_write(const uint8_t* data, size_t len) {
-    size_t offset = 0;
-    while (offset < len) {
-        uint32_t sts = TPM_STS;
-        uint16_t burst = (sts >> 8) & 0xFFFF;
-        if (burst == 0) continue; // Wait for burst to become available
-
-        size_t count = (burst < (len - offset)) ? burst : (len - offset);
-        for (size_t i = 0; i < count; ++i)
-            TPM_DATA_FIFO = data[offset + i]; // Write data byte-by-byte
-
-        offset += count;
-    }
+/**
+ * @brief Notify TPM that a command is about to be sent in
+ */
+static inline
+void tpm_command_ready(void) {
+    TPM_STS = TPM_STS_COMMAND_READY;
 }
 
-// Reads the TPM response from the FIFO into buf, up to max_len bytes.
-// Sets actual_len to the number of bytes read.
-void tpm_read_response(uint8_t* buf, size_t max_len, size_t* actual_len) {
-    while (!(TPM_STS & TPM_STS_DATA_AVAIL));  // Wait for response to be available
-
-    // Read the 10-byte TPM response header (tag, size, code)
-    for (int i = 0; i < 10; ++i)
-        buf[i] = TPM_DATA_FIFO;
-
-    // Extract total response size from header
-    uint32_t total = (buf[2] << 24) | (buf[3] << 16) | (buf[4] << 8) | buf[5];
-    if (total > max_len) total = max_len;
-
-    // Read the rest of the response
-    for (size_t i = 10; i < total; ++i)
-        buf[i] = TPM_DATA_FIFO;
-
-    *actual_len = total;
+/**
+ * @brief Start the execution of a command
+ */
+static inline
+void tpm_go(void) {
+    TPM_STS = TPM_STS_GO;
 }
 
-// Function to print a response packet on the console for debugging purposes
-void print_response(const uint8_t* rsp, size_t len) {
-    for (size_t i = 0; i < len; ++i) {
-        if (i > 0 && i % 16 == 0) {
-            Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"\n", 1, portMAX_DELAY);
+// TPM Commands
+
+TPM_RC TPM2_NV_DefineSpace(NV_DefineSpace_In *in) {
+    tpm_rsp_header_t rsp;
+    fifo8 infifo = {0};
+    fifo8 outfifo = {0};
+    
+    tpm_cmd_header_t cmd = {
+        .tag = TPM_ST_NO_SESSIONS,
+        .commandSize = sizeof(cmd) + sizeof(*in),
+        .commandCode = TPM_CC_NV_DefineSpace
+    };
+    
+    tpm_send(&cmd, sizeof(cmd));
+    tpm_send(in, sizeof(*in));
+    
+    tpm_go();
+    
+    tpm_receive(&rsp, sizeof(rsp));
+    
+    return rsp.responseCode;
+}
+
+// TPM Tests
+
+void TPM2_NV_DefineSpace_test() {
+    TPM_RC res;
+    
+    NV_DefineSpace_In test_input = {
+        .authHandle = TPM_RH_OWNER,
+        .auth = {
+            .size = 0, // No authorization value (password) required for this example
+            .buffer = {0}
+        },
+        .publicInfo = {
+            .size = 0,
+            .nvPublic = {
+                .nvIndex = 0x01500016, // A valid index in the allowed range
+                .nameAlg = TPM_ALG_NULL,
+                .attributes = {.OWNERREAD = 1, .OWNERWRITE = 1},
+                .dataSize = 32, // The size of the NV space in bytes
+                .authPolicy = {
+                    .size = 0, // No policy required for this example
+                    .buffer = {0}
+                },
+            },
         }
-        char hexbuf[6];
-        int hexlen = snprintf(hexbuf, sizeof(hexbuf), "0x%02X ", rsp[i]);
-        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)hexbuf, hexlen, portMAX_DELAY);
-    }
-    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"\n", 1, portMAX_DELAY);
+    };
+    
+    res = TPM2_NV_DefineSpace(&test_input);
+    assert(res == TPM_RC_SUCCESS,
+           string_from_TPM_RC(TPM_RC_SUCCESS), 
+           string_from_TPM_RC(res));
 }
 
-// Function to report expected response and actual response for debugging
-void report_expected_response(const uint8_t* expected, const uint8_t* actual, size_t len) {
-    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[DEBUG] Expected Response: ", 28, portMAX_DELAY);
-    print_response(expected, len);
-    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[DEBUG] Actual Response: ", 26, portMAX_DELAY);
-    print_response(actual, len);
+void tpm_test() {
+    tpm_wait_access();
+    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] TPM access granted\n", 26, portMAX_DELAY);
+
+    TPM2_NV_DefineSpace_test();
 }
 
 int main(void) {
@@ -125,35 +204,7 @@ int main(void) {
     Lpuart_Uart_Ip_Init(LPUART_INSTANCE, &Lpuart_Uart_Ip_xHwConfigPB_3);
     Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Starting TPM Test\n", 25, portMAX_DELAY);
 
-    tpm_wait_access();
-    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Access granted to TPM locality 0\n", 40, portMAX_DELAY);
-
-    TPM_STS = TPM_STS_COMMAND_READY;
-    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Sending TPM command\n", 27, portMAX_DELAY);
-
-    tpm_wait_burst_and_write(tpm_getrandom_cmd, sizeof(tpm_getrandom_cmd));
-    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Command sent, waiting for response\n", 42, portMAX_DELAY);
-
-    TPM_STS = TPM_STS_GO;
-    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Command execution started\n", 33, portMAX_DELAY);
-
-    tpm_read_response(rsp_buf, sizeof(rsp_buf), &rsp_len);
-    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Response received\n", 25, portMAX_DELAY);
-
-    if (rsp_len < sizeof(tpm_getrandom_rsp_expected)) {
-        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[ERROR] GetRandom: Response is too short\n", 41, portMAX_DELAY);
-        report_expected_response(tpm_getrandom_rsp_expected, rsp_buf, rsp_len);
-        while (1);
-    }
-
-    if (memcmp(rsp_buf, tpm_getrandom_rsp_expected, sizeof(tpm_getrandom_rsp_expected) - 32) != 0) {
-        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[ERROR] GetRandom: Response does not match expected\n", 52, portMAX_DELAY);
-        report_expected_response(tpm_getrandom_rsp_expected, rsp_buf, rsp_len);
-        while (1);
-    }
-
-    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[SUCCESS] GetRandom success\n", 28, portMAX_DELAY);
-    while (1);
+    tpm_test();
 
     return 0;
 }
