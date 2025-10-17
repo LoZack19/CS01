@@ -41,6 +41,11 @@ void tpm_success_response(S32k358TPMState *s, const uint8_t *data, size_t size, 
     s->tpm_state = TPM_S_CMPL; // Transition to complete state
     s->tpm_sts |= R_TPM_STS_dataAvail_MASK;
     s->tpm_sts |= R_TPM_STS_commandReady_MASK;
+
+    // Update burstCount
+    s->tpm_sts &= ~R_TPM_STS_burstCount_MASK;
+    s->tpm_sts |= (rsp_header.responseSize << R_TPM_STS_burstCount_SHIFT) &
+                  R_TPM_STS_burstCount_MASK;
     
     qemu_log_mask(LOG_GUEST_ERROR, "(INFO) TPM: Command executed successfully, response sent\n");
 }

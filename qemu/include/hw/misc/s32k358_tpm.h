@@ -90,10 +90,11 @@ REG8(TPM_INT_VECTOR,    0x000C)  // Interrupt Vector Register
 REG32(TPM_INT_STATUS,   0x0010)  // Interrupt Status Register
 REG32(TPM_INTF_CAPS,    0x0014)  // Interface Capabilities Register
 REG32(TPM_STS,          0x0018)  // Status Register
-    FIELD(TPM_STS, burstCount, 8, 16)
-    FIELD(TPM_STS, commandReady, 6, 1) // Start receiving
+    FIELD(TPM_STS, Expect, 3, 1) // Data can be sent to TPM
+    FIELD(TPM_STS, dataAvail, 4, 1) // Data can be received from TPM
     FIELD(TPM_STS, tpmGo, 5, 1) // Start command execution
-    FIELD(TPM_STS, dataAvail, 4, 1)
+    FIELD(TPM_STS, commandReady, 6, 1) // Start receiving
+    FIELD(TPM_STS, burstCount, 8, 16) // Data that can be sent/received without waiting
 REG32(TPM_DATA_FIFO,    0x0024)  // Data Register (ReadFIFO / WriteFIFO depending on direction)
 REG32(TPM_INTERFACE_ID, 0x0030)  // Interface ID Register
 REG32(TPM_XDATA_FIFO,   0x0080)  // Extended Data FIFO Register (ReadFIFO / WriteFIFO depending on direction)

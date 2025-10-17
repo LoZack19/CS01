@@ -145,8 +145,9 @@ static void s32k358_tpm_write(void *opaque, hwaddr offset, uint64_t value, unsig
                 return;
             }
 
+            // Transition to receiving state
             if (s->tpm_state == TPM_S_READY) {
-                s->tpm_state = TPM_S_RECV; // Transition to receiving state
+                s->tpm_state = TPM_S_RECV;
             }
 
             if (s->tpm_state == TPM_S_RECV) {
@@ -159,9 +160,22 @@ static void s32k358_tpm_write(void *opaque, hwaddr offset, uint64_t value, unsig
             // Now bytes can be accepted in the input FIFO
             if (value & R_TPM_STS_commandReady_MASK) {
                 if (s->tpm_state == TPM_S_CMPL) {
-                    s->tpm_state = TPM_S_IDLE; // Transition to idle state
+                    s->tpm_state = TPM_S_IDLE;
                 } else {
                     s->tpm_state = TPM_S_READY;
+                    
+                    // If there is space in the input fifo, set the Expect bit
+                    if (fifo8_num_free(&s->infifo) > 0) {
+                        s->tpm_sts |= R_TPM_STS_Expect_MASK;
+                        
+                        // Update burstCount to match the number of available
+                        // bits in the input fifo
+                        s->tpm_sts &= ~R_TPM_STS_burstCount_MASK;
+                        s->tpm_sts |= (fifo8_num_free(&s->infifo) << 
+                                       R_TPM_STS_burstCount_SHIFT) &
+                                       R_TPM_STS_burstCount_MASK;
+                    }
+                    
                 }
             }
 

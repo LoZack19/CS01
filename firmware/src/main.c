@@ -56,7 +56,8 @@ int assert_failures = 0;
 
 void assert(bool expression, const char* expected, const char* actual) {
     if (!expression) {
-        Lpuart_Uart_Ip_S yncSend(LPUART_INSTANCE,
+        // Expected: <exp>, got: <got>
+        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE,
                                 (uint8_t *)"Expected: ", 10,
                                 portMAX_DELAY);
         
@@ -65,30 +66,45 @@ void assert(bool expression, const char* expected, const char* actual) {
                                 portMAX_DELAY);
         
         Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE,
-                                (uint8_t *)"\nActual: ", 9,
+                                (uint8_t *)", got: ", 7,
                                 portMAX_DELAY);
 
         Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE,
                                 (uint8_t *)actual, strlen(actual),
                                 portMAX_DELAY);
+
+        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE,
+                                (uint8_t *)"\n", 1,
+                                portMAX_DELAY);
         
         assert_failures++;
     }
     assert_count++;
+
+    for (;;);
 }
 
 // TPM Interface
+
+bool tpm_send_rdy(void) {
+    return TPM_STS & TPM_STS_EXPECT;
+}
+
+bool tpm_receive_rdy(void) {
+    return TPM_STS & TPM_STS_DATA_AVAIL;
+}
 
 /**
  * @brief Send data into TPM
  * @param[in] data Data to be sent into the TPM
  * @param[in] size Amount of data to be sent
+ * 
+ * @note This could be made more efficient by using burstSize instead of waiting
+ *       on every byte.
  */
 void tpm_send(const void *data, size_t size) {
     for (size_t i = 0; i < size; i++) {        
-        // Warning: This write should be guarded by a busy wait to prevent
-        // writing on a full queue, but TPM does not leak this information
-        // thus our hands are tied
+        while (!tpm_send_rdy());
         TPM_DATA_FIFO = ((uint8_t *)data)[i];
     }
 }
@@ -97,12 +113,13 @@ void tpm_send(const void *data, size_t size) {
  * @brief Receive data from TPM
  * @param[out] data Storage for the received data 
  * @param[in] size Amount of data to retrieve
+ * 
+ * @note This could be made more efficient by using burstSize instead of waiting
+ *       on every byte.
  */
 void tpm_receive(void *data, size_t size) {
     for (size_t i = 0; i < size; i++) {
-        // Warning: This read should be guarded by a busy wait to prevent
-        // reading from and empty queue, but TPM does not leak this information
-        // thus our hands are tied
+        while (!tpm_receive_rdy());
         ((uint8_t *)data)[i] = TPM_DATA_FIFO;
     }
 }
@@ -121,7 +138,7 @@ void tpm_wait_access(void) {
  */
 static inline
 void tpm_command_ready(void) {
-    TPM_STS = TPM_STS_COMMAND_READY;
+    TPM_STS |= TPM_STS_COMMAND_READY;
 }
 
 /**
@@ -129,15 +146,13 @@ void tpm_command_ready(void) {
  */
 static inline
 void tpm_go(void) {
-    TPM_STS = TPM_STS_GO;
+    TPM_STS |= TPM_STS_GO;
 }
 
 // TPM Commands
 
 TPM_RC TPM2_NV_DefineSpace(NV_DefineSpace_In *in) {
     tpm_rsp_header_t rsp;
-    fifo8 infifo = {0};
-    fifo8 outfifo = {0};
     
     tpm_cmd_header_t cmd = {
         .tag = TPM_ST_NO_SESSIONS,
@@ -145,6 +160,7 @@ TPM_RC TPM2_NV_DefineSpace(NV_DefineSpace_In *in) {
         .commandCode = TPM_CC_NV_DefineSpace
     };
     
+    tpm_command_ready();
     tpm_send(&cmd, sizeof(cmd));
     tpm_send(in, sizeof(*in));
     
