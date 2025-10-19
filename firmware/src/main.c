@@ -7,7 +7,7 @@
 #include "IntCtrl_Ip.h"
 #include "FreeRTOS.h"
 #include <stdio.h>
-#include "../../qemu/include/hw/misc/tpm2_spec_protocol.h"
+#include "tpm2_spec_protocol.h"
 
 #define LPUART_INSTANCE         (3U)    // Usare LPUART3
 
@@ -60,11 +60,11 @@ void assert(bool expression, const char* expected, const char* actual) {
         Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE,
                                 (uint8_t *)"Expected: ", 10,
                                 portMAX_DELAY);
-        
+
         Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE,
                                 (uint8_t *)expected, strlen(expected),
                                 portMAX_DELAY);
-        
+
         Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE,
                                 (uint8_t *)", got: ", 7,
                                 portMAX_DELAY);
@@ -76,7 +76,7 @@ void assert(bool expression, const char* expected, const char* actual) {
         Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE,
                                 (uint8_t *)"\n", 1,
                                 portMAX_DELAY);
-        
+
         assert_failures++;
     }
     assert_count++;
@@ -98,12 +98,12 @@ bool tpm_receive_rdy(void) {
  * @brief Send data into TPM
  * @param[in] data Data to be sent into the TPM
  * @param[in] size Amount of data to be sent
- * 
+ *
  * @note This could be made more efficient by using burstSize instead of waiting
  *       on every byte.
  */
 void tpm_send(const void *data, size_t size) {
-    for (size_t i = 0; i < size; i++) {        
+    for (size_t i = 0; i < size; i++) {
         while (!tpm_send_rdy());
         TPM_DATA_FIFO = ((uint8_t *)data)[i];
     }
@@ -111,9 +111,9 @@ void tpm_send(const void *data, size_t size) {
 
 /**
  * @brief Receive data from TPM
- * @param[out] data Storage for the received data 
+ * @param[out] data Storage for the received data
  * @param[in] size Amount of data to retrieve
- * 
+ *
  * @note This could be made more efficient by using burstSize instead of waiting
  *       on every byte.
  */
@@ -153,29 +153,29 @@ void tpm_go(void) {
 
 TPM_RC TPM2_NV_DefineSpace(NV_DefineSpace_In *in) {
     tpm_rsp_header_t rsp;
-    
+
     tpm_cmd_header_t cmd = {
         .tag = TPM_ST_NO_SESSIONS,
         .commandSize = sizeof(cmd) + sizeof(*in),
         .commandCode = TPM_CC_NV_DefineSpace
     };
-    
+
     tpm_command_ready();
     tpm_send(&cmd, sizeof(cmd));
     tpm_send(in, sizeof(*in));
-    
+
     tpm_go();
-    
+
     tpm_receive(&rsp, sizeof(rsp));
-    
+
     return rsp.responseCode;
 }
 
 // TPM Tests
 
-void TPM2_NV_DefineSpace_test() {
+void TPM2_NV_DefineSpace_test(void) {
     TPM_RC res;
-    
+
     NV_DefineSpace_In test_input = {
         .authHandle = TPM_RH_OWNER,
         .auth = {
@@ -196,14 +196,14 @@ void TPM2_NV_DefineSpace_test() {
             },
         }
     };
-    
+
     res = TPM2_NV_DefineSpace(&test_input);
     assert(res == TPM_RC_SUCCESS,
-           string_from_TPM_RC(TPM_RC_SUCCESS), 
+           string_from_TPM_RC(TPM_RC_SUCCESS),
            string_from_TPM_RC(res));
 }
 
-void tpm_test() {
+void tpm_test(void) {
     tpm_wait_access();
     Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] TPM access granted\n", 26, portMAX_DELAY);
 
@@ -211,8 +211,6 @@ void tpm_test() {
 }
 
 int main(void) {
-    uint8_t rsp_buf[4096];
-    size_t rsp_len;
 
     IntCtrl_Ip_Init(&IntCtrlConfig_0);
     IntCtrl_Ip_EnableIrq(LPUART3_IRQn);
