@@ -21,12 +21,12 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
     }
 
     // Unmarshal command header from FIFO
-    tpm_cmd_header_unmarshal(&s->infifo, &cmd_header);
+    UNMARSHAL(&cmd_header, &s->infifo);
 
     // Check if tag is valid
     if (cmd_header.tag != TPM_ST_NO_SESSIONS && cmd_header.tag != TPM_ST_SESSIONS) {
         qemu_log_mask(LOG_GUEST_ERROR, "(ERROR) TPM: Command header tag is not valid. Received 0x%04X\n", cmd_header.tag);
-        tpm_error_response(s, TPM_RC_BAD_TAG);
+        tpm_send_error_response(s, TPM_RC_BAD_TAG);
         return;
     }
 
@@ -36,7 +36,7 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
         qemu_log_mask(LOG_GUEST_ERROR, "(INFO) TPM: Command size: %u, Header size: %zu\n",cmd_header.commandSize, sizeof(tpm_cmd_header_t));
         qemu_log_mask(LOG_GUEST_ERROR, "(INFO) TPM: FIFO used size: %u, FIFO available size: %u\n",
                       fifo8_num_used(&s->infifo), fifo8_num_free(&s->infifo));
-        tpm_error_response(s, TPM_RC_COMMAND_SIZE);
+        tpm_send_error_response(s, TPM_RC_COMMAND_SIZE);
         return;
     }
 
@@ -48,22 +48,18 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
             
             // Check if the command size is coherent with the expected size
             if (cmd_header.commandSize != sizeof(tpm_cmd_header_t) + sizeof(get_random_in)) {
-                tpm_error_response(s, TPM_RC_COMMAND_SIZE);
+                tpm_send_error_response(s, TPM_RC_COMMAND_SIZE);
                 return;
             }
 
             // Unmarshal the GetRandom input
-            get_random_in_unmarshal(&s->infifo, (uint8_t *)&get_random_in);
+            UNMARSHAL(&get_random_in, &s->infifo);
 
             // Execute command
             rc = TPM2_GetRandom(&get_random_in, &get_random_out);
 
             // Generate response
-            if (rc != TPM_RC_SUCCESS) {
-                tpm_error_response(s, rc);
-            } else {
-                tpm_success_response(s, (const uint8_t *)&get_random_out, sizeof(get_random_out), get_random_out_marshal);
-            }
+            tpm_send_response(s, rc, &get_random_out, sizeof(get_random_out));
 
             return;
         
@@ -72,28 +68,24 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
 
             // Check if the command size is coherent with the expected size
             if (cmd_header.commandSize != sizeof(tpm_cmd_header_t) + sizeof(nv_define_space_in)) {
-                tpm_error_response(s, TPM_RC_COMMAND_SIZE);
+                tpm_send_error_response(s, TPM_RC_COMMAND_SIZE);
                 return;
             }
 
             // Unmarshal the NV_DefineSpace input
-            nv_define_space_in_unmarshal(&s->infifo, (uint8_t *)&nv_define_space_in);
+            UNMARSHAL(&nv_define_space_in, &s->infifo);
 
             // Execute command
             rc = TPM2_NV_DefineSpace(&nv_define_space_in);
 
             // Generate response
-            if (rc != TPM_RC_SUCCESS) {
-                tpm_error_response(s, rc);
-            } else {
-                tpm_success_response(s, NULL, 0, NULL);
-            }
+            tpm_send_response(s, rc, NULL, 0);
 
             return;
 
         default: /* unimplemented command */
             qemu_log_mask(LOG_GUEST_ERROR, "(ERROR) TPM: Unimplemented command\n");
-            tpm_error_response(s, TPM_RC_COMMAND_CODE);
+            tpm_send_error_response(s, TPM_RC_COMMAND_CODE);
             return;
     }
 

@@ -75,6 +75,10 @@
 
 /* Section #2: Macros */
 
+// Marshalling and Unmarshalling
+#define UNMARSHAL(data, fifo) unmarshal(data, sizeof(*(data)), fifo)
+#define MARSHAL(fifo, data) marshal(fifo, data, sizeof(*(data)))
+
 // Access to bitfields
 #define IS_ATTRIBUTE(a, type, b)    ((a.b) != 0)
 #define SET_ATTRIBUTE(a, type, b)   (a.b = SET)
@@ -239,21 +243,8 @@ typedef struct __packed {
 
 /* Subsection #6.1: Marshalling and Unmarshalling functions */
 
-// Endianness conversion functions
-UINT8 read_be8(Fifo8 *fifo);
-UINT16 read_be16(Fifo8 *fifo);
-UINT32 read_be32(Fifo8 *fifo);
-void write_be16(Fifo8 *fifo, UINT16 value);
-void write_be32(Fifo8 *fifo, UINT32 value);
-
-// Marshalling and unmarshalling functions
-void tpm_cmd_header_unmarshal(Fifo8 *fifo, tpm_cmd_header_t *header);
-void tpm_rsp_header_marshal(Fifo8 *fifo, const tpm_rsp_header_t *header);
-
-// Command specific marshalling functions
-void nv_define_space_in_unmarshal(Fifo8 *fifo, uint8_t *in);
-void get_random_in_unmarshal(Fifo8 *fifo, uint8_t *in);
-void get_random_out_marshal(Fifo8 *fifo, const uint8_t *out);
+void unmarshal(void *data, size_t size, Fifo8 *fifo);
+void marshal(Fifo8 *fifo, const void *data, size_t size);
 
 /* Subsection #6.2: Helper Functions */
 

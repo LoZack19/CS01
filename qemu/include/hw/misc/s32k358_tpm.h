@@ -42,8 +42,13 @@ OBJECT_DECLARE_SIMPLE_TYPE(S32k358TPMState, S32K358_TPM)
 #define S32K358_TPM_NV_MEM_FIRST_VALID_ADDR 0x04
 
 // Response functions
-void tpm_error_response(S32k358TPMState *s, TPM_RC rc);
-void tpm_success_response(S32k358TPMState *s, const uint8_t *data, size_t size, void marshal_func(Fifo8 *fifo, const uint8_t *data));
+void tpm_send_response(S32k358TPMState *s, TPM_RC rc,
+                       const void *data, size_t size);
+
+static inline
+void tpm_send_error_response(S32k358TPMState *s, TPM_RC rc) {
+    tpm_send_response(s, rc, NULL, 0);
+}
 
 struct S32k358TPMState {
     SysBusDevice parent_obj;

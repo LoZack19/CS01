@@ -6,39 +6,24 @@ static TPM_HT HandleGetType(TPM_HANDLE handle) {
 
 /* TPM responses */
 
-void tpm_error_response(S32k358TPMState *s, TPM_RC rc) {
-    tpm_rsp_header_t rsp_header;
-
-    rsp_header.tag = TPM_ST_NO_SESSIONS; // No sessions for this response
-    rsp_header.responseSize = sizeof(rsp_header);
-    rsp_header.responseCode = rc;
-
-    // Marshal the response header onto the output FIFO
-    tpm_rsp_header_marshal(&s->outfifo, &rsp_header);
-
-    // Update status to indicate data is available
-    s->tpm_state = TPM_S_CMPL; // Transition to complete state
-    s->tpm_sts |= R_TPM_STS_dataAvail_MASK;
-    s->tpm_sts |= R_TPM_STS_commandReady_MASK;
-}
-
-void tpm_success_response(S32k358TPMState *s, const uint8_t *data, size_t size, void marshal_func(Fifo8 *fifo, const uint8_t *data)) {
+void tpm_send_response(S32k358TPMState *s, TPM_RC rc, 
+                       const void *data, size_t size) {
     tpm_rsp_header_t rsp_header;
 
     rsp_header.tag = TPM_ST_NO_SESSIONS; // No sessions for this response
     rsp_header.responseSize = sizeof(rsp_header) + size;
     rsp_header.responseCode = TPM_RC_SUCCESS;
 
-    if (data != NULL || size != 0 || marshal_func != NULL) {
-        // Marshal the response header onto the output FIFO
-        tpm_rsp_header_marshal(&s->outfifo, &rsp_header);
+    // Marshal the response header onto the output FIFO
+    MARSHAL(&s->outfifo, &rsp_header);
 
-        // Marshal the actual data onto the output FIFO
-        marshal_func(&s->outfifo, data);
+    // Marshal the actual data onto the output FIFO on success
+    if (rc == TPM_RC_SUCCESS) {
+        marshal(&s->outfifo, data, size);
     }
 
-    // Update status to indicate data is available
-    s->tpm_state = TPM_S_CMPL; // Transition to complete state
+    // Update status to indicate that data is available
+    s->tpm_state = TPM_S_CMPL;
     s->tpm_sts |= R_TPM_STS_dataAvail_MASK;
     s->tpm_sts |= R_TPM_STS_commandReady_MASK;
 

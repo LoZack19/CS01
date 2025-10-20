@@ -17,6 +17,10 @@
         "tuple": "c",
         "type_traits": "c",
         "ostream": "c",
-        "tpm2_spec_protocol.h": "c"
+        "tpm2_spec_protocol.h": "c",
+        "*.idef": "c",
+        "*.def": "c",
+        "string": "c",
+        "registerfields.h": "c"
     }
 }
