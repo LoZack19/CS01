@@ -32,7 +32,8 @@ BOOL NvInit(void *memory, size_t size, state_clear_data *tpm_saved_state)
     pthread_mutex_lock(&nvmem.lock);
 
     if (memory == NULL) {
-        qemu_log_mask(LOG_GUEST_ERROR, "[NV STORAGE] Invalid address for NvStorage memory");
+        qemu_log_mask(LOG_GUEST_ERROR, "[NV STORAGE] Invalid address for"
+            " NvStorage memory");
         pthread_mutex_unlock(&nvmem.lock);
         return TRUE;
     }
@@ -44,7 +45,8 @@ BOOL NvInit(void *memory, size_t size, state_clear_data *tpm_saved_state)
         pthread_mutex_unlock(&nvmem.lock);
         return FALSE;
     } else {
-        qemu_log_mask(LOG_GUEST_ERROR, "[NV STORAGE] Module NvStorage cannot be used more than once");
+        qemu_log_mask(LOG_GUEST_ERROR, "[NV STORAGE] Module NvStorage cannot "
+            "be used more than once");
         pthread_mutex_unlock(&nvmem.lock);
         return TRUE;
     }
@@ -254,28 +256,29 @@ NV_REF NvFindHandle(TPM_HANDLE handle)
  * @param[out] nvIndex Pointer to the variable where the read NV index will be
  * stored.
  */
-void NvReadNvIndexInfo(NV_REF    ref, 
-                       NV_INDEX* nvIndex)
+static
+void NvReadNvIndexInfo(NV_REF ref,  NV_INDEX* nvIndex)
 {
     assert(nvIndex != NULL);
     NvRead(nvIndex, ref, sizeof(NV_INDEX));
 }
 
+#warning Meaningless comment for NvGetIndexInfo()
 /**
  * @brief Gets nvIndex info.
- * @param[in] The index of the handle to be searched
- * @param[out] The location of the index.
- * @return Response code TPM_RC_SUCCESS - Cannot Fail
+ * @param[in] nvHandle The the handle of the index to be searched
+ * @param[out] locator The location of the index.
+ * @return Pointer to the index struct
  */
-static NV_INDEX* NvGetIndexInfo(TPM_HANDLE nvHandle, NV_REF *locator)
+NV_INDEX* NvGetIndexInfo(TPM_HANDLE nvHandle, NV_REF *locator)
 {
-    s_cachedNvIndex.publicArea.nvIndex = TPM_RH_UNASSIGNED;
-    s_cachedNvRef = NvFindHandle(nvHandle);
+    cachedNvIndex.publicArea.nvIndex = TPM_RH_UNASSIGNED;
+    cachedNvRef = NvFindHandle(nvHandle);
     if (!cachedNvRef)
         return NULL;
-    NvReadNvIndexInfo(s_cachedNvRef, &s_cachedNvIndex);
+    NvReadNvIndexInfo(cachedNvRef, &cachedNvIndex);
     if (locator)
-        *locator = s_cachedNvRef;
+        *locator = cachedNvRef;
     return &cachedNvIndex;
 }
 
@@ -498,16 +501,16 @@ TPM_RC NvDefineSpace(
 }
 
 /**
- * @brief Writes just the attributes of an index to NV.
- * @param[in] locator Location of the index.
- * @param[in] attributs Attributes to write to the index.
+ * @brief Writes the attributes of an index to NV
+ * @param[in] locator Reference to the index whose attributes we want to change
+ * @param[in] attributs Attributes to write to the index
  * @return Response code
  */
-static TPM_RC NvWriteNvIndexAttributes(NV_INDEX *nvIndex, TPMA_NV attributes)
+static TPM_RC NvWriteNvIndexAttributes(NV_REF locator, TPMA_NV attributes)
 {
     return NvWrite(locator + offsetof(NV_INDEX, publicArea.attributes),
-                                sizeof(TPMA_NV),
-                                &attributes) ? TPM_RC_SUCCESS : TPM_RC_FAILURE;
+                   sizeof(TPMA_NV),
+                   &attributes) ? TPM_RC_SUCCESS : TPM_RC_FAILURE;
 }
 
 /**
@@ -518,11 +521,8 @@ static TPM_RC NvWriteNvIndexAttributes(NV_INDEX *nvIndex, TPMA_NV attributes)
  * @param[in] data A pointer to the buffer containing the data to be written to the space.
  * @return Response code
  */
-TPM_RC
-NvWriteIndexData(NV_INDEX* nvIndex,
-                 UINT32    offset,
-                 UINT32    size,
-                 void*     data)
+TPM_RC NvWriteIndexData(NV_INDEX* nvIndex, UINT32 offset,
+                        UINT32 size, void* data) 
 {
     TPM_RC result = TPM_RC_SUCCESS;
 
@@ -530,7 +530,7 @@ NvWriteIndexData(NV_INDEX* nvIndex,
     // Make sure that this is dealing with the 'default' index.
     // Note: it is tempting to change the calling sequence so that the 'default' is
     // presumed.
-    //assert(nvIndex->publicArea.nvIndex == s_cachedNvIndex.publicArea.nvIndex);
+    //assert(nvIndex->publicArea.nvIndex == cachedNvIndex.publicArea.nvIndex);
 
     // Validate that write falls within range of the index
     assert(offset <= nvIndex->publicArea.dataSize
@@ -545,14 +545,14 @@ NvWriteIndexData(NV_INDEX* nvIndex,
         // If this is not orderly, then update the NV version of
         // the attributes
         if (!IS_ATTRIBUTE(nvIndex->publicArea.attributes, TPMA_NV, ORDERLY)) {
-            result = NvWriteNvIndexAttributes(s_cachedNvRef, nvIndex->publicArea.attributes);
+            result = NvWriteNvIndexAttributes(cachedNvRef, nvIndex->publicArea.attributes);
             if (result != TPM_RC_SUCCESS)
                 return result;
             // If this is a partial write of an ordinary index, clear the whole
             // index.
             //if(IsNvOrdinaryIndex(nvIndex->publicArea.attributes)
             //   && (nvIndex->publicArea.dataSize > size))
-            //    _plat__NvMemoryClear(s_cachedNvRef + sizeof(NV_INDEX),
+            //    _plat__NvMemoryClear(cachedNvRef + sizeof(NV_INDEX),
             //                         nvIndex->publicArea.dataSize);
         } else {
             //The orderly attribute was not implemented.
@@ -563,7 +563,44 @@ NvWriteIndexData(NV_INDEX* nvIndex,
         return TPM_RC_ATTRIBUTES;
     } else {
         result = NvConditionallyWrite(
-            s_cachedNvRef + sizeof(NV_INDEX) + offset, size, data);
+            cachedNvRef + sizeof(NV_INDEX) + offset, size, data);
     }
     return result;
+}
+
+/**
+ * @brief Common routine for validating a write
+ * @param[in] authHandle The handle that provided the authorization
+ * @param[in] nvHandle The handle of the NV Index to be written
+ * @param[in] attributes The attributes of `nvHandle`
+ * @return TPM_RC
+ *      TPM_RC_NV_AUTHORIZATION     Authorization fails
+ *      TPM_RC_NV_LOCKED            Write locked
+ */
+TPM_RC NvWriteAccessChecks(TPM_HANDLE authHandle, TPM_HANDLE nvHandle,
+                           TPMA_NV attributes)
+{
+    // If data is write locked, returns an error
+    if(IS_ATTRIBUTE(attributes, TPMA_NV, WRITELOCKED))
+        return TPM_RC_NV_LOCKED;
+
+    // If the authorization was provided by the owner or platform, then check
+    // that the attributes allow the write.
+    // If the authorization handle is the same as the index, then the checks
+    // were made when the authorization was checked.
+    if(authHandle == TPM_RH_OWNER)
+    {
+        // If Owner provided authorization then ONWERWRITE must be SET
+        if(!IS_ATTRIBUTE(attributes, TPMA_NV, OWNERWRITE))
+            return TPM_RC_NV_AUTHORIZATION;
+    } else if(authHandle == TPM_RH_PLATFORM) {
+        // If Platform provided authorization then PPWRITE must be SET
+        if(!IS_ATTRIBUTE(attributes, TPMA_NV, PPWRITE))
+            return TPM_RC_NV_AUTHORIZATION;
+    } 
+    // If neither Owner nor Platform provided authorization, make sure that it
+    // was provided by this index.
+    else if(authHandle != nvHandle)
+        return TPM_RC_NV_AUTHORIZATION;
+    return TPM_RC_SUCCESS;
 }

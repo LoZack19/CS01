@@ -18,27 +18,32 @@
 #define TPM_NT_PIN_PASS 0x9
 
 // TPM_RC
-#define TPM_RC_SUCCESS      (TPM_RC)0x000
-#define TPM_RC_H            (TPM_RC)(0x000)  /* Error due to handle */
-#define TPM_RC_P            (TPM_RC)(0x040)  /* Error due to parameter */
-#define TPM_RC_(n)          (TPM_RC)((n) << 8)
-#define TPM_RC_1            (TPM_RC)(TPM_RC_(1))  /* first (modifier) */
-#define TPM_RC_2            (TPM_RC)(TPM_RC_(2))  /* second (modifier) */
-#define TPM_RC_3            (TPM_RC)(TPM_RC_(3))  /* third (modifier) */
-#define TPM_RC_BAD_TAG      (TPM_RC)0x01E
-#define RC_VER1             (TPM_RC)0x100
-#define TPM_RC_COMMAND_SIZE (TPM_RC)(RC_VER1 + 0x42)
-#define TPM_RC_COMMAND_CODE (TPM_RC)(RC_VER1 + 0x43)
-#define TPM_RC_NV_SPACE     (TPM_RC)(RC_VER1 + 0x04B)
-#define TPM_RC_NV_DEFINED   (TPM_RC)(RC_VER1 + 0x4C)
-#define RC_FMT1             (TPM_RC)(0x080)
-#define TPM_RC_ATTRIBUTES   (TPM_RC)(RC_FMT1 + 0x002)
-#define TPM_RCS_ATTRIBUTES  (TPM_RC)(RC_FMT1 + 0x002)
-#define TPM_RC_HIERARCHY    (TPM_RC)(RC_FMT1 + 0x005)
-#define TPM_RCS_HIERARCHY   (TPM_RC)(RC_FMT1 + 0x005)
-#define TPM_RC_HANDLE       (TPM_RC)(RC_FMT1 + 0x00B)
-#define TPM_RCS_HANDLE      (TPM_RC)(RC_FMT1 + 0x00B)
-#define TPM_RCS_SIZE        (TPM_RC)(RC_FMT1 + 0x015)
+#define TPM_RC_SUCCESS          (TPM_RC)0x000
+#define TPM_RC_H                (TPM_RC)(0x000)  /* Error due to handle */
+#define TPM_RC_P                (TPM_RC)(0x040)  /* Error due to parameter */
+#define TPM_RC_(n)              (TPM_RC)((n) << 8)
+#define TPM_RC_1                (TPM_RC)(TPM_RC_(1))  /* first (modifier) */
+#define TPM_RC_2                (TPM_RC)(TPM_RC_(2))  /* second (modifier) */
+#define TPM_RC_3                (TPM_RC)(TPM_RC_(3))  /* third (modifier) */
+#define TPM_RC_BAD_TAG          (TPM_RC)0x01E
+#define RC_VER1                 (TPM_RC)0x100
+#define TPM_RC_COMMAND_SIZE     (TPM_RC)(RC_VER1 + 0x42)
+#define TPM_RC_COMMAND_CODE     (TPM_RC)(RC_VER1 + 0x43)
+#define TPM_RC_NV_RANGE         (TPM_RC)(RC_VER1 + 0x46)
+#define TPM_RC_NV_LOCKED        (TPM_RC)(RC_VER1 + 0x48)
+#define TPM_RC_NV_AUTHORIZATION (TPM_RC)(RC_VER1 + 0x49)
+#define TPM_RC_NV_SPACE         (TPM_RC)(RC_VER1 + 0x4B)
+#define TPM_RC_NV_DEFINED       (TPM_RC)(RC_VER1 + 0x4C)
+#define RC_FMT1                 (TPM_RC)(0x080)
+#define TPM_RC_ATTRIBUTES       (TPM_RC)(RC_FMT1 + 0x002)
+#define TPM_RCS_ATTRIBUTES      (TPM_RC)(RC_FMT1 + 0x002)
+#define TPM_RC_VALUE            (TPM_RC)(RC_FMT1 + 0x004)
+#define TPM_RCS_VALUE           (TPM_RC)(RC_FMT1 + 0x004)
+#define TPM_RC_HIERARCHY        (TPM_RC)(RC_FMT1 + 0x005)
+#define TPM_RCS_HIERARCHY       (TPM_RC)(RC_FMT1 + 0x005)
+#define TPM_RC_HANDLE           (TPM_RC)(RC_FMT1 + 0x00B)
+#define TPM_RCS_HANDLE          (TPM_RC)(RC_FMT1 + 0x00B)
+#define TPM_RCS_SIZE            (TPM_RC)(RC_FMT1 + 0x015)
 
 // TPM_RC Modifiers
 #define RC_NV_DefineSpace_authHandle (TPM_RC_H + TPM_RC_1)
@@ -122,6 +127,8 @@ typedef TPM_ST TPMI_ST_COMMAND_TAG;
 
 typedef TPM_HANDLE TPMI_RH_PROVISION;
 typedef TPM_HANDLE TPMI_RH_NV_LEGACY_INDEX;
+typedef TPM_HANDLE TPMI_RH_NV_AUTH;
+typedef TPM_HANDLE TPMI_RH_NV_INDEX;
 
 typedef TPM_ALG_ID TPMI_ALG_HASH;
 
@@ -144,12 +151,12 @@ typedef struct __packed {
     BYTE buffer[sizeof(TPMU_HA)];
 } TPM2B_DIGEST;
 
+typedef TPM2B_DIGEST TPM2B_AUTH;
+
 typedef struct __packed {
     UINT16 size;
     BYTE buffer[MAX_NV_BUFFER_SIZE];
-typedef TPM2B_DIGEST TPM2B_AUTH;
-
-typedef TPM2B_MAX_NV_BUFFER 
+} TPM2B_MAX_NV_BUFFER;
 
 typedef struct __packed {
     UINT32 PPWRITE             : 1;
@@ -248,7 +255,7 @@ typedef struct __packed {
     TPM2B_NV_PUBLIC publicInfo;
 } NV_DefineSpace_In;
 
-//NV_Write
+// NV_Write
 typedef struct __packed {
     TPMI_RH_NV_AUTH     authHandle;
     TPMI_RH_NV_INDEX    nvIndex;
@@ -266,6 +273,11 @@ void marshal(Fifo8 *fifo, const void *data, size_t size);
 /* Subsection #6.2: Helper Functions */
 
 // NV Storage
+NV_INDEX* NvGetIndexInfo(TPM_HANDLE nvHandle, NV_REF *locator);
+TPM_RC NvWriteAccessChecks(TPM_HANDLE authHandle, TPM_HANDLE nvHandle,
+                           TPMA_NV attributes);
+TPM_RC NvWriteIndexData(NV_INDEX* nvIndex, UINT32 offset,
+                        UINT32 size, void* data);
 TPM_RC NvDefineSpace(
     TPMI_RH_PROVISION authHandle,
     TPM2B_AUTH* auth,
@@ -278,3 +290,4 @@ BOOL NvInit(void *memory, size_t size, state_clear_data *tpm_saved_state);
 /* Subsection #6.3: TPM Commands */
 TPM_RC TPM2_GetRandom(GetRandom_In *in, GetRandom_Out *out);
 TPM_RC TPM2_NV_DefineSpace(NV_DefineSpace_In *in);
+TPM_RC TPM2_NV_Write(NV_Write_In* in);

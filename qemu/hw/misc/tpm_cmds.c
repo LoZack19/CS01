@@ -84,8 +84,7 @@ TPM_RC TPM2_NV_DefineSpace(NV_DefineSpace_In* in) {
         RC_NV_DefineSpace_publicInfo);
 }
 
-TPM_RC
-TPM2_NV_Write(NV_Write_In* in)
+TPM_RC TPM2_NV_Write(NV_Write_In* in)
 {
     NV_INDEX* nvIndex    = NvGetIndexInfo(in->nvIndex, NULL);
     TPMA_NV   attributes = nvIndex->publicArea.attributes;
