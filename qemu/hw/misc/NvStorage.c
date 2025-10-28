@@ -8,6 +8,8 @@ typedef struct {
 } NvMemorySpace;
 
 state_clear_data *gc;
+NV_INDEX cachedNvIndex;
+NV_REF cachedNvRef;
 
 NvMemorySpace nvmem = {
     .memory = NULL,
@@ -247,6 +249,37 @@ NV_REF NvFindHandle(TPM_HANDLE handle)
 }
 
 /**
+ * @brief Reads the NV index.
+ * @param[in] ref Memory location where the NV index handle is located
+ * @param[out] nvIndex Pointer to the variable where the read NV index will be
+ * stored.
+ */
+void NvReadNvIndexInfo(NV_REF    ref, 
+                       NV_INDEX* nvIndex)
+{
+    assert(nvIndex != NULL);
+    NvRead(nvIndex, ref, sizeof(NV_INDEX));
+}
+
+/**
+ * @brief Gets nvIndex info.
+ * @param[in] The index of the handle to be searched
+ * @param[out] The location of the index.
+ * @return Response code TPM_RC_SUCCESS - Cannot Fail
+ */
+static NV_INDEX* NvGetIndexInfo(TPM_HANDLE nvHandle, NV_REF *locator)
+{
+    s_cachedNvIndex.publicArea.nvIndex = TPM_RH_UNASSIGNED;
+    s_cachedNvRef = NvFindHandle(nvHandle);
+    if (!cachedNvRef)
+        return NULL;
+    NvReadNvIndexInfo(s_cachedNvRef, &s_cachedNvIndex);
+    if (locator)
+        *locator = s_cachedNvRef;
+    return &cachedNvIndex;
+}
+
+/**
  * @brief Update the size of the authorization token by discarding trailing
  *  zeros
  * @param[in] auth Authorization token
@@ -462,4 +495,75 @@ TPM_RC NvDefineSpace(
     // Internal Data Update
     // define the space.  A TPM_RC_NV_SPACE error may be returned at this point
     return NvDefineIndex(publicInfo, auth);
+}
+
+/**
+ * @brief Writes just the attributes of an index to NV.
+ * @param[in] locator Location of the index.
+ * @param[in] attributs Attributes to write to the index.
+ * @return Response code
+ */
+static TPM_RC NvWriteNvIndexAttributes(NV_INDEX *nvIndex, TPMA_NV attributes)
+{
+    return NvWrite(locator + offsetof(NV_INDEX, publicArea.attributes),
+                                sizeof(TPMA_NV),
+                                &attributes) ? TPM_RC_SUCCESS : TPM_RC_FAILURE;
+}
+
+/**
+ * @brief Writes data to the space reserved corresponding NvIndex.
+ * @param[in] nvIndex The nvIndex of the space.
+ * @param[in] offset The offset relative to the beginning of the start of the space.
+ * @param[in] size The size of the buffer to be written to the space
+ * @param[in] data A pointer to the buffer containing the data to be written to the space.
+ * @return Response code
+ */
+TPM_RC
+NvWriteIndexData(NV_INDEX* nvIndex,
+                 UINT32    offset,
+                 UINT32    size,
+                 void*     data)
+{
+    TPM_RC result = TPM_RC_SUCCESS;
+
+    assert(nvIndex != NULL);
+    // Make sure that this is dealing with the 'default' index.
+    // Note: it is tempting to change the calling sequence so that the 'default' is
+    // presumed.
+    //assert(nvIndex->publicArea.nvIndex == s_cachedNvIndex.publicArea.nvIndex);
+
+    // Validate that write falls within range of the index
+    assert(offset <= nvIndex->publicArea.dataSize
+            && size <= (nvIndex->publicArea.dataSize - offset));
+
+    // Update TPMA_NV_WRITTEN bit if necessary
+    if(!IS_ATTRIBUTE(nvIndex->publicArea.attributes, TPMA_NV, WRITTEN))
+    {
+        // Update the in memory version of the attributes
+        SET_ATTRIBUTE(nvIndex->publicArea.attributes, TPMA_NV, WRITTEN);
+
+        // If this is not orderly, then update the NV version of
+        // the attributes
+        if (!IS_ATTRIBUTE(nvIndex->publicArea.attributes, TPMA_NV, ORDERLY)) {
+            result = NvWriteNvIndexAttributes(s_cachedNvRef, nvIndex->publicArea.attributes);
+            if (result != TPM_RC_SUCCESS)
+                return result;
+            // If this is a partial write of an ordinary index, clear the whole
+            // index.
+            //if(IsNvOrdinaryIndex(nvIndex->publicArea.attributes)
+            //   && (nvIndex->publicArea.dataSize > size))
+            //    _plat__NvMemoryClear(s_cachedNvRef + sizeof(NV_INDEX),
+            //                         nvIndex->publicArea.dataSize);
+        } else {
+            //The orderly attribute was not implemented.
+            return TPM_RC_ATTRIBUTES;
+        }
+    }
+    if (IS_ATTRIBUTE(nvIndex->publicArea.attributes, TPMA_NV, ORDERLY)) {
+        return TPM_RC_ATTRIBUTES;
+    } else {
+        result = NvConditionallyWrite(
+            s_cachedNvRef + sizeof(NV_INDEX) + offset, size, data);
+    }
+    return result;
 }

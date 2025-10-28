@@ -83,3 +83,49 @@ TPM_RC TPM2_NV_DefineSpace(NV_DefineSpace_In* in) {
         RC_NV_DefineSpace_auth,
         RC_NV_DefineSpace_publicInfo);
 }
+
+TPM_RC
+TPM2_NV_Write(NV_Write_In* in)
+{
+    NV_INDEX* nvIndex    = NvGetIndexInfo(in->nvIndex, NULL);
+    TPMA_NV   attributes = nvIndex->publicArea.attributes;
+    TPM_RC    result;
+
+    // Input Validation
+
+    // Common access checks, NvWriteAccessCheck() may return TPM_RC_NV_AUTHORIZATION
+    // or TPM_RC_NV_LOCKED
+    result = NvWriteAccessChecks(in->authHandle, in->nvIndex, attributes);
+    if(result != TPM_RC_SUCCESS)
+        return result;
+
+    // Bits index, extend index or counter index may not be updated by
+    // TPM2_NV_Write
+    if(IsNvCounterIndex(attributes) || IsNvBitsIndex(attributes)
+       || IsNvExtendIndex(attributes))
+        return TPM_RC_ATTRIBUTES;
+
+    // Make sure that the offset is not too large
+    if(in->offset > nvIndex->publicArea.dataSize)
+        return TPM_RCS_VALUE + RC_NV_Write_offset;
+
+    // Make sure that the selection is within the range of the Index
+    if(in->data.size > (nvIndex->publicArea.dataSize - in->offset))
+        return TPM_RC_NV_RANGE;
+
+    // If this index requires a full sized write, make sure that input range is
+    // full sized.
+    // Note: if the requested size is the same as the Index data size, then offset
+    // will have to be zero. Otherwise, the range check above would have failed.
+    if(IS_ATTRIBUTE(attributes, TPMA_NV, WRITEALL)
+       && in->data.size < nvIndex->publicArea.dataSize)
+        return TPM_RC_NV_RANGE;
+
+    // Internal Data Update
+
+    // Perform the write.  This called routine will SET the TPMA_NV_WRITTEN
+    // attribute if it has not already been SET. If NV isn't available, an error
+    // will be returned.
+    return NvWriteIndexData(nvIndex, in->offset, in->data.size, in->data.buffer);
+}
+

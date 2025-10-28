@@ -8,6 +8,7 @@
 // Size Configuration
 #define SHA256_DIGEST_SIZE 32
 #define MAX_NV_INDEX_SIZE 512
+#define MAX_NV_BUFFER_SIZE 128
 
 #define TPM_NT_ORDINARY 0x0
 #define TPM_NT_COUNTER 0x1
@@ -88,6 +89,8 @@
 // TPMA_NV
 #define GET_TPM_NT(attributes) GET_ATTRIBUTE(attributes, TPMA_NV, TPM_NT)
 #define IsNvCounterIndex(attributes) (GET_TPM_NT(attributes) == TPM_NT_COUNTER)
+#define IsNvBitsIndex(attributes) (GET_TPM_NT(attributes) == TPM_NT_BITS)
+#define IsNvExtendIndex(attributes) (GET_TPM_NT(attributes) == TPM_NT_EXTEND)
 
 /* Section #3: Basic Types*/
 
@@ -140,7 +143,13 @@ typedef struct __packed {
     UINT16 size;
     BYTE buffer[sizeof(TPMU_HA)];
 } TPM2B_DIGEST;
+
+typedef struct __packed {
+    UINT16 size;
+    BYTE buffer[MAX_NV_BUFFER_SIZE];
 typedef TPM2B_DIGEST TPM2B_AUTH;
+
+typedef TPM2B_MAX_NV_BUFFER 
 
 typedef struct __packed {
     UINT32 PPWRITE             : 1;
@@ -238,6 +247,14 @@ typedef struct __packed {
     TPM2B_AUTH auth;
     TPM2B_NV_PUBLIC publicInfo;
 } NV_DefineSpace_In;
+
+//NV_Write
+typedef struct __packed {
+    TPMI_RH_NV_AUTH     authHandle;
+    TPMI_RH_NV_INDEX    nvIndex;
+    TPM2B_MAX_NV_BUFFER data;
+    UINT16              offset;
+} NV_Write_In;
 
 /* Section #6: Function Prototypes */
 
