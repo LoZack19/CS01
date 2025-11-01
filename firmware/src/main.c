@@ -198,7 +198,7 @@ void tpm_go(void) {
     tpm_cmd_header_t cmd = { \
         .tag = TPM_ST_NO_SESSIONS, \
         .commandSize = sizeof(cmd) + sizeof(*in), \
-        .commandCode = TPM_CC_GetRandom \
+        .commandCode = TPM_CC_##F \
     }; \
  \
     tpm_command_ready(); \
@@ -223,7 +223,7 @@ void tpm_go(void) {
     tpm_cmd_header_t cmd = { \
         .tag = TPM_ST_NO_SESSIONS, \
         .commandSize = sizeof(cmd) + sizeof(*in), \
-        .commandCode = TPM_CC_NV_DefineSpace \
+        .commandCode = TPM_CC_##F \
     }; \
  \
     tpm_command_ready(); \
