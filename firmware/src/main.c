@@ -32,46 +32,70 @@
 const char* string_from_TPM_RC(TPM_RC rc) {
     switch (rc) {
         // Cases are ordered by their numeric value for readability.
-        case TPM_RC_SUCCESS:      return "TPM_RC_SUCCESS";
-        case TPM_RC_BAD_TAG:      return "TPM_RC_BAD_TAG";
-        case TPM_RC_P:            return "TPM_RC_P";
-        case RC_FMT1:             return "RC_FMT1";
-        case TPM_RC_ATTRIBUTES:   return "TPM_RC_ATTRIBUTES";
-        case TPM_RC_HIERARCHY:    return "TPM_RC_HIERARCHY";
-        case TPM_RC_HANDLE:       return "TPM_RC_HANDLE";
-        case TPM_RCS_SIZE:        return "TPM_RCS_SIZE";
-        case TPM_RC_1:            return "TPM_RC_1";
-        case TPM_RC_COMMAND_SIZE: return "TPM_RC_COMMAND_SIZE";
-        case TPM_RC_COMMAND_CODE: return "TPM_RC_COMMAND_CODE";
-        case TPM_RC_NV_SPACE:     return "TPM_RC_NV_SPACE";
-        case TPM_RC_NV_DEFINED:   return "TPM_RC_NV_DEFINED";
-        case TPM_RC_2:            return "TPM_RC_2";
-        case TPM_RC_3:            return "TPM_RC_3";
-        default:                  return "UNKNOWN_RC";
+        case TPM_RC_SUCCESS:            return "TPM_RC_SUCCESS";
+        case TPM_RC_H:                  return "TPM_RC_H";
+        case TPM_RC_P:                  return "TPM_RC_P";
+        case TPM_RC_1:                  return "TPM_RC_1";
+        case TPM_RC_2:                  return "TPM_RC_2";
+        case TPM_RC_3:                  return "TPM_RC_3";
+        case TPM_RC_BAD_TAG:            return "TPM_RC_BAD_TAG";
+        case RC_VER1:                   return "RC_VER1";
+        case TPM_RC_FAILURE:            return "TPM_RC_FAILURE";
+        case TPM_RC_COMMAND_SIZE:       return "TPM_RC_COMMAND_SIZE";
+        case TPM_RC_COMMAND_CODE:       return "TPM_RC_COMMAND_CODE";
+        case TPM_RC_NV_RANGE:           return "TPM_RC_NV_RANGE";
+        case TPM_RC_NV_LOCKED:          return "TPM_RC_NV_LOCKED";
+        case TPM_RC_NV_AUTHORIZATION:   return "TPM_RC_NV_AUTHORIZATION";
+        case TPM_RC_NV_UNINITIALIZED:   return "TPM_RC_NV_UNINITIALIZED";
+        case TPM_RC_NV_SPACE:           return "TPM_RC_NV_SPACE";
+        case TPM_RC_NV_DEFINED:         return "TPM_RC_NV_DEFINED";
+        case RC_FMT1:                   return "RC_FMT1";
+        case TPM_RC_ATTRIBUTES:         return "TPM_RC_ATTRIBUTES";
+        case TPM_RCS_ATTRIBUTES:        return "TPM_RCS_ATTRIBUTES";
+        case TPM_RC_VALUE:              return "TPM_RC_VALUE";
+        case TPM_RCS_VALUE:             return "TPM_RCS_VALUE";
+        case TPM_RC_HIERARCHY:          return "TPM_RC_HIERARCHY";
+        case TPM_RCS_HIERARCHY:         return "TPM_RCS_HIERARCHY";
+        case TPM_RC_HANDLE:             return "TPM_RC_HANDLE";
+        case TPM_RCS_HANDLE:            return "TPM_RCS_HANDLE";
+        case TPM_RCS_SIZE:              return "TPM_RCS_SIZE";
+        default:                        return "UNKNOWN_RC";
     }
 }
 
 int assert_count = 0;
 int assert_failures = 0;
 
-void assert(bool expression, const char* expected, const char* actual) {
+void assert(bool expression,
+    const char *msg, const char* expected, const char* actual) {
     if (!expression) {
+
+        if (msg != NULL) {
+            Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE,
+                                    (uint8_t *)msg, strlen(msg),
+                                    portMAX_DELAY);
+        }
+
         // Expected: <exp>, got: <got>
-        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE,
-                                (uint8_t *)"Expected: ", 10,
-                                portMAX_DELAY);
+        if (expected != NULL) {
+            Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE,
+                                    (uint8_t *)"Expected: ", 10,
+                                    portMAX_DELAY);
 
-        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE,
-                                (uint8_t *)expected, strlen(expected),
-                                portMAX_DELAY);
+            Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE,
+                                    (uint8_t *)expected, strlen(expected),
+                                    portMAX_DELAY);
+        }
 
-        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE,
-                                (uint8_t *)", got: ", 7,
-                                portMAX_DELAY);
+        if (actual != NULL) {
+            Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE,
+                                    (uint8_t *)", got: ", 7,
+                                    portMAX_DELAY);
 
-        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE,
-                                (uint8_t *)actual, strlen(actual),
-                                portMAX_DELAY);
+            Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE,
+                                    (uint8_t *)actual, strlen(actual),
+                                    portMAX_DELAY);
+        }
 
         Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE,
                                 (uint8_t *)"\n", 1,
@@ -80,8 +104,25 @@ void assert(bool expression, const char* expected, const char* actual) {
         assert_failures++;
     }
     assert_count++;
+}
 
-    for (;;);
+void assert_report(void) {
+    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE,
+                            (uint8_t *)"Assert Report\n", 14,
+                            portMAX_DELAY);
+
+    char buffer[50];
+    int len = snprintf(buffer, sizeof(buffer), "Total asserts: %d\n", assert_count);
+    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)buffer, len, portMAX_DELAY);
+
+    len = snprintf(buffer, sizeof(buffer), "Failed asserts: %d\n", assert_failures);
+    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)buffer, len, portMAX_DELAY);
+
+    if (assert_failures == 0) {
+        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"All tests passed!\n", 18, portMAX_DELAY);
+    } else {
+        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"Some tests failed!\n", 19, portMAX_DELAY);
+    }
 }
 
 // TPM Interface
@@ -151,25 +192,54 @@ void tpm_go(void) {
 
 // TPM Commands
 
-TPM_RC TPM2_NV_DefineSpace(NV_DefineSpace_In *in) {
-    tpm_rsp_header_t rsp;
-
-    tpm_cmd_header_t cmd = {
-        .tag = TPM_ST_NO_SESSIONS,
-        .commandSize = sizeof(cmd) + sizeof(*in),
-        .commandCode = TPM_CC_NV_DefineSpace
-    };
-
-    tpm_command_ready();
-    tpm_send(&cmd, sizeof(cmd));
-    tpm_send(in, sizeof(*in));
-
-    tpm_go();
-
-    tpm_receive(&rsp, sizeof(rsp));
-
-    return rsp.responseCode;
+#define TPM2_InOut(F) TPM_RC TPM2_##F(F##_In *in, F##_Out *out) { \
+    tpm_rsp_header_t rsp; \
+ \
+    tpm_cmd_header_t cmd = { \
+        .tag = TPM_ST_NO_SESSIONS, \
+        .commandSize = sizeof(cmd) + sizeof(*in), \
+        .commandCode = TPM_CC_GetRandom \
+    }; \
+ \
+    tpm_command_ready(); \
+    tpm_send(&cmd, sizeof(cmd)); \
+    tpm_send(in, sizeof(*in)); \
+ \
+    tpm_go(); \
+ \
+    tpm_receive(&rsp, sizeof(rsp)); \
+    if (rsp.responseCode != TPM_RC_SUCCESS) { \
+        return rsp.responseCode; \
+    } \
+ \
+    tpm_receive(out, sizeof(*out)); \
+ \
+    return rsp.responseCode; \
 }
+
+#define TPM2_In(F) TPM_RC TPM2_##F(F##_In *in) { \
+    tpm_rsp_header_t rsp; \
+ \
+    tpm_cmd_header_t cmd = { \
+        .tag = TPM_ST_NO_SESSIONS, \
+        .commandSize = sizeof(cmd) + sizeof(*in), \
+        .commandCode = TPM_CC_NV_DefineSpace \
+    }; \
+ \
+    tpm_command_ready(); \
+    tpm_send(&cmd, sizeof(cmd)); \
+    tpm_send(in, sizeof(*in)); \
+ \
+    tpm_go(); \
+ \
+    tpm_receive(&rsp, sizeof(rsp)); \
+ \
+    return rsp.responseCode; \
+}
+
+TPM2_In(NV_DefineSpace)
+TPM2_In(NV_Write)
+TPM2_InOut(NV_Read)
 
 // TPM Tests
 
@@ -199,8 +269,70 @@ void TPM2_NV_DefineSpace_test(void) {
 
     res = TPM2_NV_DefineSpace(&test_input);
     assert(res == TPM_RC_SUCCESS,
+           "TPM2_NV_DefineSpace failed",
            string_from_TPM_RC(TPM_RC_SUCCESS),
            string_from_TPM_RC(res));
+}
+
+void TPM2_NV_WriteRead_test(void) {
+    TPM_RC res;
+
+    // Use previously defined nv_index
+    const TPMI_RH_NV_INDEX nv_index = 0x01500016; 
+    const UINT16 data_size = 32;
+
+    // --- 1. Write Data to NV Memory ---
+    TPM2B_MAX_NV_BUFFER write_data = {
+        .size = data_size,
+        .buffer = { 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+                    0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
+                    0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+                    0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F }
+    };
+
+    NV_Write_In write_input = {
+        .authHandle = TPM_RH_OWNER,       // Authorize as Owner 
+        .nvIndex = nv_index,            // The index to write to 
+        .auth = { .size = 0, .buffer = {0} }, // Empty password auth
+        .data = write_data,               // The data to write 
+        .offset = 0                       // Write at the beginning 
+    };
+
+    res = TPM2_NV_Write(&write_input);
+    assert(res == TPM_RC_SUCCESS,
+           "TPM2_NV_Write failed",
+           string_from_TPM_RC(TPM_RC_SUCCESS),
+           string_from_TPM_RC(res));
+
+    // --- 2. Read Data from NV Memory ---
+    NV_Read_In read_input = {
+        .authHandle = TPM_RH_OWNER,       // Authorize as Owner 
+        .nvIndex = nv_index,            // The index to read from 
+        .auth = { .size = 0, .buffer = {0} }, // Empty password auth
+        .size = data_size,                // Number of bytes to read 
+        .offset = 0                       // Read from the beginning 
+    };
+
+    NV_Read_Out read_output = {0};
+
+    res = TPM2_NV_Read(&read_input, &read_output);
+    assert(res == TPM_RC_SUCCESS,
+           "TPM2_NV_Read failed",
+           string_from_TPM_RC(TPM_RC_SUCCESS),
+           string_from_TPM_RC(res));
+
+    // --- 3. Compare Actual Data with Expected ---
+    char expected_size_str[12];
+    char actual_size_str[12];
+    snprintf(expected_size_str, sizeof(expected_size_str), "%u", write_data.size);
+    snprintf(actual_size_str, sizeof(actual_size_str), "%u", read_output.data.size);
+    assert(read_output.data.size == write_data.size,
+           "NV Read size mismatch",
+           expected_size_str,
+           actual_size_str);
+
+    assert(memcmp(read_output.data.buffer, write_data.buffer, write_data.size) == 0,
+           "NV Read data mismatch", NULL, NULL);
 }
 
 void tpm_test(void) {
@@ -208,6 +340,7 @@ void tpm_test(void) {
     Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] TPM access granted\n", 26, portMAX_DELAY);
 
     TPM2_NV_DefineSpace_test();
+    TPM2_NV_WriteRead_test();
 }
 
 int main(void) {
@@ -219,6 +352,10 @@ int main(void) {
     Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Starting TPM Test\n", 25, portMAX_DELAY);
 
     tpm_test();
+
+    assert_report();
+
+    for (;;);
 
     return 0;
 }
