@@ -549,10 +549,6 @@ TPM_RC NvWriteIndexData(NV_INDEX* nvIndex, UINT32 offset,
                 return result;
             // If this is a partial write of an ordinary index, clear the whole
             // index.
-            //if(IsNvOrdinaryIndex(nvIndex->publicArea.attributes)
-            //   && (nvIndex->publicArea.dataSize > size))
-            //    _plat__NvMemoryClear(cachedNvRef + sizeof(NV_INDEX),
-            //                         nvIndex->publicArea.dataSize);
         } else {
             //The orderly attribute was not implemented.
             return TPM_RC_ATTRIBUTES;
@@ -601,5 +597,88 @@ TPM_RC NvWriteAccessChecks(TPM_HANDLE authHandle, TPM_HANDLE nvHandle,
     // was provided by this index.
     else if(authHandle != nvHandle)
         return TPM_RC_NV_AUTHORIZATION;
+    return TPM_RC_SUCCESS;
+}
+
+/**
+ * @brief This function is used to access the data in an NV Index. The data is
+ * returned as a byte sequence.
+ * 
+ * This function requires that the NV Index be defined, and that the
+ * required data is within the data range.  It also requires that TPMA_NV_WRITTEN
+ * of the Index is SET.
+ * 
+ * @param[in] nvIndex the in RAM index descriptor
+ * @param[in] locator where the data is located
+ * @param[in] offset offset of NV data
+ * @param[in] size number of octets of NV data to read
+ * @param[out] data data buffer
+ */
+void NvGetIndexData(NV_INDEX* nvIndex, NV_REF locator, UINT32 offset, UINT16 size, void* data)
+{
+    TPMA_NV nvAttributes;
+
+    assert(nvIndex != NULL);
+
+    nvAttributes = nvIndex->publicArea.attributes;
+
+    assert(IS_ATTRIBUTE(nvAttributes, TPMA_NV, WRITTEN));
+
+    if(IS_ATTRIBUTE(nvAttributes, TPMA_NV, ORDERLY)) {
+        qemu_log_mask(LOG_GUEST_ERROR, "NvGetIndexData: orderly attribute not implemented\n");
+        return;
+    } else {
+        // Validate that read falls within range of the index
+        assert(offset <= nvIndex->publicArea.dataSize
+                && size <= (nvIndex->publicArea.dataSize - offset));
+        NvRead(data, locator + sizeof(NV_INDEX) + offset, size);
+    }
+    
+    return;
+}
+
+/**
+ * @brief Common routine for validating a read
+ * @param[in] authHandle the handle that provided the authorization
+ * @param[in] nvHandle the handle of the NV index to be read
+ * @param[in] attributes the attributes of 'nvHandle'
+ * @return TPM_RC
+ *      TPM_RC_NV_AUTHORIZATION     autHandle is not allowed to authorize read
+ *                                  of the index
+ *      TPM_RC_NV_LOCKED            Read locked
+ *      TPM_RC_NV_UNINITIALIZED     Try to read an uninitialized index
+ */
+TPM_RC NvReadAccessChecks(TPM_HANDLE authHandle, TPM_HANDLE nvHandle, TPMA_NV attributes)
+{
+    // If data is read locked, returns an error
+    if(IS_ATTRIBUTE(attributes, TPMA_NV, READLOCKED))
+        return TPM_RC_NV_LOCKED;
+    // If the authorization was provided by the owner or platform, then check
+    // that the attributes allow the read.  If the authorization handle
+    // is the same as the index, then the checks were made when the authorization
+    // was checked..
+    if(authHandle == TPM_RH_OWNER)
+    {
+        // If Owner provided authorization then ONWERWRITE must be SET
+        if(!IS_ATTRIBUTE(attributes, TPMA_NV, OWNERREAD))
+            return TPM_RC_NV_AUTHORIZATION;
+    }
+    else if(authHandle == TPM_RH_PLATFORM)
+    {
+        // If Platform provided authorization then PPWRITE must be SET
+        if(!IS_ATTRIBUTE(attributes, TPMA_NV, PPREAD))
+            return TPM_RC_NV_AUTHORIZATION;
+    }
+    // If neither Owner nor Platform provided authorization, make sure that it was
+    // provided by this index.
+    else if(authHandle != nvHandle)
+        return TPM_RC_NV_AUTHORIZATION;
+
+    // If the index has not been written, then the value cannot be read
+    // NOTE: This has to come after other access checks to make sure that
+    // the proper authorization is given to TPM2_NV_ReadLock()
+    if(!IS_ATTRIBUTE(attributes, TPMA_NV, WRITTEN))
+        return TPM_RC_NV_UNINITIALIZED;
+
     return TPM_RC_SUCCESS;
 }

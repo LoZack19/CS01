@@ -128,3 +128,38 @@ TPM_RC TPM2_NV_Write(NV_Write_In* in)
     return NvWriteIndexData(nvIndex, in->offset, in->data.size, in->data.buffer);
 }
 
+TPM_RC TPM2_NV_Read(NV_Read_In* in, NV_Read_Out* out)
+{
+    NV_REF    locator;
+    NV_INDEX* nvIndex = NvGetIndexInfo(in->nvIndex, &locator);
+    TPM_RC    result;
+
+    // Input Validation
+    // Common read access checks. NvReadAccessChecks() may return
+    // TPM_RC_NV_AUTHORIZATION, TPM_RC_NV_LOCKED, or TPM_RC_NV_UNINITIALIZED
+    result = NvReadAccessChecks(
+        in->authHandle, in->nvIndex, nvIndex->publicArea.attributes);
+    if(result != TPM_RC_SUCCESS)
+        return result;
+
+    // Make sure the data will fit the return buffer
+    if(in->size > MAX_NV_BUFFER_SIZE)
+        return TPM_RC_VALUE;
+
+    // Verify that the offset is not too large
+    if(in->offset > nvIndex->publicArea.dataSize)
+        return TPM_RC_VALUE;
+
+    // Make sure that the selection is within the range of the Index
+    if(in->size > (nvIndex->publicArea.dataSize - in->offset))
+        return TPM_RC_NV_RANGE;
+
+    // Command Output
+    // Set the return size
+    out->data.size = in->size;
+
+    // Perform the read
+    NvGetIndexData(nvIndex, locator, in->offset, in->size, out->data.buffer);
+
+    return TPM_RC_SUCCESS;
+}

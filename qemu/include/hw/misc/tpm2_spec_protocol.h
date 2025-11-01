@@ -33,6 +33,7 @@
 #define TPM_RC_NV_RANGE         (TPM_RC)(RC_VER1 + 0x46)
 #define TPM_RC_NV_LOCKED        (TPM_RC)(RC_VER1 + 0x48)
 #define TPM_RC_NV_AUTHORIZATION (TPM_RC)(RC_VER1 + 0x49)
+#define TPM_RC_NV_UNINITIALIZED (TPM_RC)(RC_VER1 + 0x4A)
 #define TPM_RC_NV_SPACE         (TPM_RC)(RC_VER1 + 0x4B)
 #define TPM_RC_NV_DEFINED       (TPM_RC)(RC_VER1 + 0x4C)
 #define RC_FMT1                 (TPM_RC)(0x080)
@@ -147,6 +148,16 @@ typedef union __packed {
     BYTE sha256[SHA256_DIGEST_SIZE];
 } TPMU_HA;
 
+typedef struct {
+    TPMI_ALG_HASH hashAlg;
+    TPMU_HA digest;
+} TPMT_HA;
+
+typedef union __packed {
+    TPMT_HA digest;
+    TPM_HANDLE handle;
+} TPMU_NAME;
+
 typedef struct __packed {
     UINT16 size;
     BYTE buffer[sizeof(TPMU_HA)];
@@ -158,6 +169,11 @@ typedef struct __packed {
     UINT16 size;
     BYTE buffer[MAX_NV_BUFFER_SIZE];
 } TPM2B_MAX_NV_BUFFER;
+
+typedef struct __packed {
+    UINT16 size;
+    BYTE buffer[sizeof(TPMU_NAME)];
+} TPM2B_NAME;
 
 typedef struct __packed {
     UINT32 PPWRITE             : 1;
@@ -264,6 +280,19 @@ typedef struct __packed {
     UINT16              offset;
 } NV_Write_In;
 
+// NV_Read
+
+typedef struct __packed {
+    TPMI_RH_NV_AUTH authHandle;
+    TPMI_RH_NV_INDEX nvIndex;
+    UINT16 size;
+    UINT16 offset;
+} NV_Read_In;
+
+typedef struct __packed {
+    TPM2B_MAX_NV_BUFFER data;
+} NV_Read_Out;
+
 /* Section #6: Function Prototypes */
 
 /* Subsection #6.1: Marshalling and Unmarshalling functions */
@@ -275,10 +304,11 @@ void marshal(Fifo8 *fifo, const void *data, size_t size);
 
 // NV Storage
 NV_INDEX* NvGetIndexInfo(TPM_HANDLE nvHandle, NV_REF *locator);
-TPM_RC NvWriteAccessChecks(TPM_HANDLE authHandle, TPM_HANDLE nvHandle,
-                           TPMA_NV attributes);
-TPM_RC NvWriteIndexData(NV_INDEX* nvIndex, UINT32 offset,
-                        UINT32 size, void* data);
+TPM_RC NvWriteAccessChecks(TPM_HANDLE authHandle, TPM_HANDLE nvHandle, TPMA_NV attributes);
+TPM_RC NvWriteIndexData(NV_INDEX* nvIndex, UINT32 offset, UINT32 size, void* data);
+TPM_RC NvReadAccessChecks(TPM_HANDLE authHandle, TPM_HANDLE nvHandle, TPMA_NV attributes);
+void NvGetIndexData(NV_INDEX* nvIndex, NV_REF locator, UINT32 offset, UINT16 size, void* data);
+
 TPM_RC NvDefineSpace(
     TPMI_RH_PROVISION authHandle,
     TPM2B_AUTH* auth,
@@ -292,3 +322,4 @@ BOOL NvInit(void *memory, size_t size, state_clear_data *tpm_saved_state);
 TPM_RC TPM2_GetRandom(GetRandom_In *in, GetRandom_Out *out);
 TPM_RC TPM2_NV_DefineSpace(NV_DefineSpace_In *in);
 TPM_RC TPM2_NV_Write(NV_Write_In* in);
+TPM_RC TPM2_NV_Read(NV_Read_In* in, NV_Read_Out* out);
