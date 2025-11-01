@@ -27,6 +27,7 @@
 #define TPM_RC_3                (TPM_RC)(TPM_RC_(3))  /* third (modifier) */
 #define TPM_RC_BAD_TAG          (TPM_RC)0x01E
 #define RC_VER1                 (TPM_RC)0x100
+#define TPM_RC_FAILURE          (TPM_RC)(RC_VER1 + 0x01)
 #define TPM_RC_COMMAND_SIZE     (TPM_RC)(RC_VER1 + 0x42)
 #define TPM_RC_COMMAND_CODE     (TPM_RC)(RC_VER1 + 0x43)
 #define TPM_RC_NV_RANGE         (TPM_RC)(RC_VER1 + 0x46)

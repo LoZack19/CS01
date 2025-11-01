@@ -106,7 +106,7 @@ TPM_RC TPM2_NV_Write(NV_Write_In* in)
 
     // Make sure that the offset is not too large
     if(in->offset > nvIndex->publicArea.dataSize)
-        return TPM_RCS_VALUE + RC_NV_Write_offset;
+        return TPM_RC_VALUE;
 
     // Make sure that the selection is within the range of the Index
     if(in->data.size > (nvIndex->publicArea.dataSize - in->offset))

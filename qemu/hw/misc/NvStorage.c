@@ -263,12 +263,11 @@ void NvReadNvIndexInfo(NV_REF ref,  NV_INDEX* nvIndex)
     NvRead(nvIndex, ref, sizeof(NV_INDEX));
 }
 
-#warning Meaningless comment for NvGetIndexInfo()
 /**
- * @brief Gets nvIndex info.
- * @param[in] nvHandle The the handle of the index to be searched
- * @param[out] locator The location of the index.
- * @return Pointer to the index struct
+ * @brief Gets nvIndex information and sposition.
+ * @param[in] nvHandle The the handle of the index to be searched.
+ * @param[out] locator The location in NV of the searched index.
+ * @return Pointer to the index struct.
  */
 NV_INDEX* NvGetIndexInfo(TPM_HANDLE nvHandle, NV_REF *locator)
 {
@@ -508,9 +507,9 @@ TPM_RC NvDefineSpace(
  */
 static TPM_RC NvWriteNvIndexAttributes(NV_REF locator, TPMA_NV attributes)
 {
-    return NvWrite(locator + offsetof(NV_INDEX, publicArea.attributes),
-                   sizeof(TPMA_NV),
-                   &attributes) ? TPM_RC_SUCCESS : TPM_RC_FAILURE;
+    return NvWrite(&attributes,
+                locator + offsetof(NV_INDEX, publicArea.attributes),
+                sizeof(TPMA_NV)) ? TPM_RC_SUCCESS : TPM_RC_FAILURE;
 }
 
 /**
@@ -562,8 +561,8 @@ TPM_RC NvWriteIndexData(NV_INDEX* nvIndex, UINT32 offset,
     if (IS_ATTRIBUTE(nvIndex->publicArea.attributes, TPMA_NV, ORDERLY)) {
         return TPM_RC_ATTRIBUTES;
     } else {
-        result = NvConditionallyWrite(
-            cachedNvRef + sizeof(NV_INDEX) + offset, size, data);
+        result = NvWrite(
+            data, cachedNvRef + sizeof(NV_INDEX) + offset, size);
     }
     return result;
 }
