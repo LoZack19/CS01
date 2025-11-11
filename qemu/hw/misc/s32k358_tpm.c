@@ -83,6 +83,108 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
 
             return;
 
+        case TPM_CC_Sign:
+            Sign_In sign_in;
+            Sign_Out sign_out;
+            
+            if (cmd_header.commandSize != sizeof(tpm_cmd_header_t) + sizeof(sign_in)) {
+                tpm_send_error_response(s, TPM_RC_COMMAND_SIZE);
+                return;
+            }
+
+            UNMARSHAL(&sign_in, &s->infifo);
+
+            rc = TPM2_Sign(&sign_in, &sign_out);
+
+            tpm_send_response(s, rc, &sign_out, sizeof(sign_out));
+
+            return;
+
+        case TPM_CC_VerifySignature:
+            VerifySignature_In verify_in;
+            VerifySignature_Out verify_out;
+            
+            if (cmd_header.commandSize != sizeof(tpm_cmd_header_t) + sizeof(verify_in)) {
+                tpm_send_error_response(s, TPM_RC_COMMAND_SIZE);
+                return;
+            }
+
+            UNMARSHAL(&verify_in, &s->infifo);
+
+            rc = TPM2_VerifySignature(&verify_in, &verify_out);
+
+            tpm_send_response(s, rc, &verify_out, sizeof(verify_out));
+
+            return;
+
+        case TPM_CC_Hash:
+            Hash_In hash_in;
+            Hash_Out hash_out;
+            
+            if (cmd_header.commandSize != sizeof(tpm_cmd_header_t) + sizeof(hash_in)) {
+                tpm_send_error_response(s, TPM_RC_COMMAND_SIZE);
+                return;
+            }
+
+            UNMARSHAL(&hash_in, &s->infifo);
+
+            rc = TPM2_Hash(&hash_in, &hash_out);
+
+            tpm_send_response(s, rc, &hash_out, sizeof(hash_out));
+
+            return;
+
+        case TPM_CC_EncryptDecrypt2:
+            EncryptDecrypt2_In encrypt_in;
+            EncryptDecrypt2_Out encrypt_out;
+            
+            if (cmd_header.commandSize != sizeof(tpm_cmd_header_t) + sizeof(encrypt_in)) {
+                tpm_send_error_response(s, TPM_RC_COMMAND_SIZE);
+                return;
+            }
+
+            UNMARSHAL(&encrypt_in, &s->infifo);
+
+            rc = TPM2_EncryptDecrypt2(&encrypt_in, &encrypt_out);
+
+            tpm_send_response(s, rc, &encrypt_out, sizeof(encrypt_out));
+
+            return;
+
+        case TPM_CC_RSA_Encrypt:
+            RSA_Encrypt_In rsa_encrypt_in;
+            RSA_Encrypt_Out rsa_encrypt_out;
+            
+            if (cmd_header.commandSize != sizeof(tpm_cmd_header_t) + sizeof(rsa_encrypt_in)) {
+                tpm_send_error_response(s, TPM_RC_COMMAND_SIZE);
+                return;
+            }
+
+            UNMARSHAL(&rsa_encrypt_in, &s->infifo);
+            
+            rc = TPM2_RSA_Encrypt(&rsa_encrypt_in, &rsa_encrypt_out);
+
+            tpm_send_response(s, rc, &rsa_encrypt_out, sizeof(rsa_encrypt_out));
+
+            return;
+
+        case TPM_CC_RSA_Decrypt:
+            RSA_Decrypt_In rsa_decrypt_in;
+            RSA_Decrypt_Out rsa_decrypt_out;
+            
+            if (cmd_header.commandSize != sizeof(tpm_cmd_header_t) + sizeof(rsa_decrypt_in)) {
+                tpm_send_error_response(s, TPM_RC_COMMAND_SIZE);
+                return;
+            }
+
+            UNMARSHAL(&rsa_decrypt_in, &s->infifo);
+
+            rc = TPM2_RSA_Decrypt(&rsa_decrypt_in, &rsa_decrypt_out);
+
+            tpm_send_response(s, rc, &rsa_decrypt_out, sizeof(rsa_decrypt_out));
+
+            return;
+
         default: /* unimplemented command */
             qemu_log_mask(LOG_GUEST_ERROR, "(ERROR) TPM: Unimplemented command\n");
             tpm_send_error_response(s, TPM_RC_COMMAND_CODE);
@@ -130,7 +232,7 @@ static void s32k358_tpm_write(void *opaque, hwaddr offset, uint64_t value, unsig
                 s->tpm_access |= R_TPM_ACCESS_activeLocality_MASK;
             }
         
-        break;
+            break;
         case A_TPM_DATA_FIFO:
             if (fifo8_is_full(&s->infifo)) {
                 qemu_log_mask(LOG_GUEST_ERROR, "%s: Input FIFO is full, cannot write 0x%"PRIx64"\n", __func__, value);
