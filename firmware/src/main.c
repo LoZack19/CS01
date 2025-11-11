@@ -368,6 +368,8 @@ int main(void) {
     return 0;
 }
 
+#warning "Non compliant testing for Cryptographic Primitives w.r.t. Mateus framework"
+
 // Test function prototypes
 void test_sign_operation(void);
 void test_verify_signature_operation(void);
