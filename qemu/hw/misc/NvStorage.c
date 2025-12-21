@@ -252,7 +252,7 @@ NV_REF NvFindHandle(TPM_HANDLE handle)
 
 /**
  * @brief Reads the NV index.
- * @param[in] ref Memory location where the NV index handle is located
+ * @param[in] ref Memory location where the NV entry header (size field) is located
  * @param[out] nvIndex Pointer to the variable where the read NV index will be
  * stored.
  */
@@ -260,7 +260,9 @@ static
 void NvReadNvIndexInfo(NV_REF ref,  NV_INDEX* nvIndex)
 {
     assert(nvIndex != NULL);
-    NvRead(nvIndex, ref, sizeof(NV_INDEX));
+    // Skip past the size field to get to the NV_INDEX data
+    // The NV_INDEX is stored after the size field (no separate handle field for indexes)
+    NvRead(nvIndex, ref + sizeof(UINT32), sizeof(NV_INDEX));
 }
 
 /**
@@ -501,14 +503,15 @@ TPM_RC NvDefineSpace(
 
 /**
  * @brief Writes the attributes of an index to NV
- * @param[in] locator Reference to the index whose attributes we want to change
+ * @param[in] locator Reference to the entry header (size field)
  * @param[in] attributs Attributes to write to the index
  * @return Response code
  */
 static TPM_RC NvWriteNvIndexAttributes(NV_REF locator, TPMA_NV attributes)
 {
+    // locator points to size field, add sizeof(UINT32) to get to NV_INDEX
     return NvWrite(&attributes,
-                locator + offsetof(NV_INDEX, publicArea.attributes),
+                locator + sizeof(UINT32) + offsetof(NV_INDEX, publicArea.attributes),
                 sizeof(TPMA_NV)) ? TPM_RC_SUCCESS : TPM_RC_FAILURE;
 }
 
@@ -557,8 +560,10 @@ TPM_RC NvWriteIndexData(NV_INDEX* nvIndex, UINT32 offset,
     if (IS_ATTRIBUTE(nvIndex->publicArea.attributes, TPMA_NV, ORDERLY)) {
         return TPM_RC_ATTRIBUTES;
     } else {
-        result = NvWrite(
-            data, cachedNvRef + sizeof(NV_INDEX) + offset, size);
+        // cachedNvRef points to size field, skip sizeof(UINT32) + sizeof(NV_INDEX) to get to data
+        int written = NvWrite(
+            data, cachedNvRef + sizeof(UINT32) + sizeof(NV_INDEX) + offset, size);
+        result = (written > 0) ? TPM_RC_SUCCESS : TPM_RC_FAILURE;
     }
     return result;
 }
@@ -631,7 +636,8 @@ void NvGetIndexData(NV_INDEX* nvIndex, NV_REF locator, UINT32 offset, UINT16 siz
         // Validate that read falls within range of the index
         assert(offset <= nvIndex->publicArea.dataSize
                 && size <= (nvIndex->publicArea.dataSize - offset));
-        NvRead(data, locator + sizeof(NV_INDEX) + offset, size);
+        // locator points to size field, skip sizeof(UINT32) + sizeof(NV_INDEX) to get to data
+        NvRead(data, locator + sizeof(UINT32) + sizeof(NV_INDEX) + offset, size);
     }
     
     return;

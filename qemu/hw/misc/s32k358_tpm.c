@@ -40,6 +40,9 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
         return;
     }
 
+    qemu_log_mask(LOG_GUEST_ERROR, "(INFO) TPM: Processing command 0x%08X (size=%u, fifo=%u)\n",
+                  cmd_header.commandCode, cmd_header.commandSize, fifo8_num_used(&s->infifo));
+
     switch (cmd_header.commandCode) {
         case TPM_CC_GetRandom:
 
@@ -83,6 +86,51 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
 
             return;
 
+        case TPM_CC_NV_Write:
+            qemu_log_mask(LOG_GUEST_ERROR, "(INFO) TPM: Processing NV_Write command\n");
+            NV_Write_In nv_write_in;
+
+            // Check if the command size is coherent with the expected size
+            if (cmd_header.commandSize != sizeof(tpm_cmd_header_t) + sizeof(nv_write_in)) {
+                qemu_log_mask(LOG_GUEST_ERROR, "(ERROR) TPM: NV_Write size mismatch: expected %zu, got %u\n",
+                              sizeof(tpm_cmd_header_t) + sizeof(nv_write_in), cmd_header.commandSize);
+                tpm_send_error_response(s, TPM_RC_COMMAND_SIZE);
+                return;
+            }
+
+            // Unmarshal the NV_Write input
+            UNMARSHAL(&nv_write_in, &s->infifo);
+
+            // Execute command
+            rc = TPM2_NV_Write(&nv_write_in);
+            qemu_log_mask(LOG_GUEST_ERROR, "(INFO) TPM: NV_Write returned rc=0x%X\n", rc);
+
+            // Generate response
+            tpm_send_response(s, rc, NULL, 0);
+
+            return;
+
+        case TPM_CC_NV_Read:
+            qemu_log_mask(LOG_GUEST_ERROR, "(INFO) TPM: Processing NV_Read command\n");
+            NV_Read_In nv_read_in;
+            NV_Read_Out nv_read_out;
+
+            // Check if the command size is coherent with the expected size
+            if (cmd_header.commandSize != sizeof(tpm_cmd_header_t) + sizeof(nv_read_in)) {
+                tpm_send_error_response(s, TPM_RC_COMMAND_SIZE);
+                return;
+            }
+
+            // Unmarshal the NV_Read input
+            UNMARSHAL(&nv_read_in, &s->infifo);
+
+            // Execute command
+            rc = TPM2_NV_Read(&nv_read_in, &nv_read_out);
+
+            // Generate response
+            tpm_send_response(s, rc, &nv_read_out, sizeof(nv_read_out));
+
+            return;
         case TPM_CC_Sign:
             Sign_In sign_in;
             Sign_Out sign_out;
@@ -203,8 +251,18 @@ static uint64_t s32k358_tpm_read(void *opaque, hwaddr offset, unsigned size) {
                 qemu_log_mask(LOG_GUEST_ERROR, "%s: Output FIFO is empty, cannot read\n", __func__);
                 return 0;
             }
-
-            return fifo8_pop(&s->outfifo);
+            {
+                uint8_t val = fifo8_pop(&s->outfifo);
+                // Update burstCount to reflect remaining data
+                s->tpm_sts &= ~R_TPM_STS_burstCount_MASK;
+                s->tpm_sts |= (fifo8_num_used(&s->outfifo) << R_TPM_STS_burstCount_SHIFT) &
+                              R_TPM_STS_burstCount_MASK;
+                // Clear dataAvail if FIFO is now empty
+                if (fifo8_is_empty(&s->outfifo)) {
+                    s->tpm_sts &= ~R_TPM_STS_dataAvail_MASK;
+                }
+                return val;
+            }
         case A_TPM_STS:
             return s->tpm_sts;
         default: 
@@ -242,41 +300,66 @@ static void s32k358_tpm_write(void *opaque, hwaddr offset, uint64_t value, unsig
             // Transition to receiving state
             if (s->tpm_state == TPM_S_READY) {
                 s->tpm_state = TPM_S_RECV;
+                qemu_log_mask(LOG_GUEST_ERROR, "(INFO) TPM: Transitioned from READY to RECV\n");
             }
 
             if (s->tpm_state == TPM_S_RECV) {
                 fifo8_push(&s->infifo, value & 0xFF);
+                // Update burstCount to reflect remaining space in input FIFO
+                s->tpm_sts &= ~R_TPM_STS_burstCount_MASK;
+                s->tpm_sts |= (fifo8_num_free(&s->infifo) << R_TPM_STS_burstCount_SHIFT) &
+                              R_TPM_STS_burstCount_MASK;
+                // Clear Expect if FIFO is now full
+                if (fifo8_is_full(&s->infifo)) {
+                    s->tpm_sts &= ~R_TPM_STS_Expect_MASK;
+                }
+            } else {
+                qemu_log_mask(LOG_GUEST_ERROR, "(ERROR) TPM: Data write ignored, state=%d\n", s->tpm_state);
             }
             break;
         case A_TPM_STS:
+            // Process tpmGo FIRST before commandReady, since a write with both bits
+            // set should execute the current command, not reset state
+            if (value & R_TPM_STS_tpmGo_MASK) {
+                qemu_log_mask(LOG_GUEST_ERROR, "(INFO) TPM: tpmGo received, state=%d, fifo_used=%u\n",
+                              s->tpm_state, fifo8_num_used(&s->infifo));
+                if (s->tpm_state == TPM_S_RECV) {
+                    s->tpm_state = TPM_S_EXEC;
+                    s32k358_tpm_process_input(s);
+                    // After processing, don't process commandReady in the same write
+                    break;
+                }
+            }
                     
             // If commandReady is set, transition status to ready
             // Now bytes can be accepted in the input FIFO
             if (value & R_TPM_STS_commandReady_MASK) {
+                // Always transition to READY state on commandReady
+                // First handle any cleanup from previous state
                 if (s->tpm_state == TPM_S_CMPL) {
-                    s->tpm_state = TPM_S_IDLE;
-                } else {
-                    s->tpm_state = TPM_S_READY;
-                    
-                    // If there is space in the input fifo, set the Expect bit
-                    if (fifo8_num_free(&s->infifo) > 0) {
-                        s->tpm_sts |= R_TPM_STS_Expect_MASK;
-                        
-                        // Update burstCount to match the number of available
-                        // bits in the input fifo
-                        s->tpm_sts &= ~R_TPM_STS_burstCount_MASK;
-                        s->tpm_sts |= (fifo8_num_free(&s->infifo) << 
-                                       R_TPM_STS_burstCount_SHIFT) &
-                                       R_TPM_STS_burstCount_MASK;
-                    }
-                    
+                    // Just need to clear output FIFO from previous command
+                    fifo8_reset(&s->outfifo);
                 }
-            }
-
-            // If tpmGo is set, transition to execution state
-            if (s->tpm_state == TPM_S_RECV && value & R_TPM_STS_tpmGo_MASK) {
-                s->tpm_state = TPM_S_EXEC;
-                s32k358_tpm_process_input(s);
+                
+                // Now transition to READY state
+                s->tpm_state = TPM_S_READY;
+                
+                // Clear both FIFOs when preparing for a new command
+                fifo8_reset(&s->infifo);
+                fifo8_reset(&s->outfifo);
+                s->tpm_sts &= ~R_TPM_STS_dataAvail_MASK;
+                
+                // If there is space in the input fifo, set the Expect bit
+                if (fifo8_num_free(&s->infifo) > 0) {
+                    s->tpm_sts |= R_TPM_STS_Expect_MASK;
+                    
+                    // Update burstCount to match the number of available
+                    // bits in the input fifo
+                    s->tpm_sts &= ~R_TPM_STS_burstCount_MASK;
+                    s->tpm_sts |= (fifo8_num_free(&s->infifo) << 
+                                   R_TPM_STS_burstCount_SHIFT) &
+                                   R_TPM_STS_burstCount_MASK;
+                }
             }
 
             break;
@@ -323,7 +406,9 @@ static void s32k358_tpm_realize(DeviceState *dev, Error **errp)
 {
     S32k358TPMState *s = S32K358_TPM(dev);
 
-    // Initialize NvStorage Module
+    // Initialize NV memory size and storage module
+    s->nvmem_size = S32K358_TPM_NV_MEM_SIZE;
+    memset(s->mem, 0, s->nvmem_size);  // Zero-initialize NV memory
     NvInit(s->mem, s->nvmem_size, &s->gc);
 }
 

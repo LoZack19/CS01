@@ -11,6 +11,24 @@
 
 #define LPUART_INSTANCE         (3U)    // Usare LPUART3
 
+// Debug logging - set to 1 to enable verbose output
+#define TPM_DEBUG 1
+
+#if TPM_DEBUG
+#define DBG_PRINT(msg) do { \
+    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)(msg), strlen(msg), portMAX_DELAY); \
+} while(0)
+
+#define DBG_PRINTF(fmt, ...) do { \
+    char _dbg_buf[128]; \
+    int _dbg_len = snprintf(_dbg_buf, sizeof(_dbg_buf), fmt, ##__VA_ARGS__); \
+    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)_dbg_buf, _dbg_len, portMAX_DELAY); \
+} while(0)
+#else
+#define DBG_PRINT(msg) ((void)0)
+#define DBG_PRINTF(fmt, ...) ((void)0)
+#endif
+
 // MMIO Register Definitions
 #define TPM_BASE         0x40000000
 
@@ -217,6 +235,9 @@ static void tpm_drain_bytes(size_t size) {
         .commandCode = TPM_CC_##F \
     }; \
  \
+    DBG_PRINTF("[DBG] TPM2_" #F ": Sending cmd (tag=0x%04X, size=%lu, code=0x%08lX)\n", \
+               cmd.tag, (unsigned long)cmd.commandSize, (unsigned long)cmd.commandCode); \
+ \
     tpm_command_ready(); \
     tpm_send(&cmd, sizeof(cmd)); \
     tpm_send(in, sizeof(*in)); \
@@ -224,22 +245,28 @@ static void tpm_drain_bytes(size_t size) {
     tpm_go(); \
  \
     tpm_receive(&rsp, sizeof(rsp)); \
+    DBG_PRINTF("[DBG] TPM2_" #F ": Received rsp (tag=0x%04X, size=%lu, rc=0x%08lX)\n", \
+               rsp.tag, (unsigned long)rsp.responseSize, (unsigned long)rsp.responseCode); \
+ \
     size_t remaining = 0; \
     if (rsp.responseSize >= sizeof(rsp) && rsp.responseSize <= 4096) { \
         remaining = (size_t)rsp.responseSize - sizeof(rsp); \
     } \
+    DBG_PRINTF("[DBG] TPM2_" #F ": remaining=%zu bytes\n", remaining); \
  \
     if (out != NULL) { \
         memset(out, 0, sizeof(*out)); \
     } \
  \
     if (rsp.responseCode != TPM_RC_SUCCESS) { \
+        DBG_PRINTF("[DBG] TPM2_" #F ": Error response, draining %zu bytes\n", remaining); \
         tpm_drain_bytes(remaining); \
         return rsp.responseCode; \
     } \
  \
     if (out != NULL) { \
         size_t to_read = min_size(remaining, sizeof(*out)); \
+        DBG_PRINTF("[DBG] TPM2_" #F ": Reading %zu bytes to out (out size=%zu)\n", to_read, sizeof(*out)); \
         tpm_receive(out, to_read); \
         tpm_drain_bytes(remaining - to_read); \
     } else { \
@@ -258,6 +285,9 @@ static void tpm_drain_bytes(size_t size) {
         .commandCode = TPM_CC_##F \
     }; \
  \
+    DBG_PRINTF("[DBG] TPM2_" #F ": Sending cmd (tag=0x%04X, size=%lu, code=0x%08lX)\n", \
+               cmd.tag, (unsigned long)cmd.commandSize, (unsigned long)cmd.commandCode); \
+ \
     tpm_command_ready(); \
     tpm_send(&cmd, sizeof(cmd)); \
     tpm_send(in, sizeof(*in)); \
@@ -265,6 +295,9 @@ static void tpm_drain_bytes(size_t size) {
     tpm_go(); \
  \
     tpm_receive(&rsp, sizeof(rsp)); \
+    DBG_PRINTF("[DBG] TPM2_" #F ": Received rsp (tag=0x%04X, size=%lu, rc=0x%08lX)\n", \
+               rsp.tag, (unsigned long)rsp.responseSize, (unsigned long)rsp.responseCode); \
+ \
      size_t remaining = 0; \
      if (rsp.responseSize >= sizeof(rsp) && rsp.responseSize <= 4096) { \
           remaining = (size_t)rsp.responseSize - sizeof(rsp); \
