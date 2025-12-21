@@ -86,6 +86,8 @@
 #define TPM_CC_GetRandom 0x0000017B
 /* NV Memory*/
 #define TPM_CC_NV_DefineSpace 0x0000012A
+#define TPM_CC_NV_Write 0x00000137
+#define TPM_CC_NV_Read 0x0000014E
 /* Cryptographic Primitives */
 #define TPM_CC_Sign 0x0000015D
 #define TPM_CC_VerifySignature 0x00000177
