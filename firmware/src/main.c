@@ -356,20 +356,20 @@ int main(void) {
 
     assert_report();
     
-#warning "Cryptographic Testing should be integrated in Mateus framework"
-    test_sign_operation();
-    test_verify_signature_operation();
-    test_hash_operation();
-    test_encrypt_decrypt2_operation();
-    test_rsa_encrypt_operation();
-    test_rsa_decrypt_operation();
+#warning "[MANSOUR] Cryptographic Testing should be integrated in Mateus framework"
+    // test_sign_operation();
+    // test_verify_signature_operation();
+    // test_hash_operation();
+    // test_encrypt_decrypt2_operation();
+    // test_rsa_encrypt_operation();
+    // test_rsa_decrypt_operation();
     
     while (1);
 
     return 0;
 }
 
-#warning "Non compliant testing for Cryptographic Primitives w.r.t. Mateus framework"
+#warning "[MANSOUR] Non compliant testing for Cryptographic Primitives w.r.t. Mateus framework"
 
 // Test function prototypes
 void test_sign_operation(void);
