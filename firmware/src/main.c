@@ -31,15 +31,16 @@
 
 const char* string_from_TPM_RC(TPM_RC rc) {
     switch (rc) {
-        // Cases are ordered by their numeric value for readability.
+        /*
+         * Important: several TPM_RC_* macros in our header are *modifiers* or
+         * *aliases* (e.g. TPM_RC_H, TPM_RC_P, TPM_RC_1, RC_VER1, TPM_RCS_*).
+         * They intentionally share integer values and are not distinguishable
+         * at runtime, so they must NOT appear as distinct switch labels.
+         */
         case TPM_RC_SUCCESS:            return "TPM_RC_SUCCESS";
-        case TPM_RC_H:                  return "TPM_RC_H";
-        case TPM_RC_P:                  return "TPM_RC_P";
-        case TPM_RC_1:                  return "TPM_RC_1";
-        case TPM_RC_2:                  return "TPM_RC_2";
-        case TPM_RC_3:                  return "TPM_RC_3";
         case TPM_RC_BAD_TAG:            return "TPM_RC_BAD_TAG";
-        case RC_VER1:                   return "RC_VER1";
+
+        /* Ver1 family (RC_VER1 is a base, not a standalone code) */
         case TPM_RC_FAILURE:            return "TPM_RC_FAILURE";
         case TPM_RC_COMMAND_SIZE:       return "TPM_RC_COMMAND_SIZE";
         case TPM_RC_COMMAND_CODE:       return "TPM_RC_COMMAND_CODE";
@@ -49,16 +50,18 @@ const char* string_from_TPM_RC(TPM_RC rc) {
         case TPM_RC_NV_UNINITIALIZED:   return "TPM_RC_NV_UNINITIALIZED";
         case TPM_RC_NV_SPACE:           return "TPM_RC_NV_SPACE";
         case TPM_RC_NV_DEFINED:         return "TPM_RC_NV_DEFINED";
-        case RC_FMT1:                   return "RC_FMT1";
+
+        /* Format-1 style base codes */
         case TPM_RC_ATTRIBUTES:         return "TPM_RC_ATTRIBUTES";
-        case TPM_RCS_ATTRIBUTES:        return "TPM_RCS_ATTRIBUTES";
+        case TPM_RC_HASH:               return "TPM_RC_HASH";
         case TPM_RC_VALUE:              return "TPM_RC_VALUE";
-        case TPM_RCS_VALUE:             return "TPM_RCS_VALUE";
         case TPM_RC_HIERARCHY:          return "TPM_RC_HIERARCHY";
-        case TPM_RCS_HIERARCHY:         return "TPM_RCS_HIERARCHY";
+        case TPM_RC_MODE:               return "TPM_RC_MODE";
         case TPM_RC_HANDLE:             return "TPM_RC_HANDLE";
-        case TPM_RCS_HANDLE:            return "TPM_RCS_HANDLE";
         case TPM_RCS_SIZE:              return "TPM_RCS_SIZE";
+        case TPM_RC_SIGNATURE:          return "TPM_RC_SIGNATURE";
+        case TPM_RC_KEY:                return "TPM_RC_KEY";
+
         default:                        return "UNKNOWN_RC";
     }
 }
