@@ -296,7 +296,6 @@ void TPM2_NV_WriteRead_test(void) {
     NV_Write_In write_input = {
         .authHandle = TPM_RH_OWNER,       // Authorize as Owner 
         .nvIndex = nv_index,            // The index to write to 
-        .auth = { .size = 0, .buffer = {0} }, // Empty password auth
         .data = write_data,               // The data to write 
         .offset = 0                       // Write at the beginning 
     };
@@ -311,7 +310,6 @@ void TPM2_NV_WriteRead_test(void) {
     NV_Read_In read_input = {
         .authHandle = TPM_RH_OWNER,       // Authorize as Owner 
         .nvIndex = nv_index,            // The index to read from 
-        .auth = { .size = 0, .buffer = {0} }, // Empty password auth
         .size = data_size,                // Number of bytes to read 
         .offset = 0                       // Read from the beginning 
     };
