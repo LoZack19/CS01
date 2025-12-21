@@ -252,21 +252,21 @@ static void tpm_drain_bytes(size_t size) {
     if (rsp.responseSize >= sizeof(rsp) && rsp.responseSize <= 4096) { \
         remaining = (size_t)rsp.responseSize - sizeof(rsp); \
     } \
-    DBG_PRINTF("[DBG] TPM2_" #F ": remaining=%zu bytes\n", remaining); \
+    DBG_PRINTF("[DBG] TPM2_" #F ": remaining=%lu bytes\n", (unsigned long)remaining); \
  \
     if (out != NULL) { \
         memset(out, 0, sizeof(*out)); \
     } \
  \
     if (rsp.responseCode != TPM_RC_SUCCESS) { \
-        DBG_PRINTF("[DBG] TPM2_" #F ": Error response, draining %zu bytes\n", remaining); \
+        DBG_PRINTF("[DBG] TPM2_" #F ": Error response, draining %lu bytes\n", (unsigned long)remaining); \
         tpm_drain_bytes(remaining); \
         return rsp.responseCode; \
     } \
  \
     if (out != NULL) { \
         size_t to_read = min_size(remaining, sizeof(*out)); \
-        DBG_PRINTF("[DBG] TPM2_" #F ": Reading %zu bytes to out (out size=%zu)\n", to_read, sizeof(*out)); \
+        DBG_PRINTF("[DBG] TPM2_" #F ": Reading %lu bytes to out (out size=%lu)\n", (unsigned long)to_read, (unsigned long)sizeof(*out)); \
         tpm_receive(out, to_read); \
         tpm_drain_bytes(remaining - to_read); \
     } else { \
@@ -355,7 +355,7 @@ void TPM2_NV_WriteRead_test(void) {
     TPM_RC res;
 
     // Use previously defined nv_index
-    const TPMI_RH_NV_INDEX nv_index = 0x01500016; 
+    const TPMI_RH_NV_INDEX nv_index = 0x01500016;
     const UINT16 data_size = 32;
 
     // --- 1. Write Data to NV Memory ---
@@ -368,10 +368,10 @@ void TPM2_NV_WriteRead_test(void) {
     };
 
     NV_Write_In write_input = {
-        .authHandle = TPM_RH_OWNER,       // Authorize as Owner 
-        .nvIndex = nv_index,            // The index to write to 
-        .data = write_data,               // The data to write 
-        .offset = 0                       // Write at the beginning 
+        .authHandle = TPM_RH_OWNER,       // Authorize as Owner
+        .nvIndex = nv_index,            // The index to write to
+        .data = write_data,               // The data to write
+        .offset = 0                       // Write at the beginning
     };
 
     res = TPM2_NV_Write(&write_input);
@@ -382,10 +382,10 @@ void TPM2_NV_WriteRead_test(void) {
 
     // --- 2. Read Data from NV Memory ---
     NV_Read_In read_input = {
-        .authHandle = TPM_RH_OWNER,       // Authorize as Owner 
-        .nvIndex = nv_index,            // The index to read from 
-        .size = data_size,                // Number of bytes to read 
-        .offset = 0                       // Read from the beginning 
+        .authHandle = TPM_RH_OWNER,       // Authorize as Owner
+        .nvIndex = nv_index,            // The index to read from
+        .size = data_size,                // Number of bytes to read
+        .offset = 0                       // Read from the beginning
     };
 
     NV_Read_Out read_output = {0};
