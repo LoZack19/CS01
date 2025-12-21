@@ -195,6 +195,19 @@ void tpm_go(void) {
 
 // TPM Commands
 
+static inline size_t min_size(size_t a, size_t b) {
+    return (a < b) ? a : b;
+}
+
+static void tpm_drain_bytes(size_t size) {
+    uint8_t sink[16];
+    while (size > 0) {
+        size_t chunk = min_size(size, sizeof(sink));
+        tpm_receive(sink, chunk);
+        size -= chunk;
+    }
+}
+
 #define TPM2_InOut(F) TPM_RC TPM2_##F(F##_In *in, F##_Out *out) { \
     tpm_rsp_header_t rsp; \
  \
@@ -211,11 +224,27 @@ void tpm_go(void) {
     tpm_go(); \
  \
     tpm_receive(&rsp, sizeof(rsp)); \
+    size_t remaining = 0; \
+    if (rsp.responseSize >= sizeof(rsp) && rsp.responseSize <= 4096) { \
+        remaining = (size_t)rsp.responseSize - sizeof(rsp); \
+    } \
+ \
+    if (out != NULL) { \
+        memset(out, 0, sizeof(*out)); \
+    } \
+ \
     if (rsp.responseCode != TPM_RC_SUCCESS) { \
+        tpm_drain_bytes(remaining); \
         return rsp.responseCode; \
     } \
  \
-    tpm_receive(out, sizeof(*out)); \
+    if (out != NULL) { \
+        size_t to_read = min_size(remaining, sizeof(*out)); \
+        tpm_receive(out, to_read); \
+        tpm_drain_bytes(remaining - to_read); \
+    } else { \
+        tpm_drain_bytes(remaining); \
+    } \
  \
     return rsp.responseCode; \
 }
@@ -236,13 +265,25 @@ void tpm_go(void) {
     tpm_go(); \
  \
     tpm_receive(&rsp, sizeof(rsp)); \
+     size_t remaining = 0; \
+     if (rsp.responseSize >= sizeof(rsp) && rsp.responseSize <= 4096) { \
+          remaining = (size_t)rsp.responseSize - sizeof(rsp); \
+     } \
+     tpm_drain_bytes(remaining); \
  \
-    return rsp.responseCode; \
+     return rsp.responseCode; \
 }
 
 TPM2_In(NV_DefineSpace)
 TPM2_In(NV_Write)
 TPM2_InOut(NV_Read)
+
+TPM2_InOut(Sign)
+TPM2_InOut(VerifySignature)
+TPM2_InOut(Hash)
+TPM2_InOut(EncryptDecrypt2)
+TPM2_InOut(RSA_Encrypt)
+TPM2_InOut(RSA_Decrypt)
 
 // TPM Tests
 
@@ -336,12 +377,208 @@ void TPM2_NV_WriteRead_test(void) {
            "NV Read data mismatch", NULL, NULL);
 }
 
+void TPM2_Hash_smoke_test(void) {
+    Hash_In in = {0};
+    Hash_Out out = {0};
+    in.data.dataSize = 4;
+    in.data.data[0] = 'A';
+    in.data.data[1] = 'B';
+    in.data.data[2] = 'C';
+    in.data.data[3] = 'D';
+
+    TPM_RC res = TPM2_Hash(&in, &out);
+    assert(res != TPM_RC_BAD_TAG,
+           "TPM2_Hash bad tag",
+           "!= TPM_RC_BAD_TAG",
+           string_from_TPM_RC(res));
+    assert(res != TPM_RC_COMMAND_SIZE,
+           "TPM2_Hash command size",
+           "!= TPM_RC_COMMAND_SIZE",
+           string_from_TPM_RC(res));
+
+    if (res == TPM_RC_SUCCESS) {
+        assert(out.digest.size > 0,
+               "TPM2_Hash digest size",
+               "> 0",
+               "0");
+    }
+}
+
+void TPM2_Sign_smoke_test(void) {
+    Sign_In in = {0};
+    Sign_Out out = {0};
+
+    in.keyHandle.keySize = 8;
+    for (int i = 0; i < 8; i++) {
+        in.keyHandle.key[i] = (uint8_t)(i + 1);
+    }
+
+    in.data.dataSize = 4;
+    in.data.data[0] = 'A';
+    in.data.data[1] = 'B';
+    in.data.data[2] = 'C';
+    in.data.data[3] = 'D';
+
+    TPM_RC res = TPM2_Sign(&in, &out);
+    assert(res != TPM_RC_BAD_TAG,
+           "TPM2_Sign bad tag",
+           "!= TPM_RC_BAD_TAG",
+           string_from_TPM_RC(res));
+    assert(res != TPM_RC_COMMAND_SIZE,
+           "TPM2_Sign command size",
+           "!= TPM_RC_COMMAND_SIZE",
+           string_from_TPM_RC(res));
+
+    if (res == TPM_RC_SUCCESS) {
+        assert(out.signature.signatureSize > 0,
+               "TPM2_Sign signature size",
+               "> 0",
+               "0");
+    }
+}
+
+void TPM2_VerifySignature_smoke_test(void) {
+    VerifySignature_In in = {0};
+    VerifySignature_Out out = {0};
+
+    in.keyHandle.keySize = 8;
+    for (int i = 0; i < 8; i++) {
+        in.keyHandle.key[i] = (uint8_t)(i + 1);
+    }
+
+    in.data.dataSize = 4;
+    in.data.data[0] = 'A';
+    in.data.data[1] = 'B';
+    in.data.data[2] = 'C';
+    in.data.data[3] = 'D';
+
+    in.signature.signatureSize = TPM_MAX_SIGNATURE_SIZE;
+    for (int i = 0; i < TPM_MAX_SIGNATURE_SIZE; i++) {
+        in.signature.signature[i] = (uint8_t)(0xA5u ^ (uint8_t)i);
+    }
+
+    TPM_RC res = TPM2_VerifySignature(&in, &out);
+    assert(res != TPM_RC_BAD_TAG,
+           "TPM2_VerifySignature bad tag",
+           "!= TPM_RC_BAD_TAG",
+           string_from_TPM_RC(res));
+    assert(res != TPM_RC_COMMAND_SIZE,
+           "TPM2_VerifySignature command size",
+           "!= TPM_RC_COMMAND_SIZE",
+           string_from_TPM_RC(res));
+
+    (void)out;
+}
+
+void TPM2_EncryptDecrypt2_smoke_test(void) {
+    EncryptDecrypt2_In in = {0};
+    EncryptDecrypt2_Out out = {0};
+
+    in.keyHandle.keySize = 8;
+    for (int i = 0; i < 8; i++) {
+        in.keyHandle.key[i] = (uint8_t)(i + 1);
+    }
+
+    in.decrypt = 0;
+    in.symDef.algorithm = TPM_ALG_AES;
+    in.symDef.mode = TPM_ALG_CBC;
+    in.symDef.keyBits = 128;
+
+    in.ivIn.ivSize = 16;
+    for (int i = 0; i < 16; i++) {
+        in.ivIn.iv[i] = (uint8_t)i;
+    }
+
+    in.inData.bufferSize = 16;
+    for (int i = 0; i < 16; i++) {
+        in.inData.buffer[i] = (uint8_t)('A' + i);
+    }
+
+    TPM_RC res = TPM2_EncryptDecrypt2(&in, &out);
+    assert(res != TPM_RC_BAD_TAG,
+           "TPM2_EncryptDecrypt2 bad tag",
+           "!= TPM_RC_BAD_TAG",
+           string_from_TPM_RC(res));
+    assert(res != TPM_RC_COMMAND_SIZE,
+           "TPM2_EncryptDecrypt2 command size",
+           "!= TPM_RC_COMMAND_SIZE",
+           string_from_TPM_RC(res));
+
+    if (res == TPM_RC_SUCCESS) {
+        char expected_size_str[12];
+        char actual_size_str[12];
+        snprintf(expected_size_str, sizeof(expected_size_str), "%u", in.inData.bufferSize);
+        snprintf(actual_size_str, sizeof(actual_size_str), "%u", out.outData.bufferSize);
+        assert(out.outData.bufferSize == in.inData.bufferSize,
+               "EncryptDecrypt2 size mismatch",
+               expected_size_str,
+               actual_size_str);
+    }
+}
+
+void TPM2_RSA_EncryptDecrypt_smoke_test(void) {
+    RSA_Encrypt_In enc_in = {0};
+    RSA_Encrypt_Out enc_out = {0};
+
+    enc_in.keyHandle.keySize = 8;
+    for (int i = 0; i < 8; i++) {
+        enc_in.keyHandle.key[i] = (uint8_t)(i + 1);
+    }
+    enc_in.data.dataSize = 4;
+    enc_in.data.data[0] = 'A';
+    enc_in.data.data[1] = 'B';
+    enc_in.data.data[2] = 'C';
+    enc_in.data.data[3] = 'D';
+
+    TPM_RC res = TPM2_RSA_Encrypt(&enc_in, &enc_out);
+    assert(res != TPM_RC_BAD_TAG,
+           "TPM2_RSA_Encrypt bad tag",
+           "!= TPM_RC_BAD_TAG",
+           string_from_TPM_RC(res));
+    assert(res != TPM_RC_COMMAND_SIZE,
+           "TPM2_RSA_Encrypt command size",
+           "!= TPM_RC_COMMAND_SIZE",
+           string_from_TPM_RC(res));
+
+    RSA_Decrypt_In dec_in = {0};
+    RSA_Decrypt_Out dec_out = {0};
+
+    dec_in.keyHandle.keySize = 8;
+    for (int i = 0; i < 8; i++) {
+        dec_in.keyHandle.key[i] = (uint8_t)(i + 1);
+    }
+    dec_in.encrypted.dataSize = 4;
+    dec_in.encrypted.data[0] = 0x11;
+    dec_in.encrypted.data[1] = 0x22;
+    dec_in.encrypted.data[2] = 0x33;
+    dec_in.encrypted.data[3] = 0x44;
+
+    res = TPM2_RSA_Decrypt(&dec_in, &dec_out);
+    assert(res != TPM_RC_BAD_TAG,
+           "TPM2_RSA_Decrypt bad tag",
+           "!= TPM_RC_BAD_TAG",
+           string_from_TPM_RC(res));
+    assert(res != TPM_RC_COMMAND_SIZE,
+           "TPM2_RSA_Decrypt command size",
+           "!= TPM_RC_COMMAND_SIZE",
+           string_from_TPM_RC(res));
+
+    (void)enc_out;
+    (void)dec_out;
+}
+
 void tpm_test(void) {
     tpm_wait_access();
     Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] TPM access granted\n", 26, portMAX_DELAY);
 
     TPM2_NV_DefineSpace_test();
     TPM2_NV_WriteRead_test();
+
+    TPM2_Hash_smoke_test();
+    TPM2_Sign_smoke_test();
+    TPM2_VerifySignature_smoke_test();
+    TPM2_EncryptDecrypt2_smoke_test();
+    TPM2_RSA_EncryptDecrypt_smoke_test();
 }
 
 int main(void) {
@@ -355,230 +592,8 @@ int main(void) {
     tpm_test();
 
     assert_report();
-    
-#warning "[MANSOUR] Cryptographic Testing should be integrated in Mateus framework"
-    // test_sign_operation();
-    // test_verify_signature_operation();
-    // test_hash_operation();
-    // test_encrypt_decrypt2_operation();
-    // test_rsa_encrypt_operation();
-    // test_rsa_decrypt_operation();
-    
+
     while (1);
 
     return 0;
-}
-
-#warning "[MANSOUR] Non compliant testing for Cryptographic Primitives w.r.t. Mateus framework"
-
-// Test function prototypes
-void test_sign_operation(void);
-void test_verify_signature_operation(void);
-void test_hash_operation(void);
-void test_encrypt_decrypt2_operation(void);
-void test_rsa_encrypt_operation(void);
-void test_rsa_decrypt_operation(void);
-
-// Test function for TPM2_Sign
-void test_sign_operation(void) {
-    uint8_t sign_cmd[] = {
-        0x80, 0x01,                         // TPM_ST_NO_SESSIONS
-        0x00, 0x00, 0x00, 0x20,             // command size = 32
-        0x00, 0x00, 0x01, 0x5D,             // TPM2_CC_Sign
-        0x00, 0x08,                          // keyHandle size = 8
-        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, // key data
-        0x00, 0x04,                          // data size = 4
-        0x41, 0x42, 0x43, 0x44              // data "ABCD"
-    };
-    
-    uint8_t rsp_buf[4096];
-    size_t rsp_len;
-    
-    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Testing TPM2_Sign", 23, portMAX_DELAY);
-    
-    tpm_wait_access();
-    TPM_STS = TPM_STS_COMMAND_READY;
-    tpm_wait_burst_and_write(sign_cmd, sizeof(sign_cmd));
-    TPM_STS = TPM_STS_GO;
-    tpm_read_response(rsp_buf, sizeof(rsp_buf), &rsp_len);
-    
-    if (rsp_len >= 10) {
-        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[SUCCESS] Sign operation completed", 35, portMAX_DELAY);
-    } else {
-        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[ERROR] Sign operation failed", 30, portMAX_DELAY);
-    }
-}
-
-// Test function for TPM2_VerifySignature
-void test_verify_signature_operation(void) {
-    uint8_t verify_cmd[] = {
-        0x80, 0x01,                         // TPM_ST_NO_SESSIONS
-        0x00, 0x00, 0x01, 0x0C,             // command size = 268 (updated for 256-byte signature)
-        0x00, 0x00, 0x01, 0x77,             // TPM2_CC_VerifySignature
-        0x00, 0x08,                          // keyHandle size = 8
-        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, // key data
-        0x00, 0x04,                          // data size = 4
-        0x41, 0x42, 0x43, 0x44,             // data "ABCD"
-        0x01, 0x00,                          // signature size = 256 (RSA-PSS-SHA256)
-        // 256 bytes of signature data (test pattern)
-        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00,
-        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00,
-        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00,
-        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00,
-        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00,
-        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00,
-        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00,
-        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00,
-        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00,
-        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00,
-        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00,
-        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00,
-        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00,
-        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00,
-        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00,
-        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00
-    };
-    
-    uint8_t rsp_buf[4096];
-    size_t rsp_len;
-    
-    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Testing TPM2_VerifySignature", 34, portMAX_DELAY);
-    
-    tpm_wait_access();
-    TPM_STS = TPM_STS_COMMAND_READY;
-    tpm_wait_burst_and_write(verify_cmd, sizeof(verify_cmd));
-    TPM_STS = TPM_STS_GO;
-    tpm_read_response(rsp_buf, sizeof(rsp_buf), &rsp_len);
-    
-    if (rsp_len >= 10) {
-        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[SUCCESS] VerifySignature operation completed", 44, portMAX_DELAY);
-    } else {
-        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[ERROR] VerifySignature operation failed", 39, portMAX_DELAY);
-    }
-}
-
-// Test function for TPM2_Hash
-void test_hash_operation(void) {
-    uint8_t hash_cmd[] = {
-        0x80, 0x01,                         // TPM_ST_NO_SESSIONS
-        0x00, 0x00, 0x00, 0x0E,             // command size = 14
-        0x00, 0x00, 0x01, 0x7D,             // TPM2_CC_Hash
-        0x00, 0x04,                          // data size = 4
-        0x41, 0x42, 0x43, 0x44              // data "ABCD"
-    };
-    
-    uint8_t rsp_buf[4096];
-    size_t rsp_len;
-    
-    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Testing TPM2_Hash", 24, portMAX_DELAY);
-    
-    tpm_wait_access();
-    TPM_STS = TPM_STS_COMMAND_READY;
-    tpm_wait_burst_and_write(hash_cmd, sizeof(hash_cmd));
-    TPM_STS = TPM_STS_GO;
-    tpm_read_response(rsp_buf, sizeof(rsp_buf), &rsp_len);
-    
-    if (rsp_len >= 10) {
-        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[SUCCESS] Hash operation completed", 34, portMAX_DELAY);
-    } else {
-        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[ERROR] Hash operation failed", 29, portMAX_DELAY);
-    }
-}
-
-// Test function for TPM2_EncryptDecrypt2
-void test_encrypt_decrypt2_operation(void) {
-    uint8_t encrypt_cmd[] = {
-        0x80, 0x01,                         // TPM_ST_NO_SESSIONS
-        0x00, 0x00, 0x00, 0x2F,             // command size = 47
-        0x00, 0x00, 0x01, 0x43,             // TPM2_CC_EncryptDecrypt2 (correct code)
-        0x00, 0x08,                          // keyHandle size = 8
-        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, // key data
-        0x00,                                // decrypt = 0 (encrypt)
-        0x00, 0x06,                          // algorithm = TPM_ALG_AES
-        0x00, 0x42,                          // mode = TPM_ALG_CBC
-        0x00, 0x80,                          // keyBits = 128
-        0x00, 0x10,                          // IV size = 16
-        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, // IV data
-        0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
-        0x00, 0x10,                          // data size = 16 (block-aligned)
-        0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, // data (16 bytes)
-        0x49, 0x4A, 0x4B, 0x4C, 0x4D, 0x4E, 0x4F, 0x50
-    };
-    
-    uint8_t rsp_buf[4096];
-    size_t rsp_len;
-    
-    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Testing TPM2_EncryptDecrypt2", 33, portMAX_DELAY);
-    
-    tpm_wait_access();
-    TPM_STS = TPM_STS_COMMAND_READY;
-    tpm_wait_burst_and_write(encrypt_cmd, sizeof(encrypt_cmd));
-    TPM_STS = TPM_STS_GO;
-    tpm_read_response(rsp_buf, sizeof(rsp_buf), &rsp_len);
-    
-    if (rsp_len >= 10) {
-        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[SUCCESS] EncryptDecrypt2 operation completed", 43, portMAX_DELAY);
-    } else {
-        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[ERROR] EncryptDecrypt2 operation failed", 38, portMAX_DELAY);
-    }
-}
-
-// Test function for TPM2_RSA_Encrypt
-void test_rsa_encrypt_operation(void) {
-    uint8_t rsa_encrypt_cmd[] = {
-        0x80, 0x01,                         // TPM_ST_NO_SESSIONS
-        0x00, 0x00, 0x00, 0x14,             // command size = 20
-        0x00, 0x00, 0x01, 0x73,             // TPM2_CC_RSA_Encrypt
-        0x00, 0x08,                          // keyHandle size = 8
-        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, // key data
-        0x00, 0x04,                          // data size = 4
-        0x41, 0x42, 0x43, 0x44              // data "ABCD"
-    };
-    
-    uint8_t rsp_buf[4096];
-    size_t rsp_len;
-    
-    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Testing TPM2_RSA_Encrypt", 30, portMAX_DELAY);
-    
-    tpm_wait_access();
-    TPM_STS = TPM_STS_COMMAND_READY;
-    tpm_wait_burst_and_write(rsa_encrypt_cmd, sizeof(rsa_encrypt_cmd));
-    TPM_STS = TPM_STS_GO;
-    tpm_read_response(rsp_buf, sizeof(rsp_buf), &rsp_len);
-    
-    if (rsp_len >= 10) {
-        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[SUCCESS] RSA_Encrypt operation completed", 40, portMAX_DELAY);
-    } else {
-        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[ERROR] RSA_Encrypt operation failed", 35, portMAX_DELAY);
-    }
-}
-
-// Test function for TPM2_RSA_Decrypt
-void test_rsa_decrypt_operation(void) {
-    uint8_t rsa_decrypt_cmd[] = {
-        0x80, 0x01,                         // TPM_ST_NO_SESSIONS
-        0x00, 0x00, 0x00, 0x14,             // command size = 20
-        0x00, 0x00, 0x01, 0x74,             // TPM2_CC_RSA_Decrypt
-        0x00, 0x08,                          // keyHandle size = 8
-        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, // key data
-        0x00, 0x04,                          // encrypted data size = 4
-        0x11, 0x22, 0x33, 0x44              // encrypted data
-    };
-    
-    uint8_t rsp_buf[4096];
-    size_t rsp_len;
-    
-    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Testing TPM2_RSA_Decrypt", 30, portMAX_DELAY);
-    
-    tpm_wait_access();
-    TPM_STS = TPM_STS_COMMAND_READY;
-    tpm_wait_burst_and_write(rsa_decrypt_cmd, sizeof(rsa_decrypt_cmd));
-    TPM_STS = TPM_STS_GO;
-    tpm_read_response(rsp_buf, sizeof(rsp_buf), &rsp_len);
-    
-    if (rsp_len >= 10) {
-        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[SUCCESS] RSA_Decrypt operation completed", 40, portMAX_DELAY);
-    } else {
-        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[ERROR] RSA_Decrypt operation failed", 35, portMAX_DELAY);
-    }
 }
