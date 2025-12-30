@@ -1,5 +1,6 @@
 #include "hw/misc/s32k358_tpm.h"
 #include "hw/misc/tpm_crypt.h"
+#include "qemu/fifo8.h"
 #include <string.h>
 #include <stdlib.h>
 
@@ -14,28 +15,40 @@ void tpm_send_response(S32k358TPMState *s, TPM_RC rc,
     tpm_rsp_header_t rsp_header;
 
     rsp_header.tag = TPM_ST_NO_SESSIONS; // No sessions for this response
-    rsp_header.responseSize = sizeof(rsp_header) + size;
-    rsp_header.responseCode = TPM_RC_SUCCESS;
+    rsp_header.responseCode = rc;  // Use the actual return code
+
+    // Only include data in response if success
+    if (rc == TPM_RC_SUCCESS && data != NULL && size > 0) {
+        rsp_header.responseSize = sizeof(rsp_header) + size;
+    } else {
+        rsp_header.responseSize = sizeof(rsp_header);
+    }
 
     // Marshal the response header onto the output FIFO
     MARSHAL(&s->outfifo, &rsp_header);
 
     // Marshal the actual data onto the output FIFO on success
-    if (rc == TPM_RC_SUCCESS) {
+    if (rc == TPM_RC_SUCCESS && data != NULL && size > 0) {
         marshal(&s->outfifo, data, size);
     }
+
+    // Clear the input FIFO after processing the command
+    fifo8_reset(&s->infifo);
 
     // Update status to indicate that data is available
     s->tpm_state = TPM_S_CMPL;
     s->tpm_sts |= R_TPM_STS_dataAvail_MASK;
     s->tpm_sts |= R_TPM_STS_commandReady_MASK;
+    // Clear the Expect flag since we're no longer expecting input
+    s->tpm_sts &= ~R_TPM_STS_Expect_MASK;
 
-    // Update burstCount
+    // Update burstCount to reflect output FIFO size
     s->tpm_sts &= ~R_TPM_STS_burstCount_MASK;
-    s->tpm_sts |= (rsp_header.responseSize << R_TPM_STS_burstCount_SHIFT) &
+    s->tpm_sts |= (fifo8_num_used(&s->outfifo) << R_TPM_STS_burstCount_SHIFT) &
                   R_TPM_STS_burstCount_MASK;
     
-    qemu_log_mask(LOG_GUEST_ERROR, "(INFO) TPM: Command executed successfully, response sent\n");
+    qemu_log_mask(LOG_GUEST_ERROR, "(INFO) TPM: Command completed, rc=0x%X, response size=%u\n", 
+                  rc, rsp_header.responseSize);
 }
 
 /* TPM Commands */
@@ -82,6 +95,13 @@ TPM_RC TPM2_NV_DefineSpace(NV_DefineSpace_In* in) {
 TPM_RC TPM2_NV_Write(NV_Write_In* in)
 {
     NV_INDEX* nvIndex    = NvGetIndexInfo(in->nvIndex, NULL);
+    
+    // Check if the index exists
+    if (nvIndex == NULL) {
+        qemu_log_mask(LOG_GUEST_ERROR, "TPM2_NV_Write: Index 0x%08X not found\n", in->nvIndex);
+        return TPM_RC_HANDLE;
+    }
+    
     TPMA_NV   attributes = nvIndex->publicArea.attributes;
     TPM_RC    result;
 
@@ -128,6 +148,12 @@ TPM_RC TPM2_NV_Read(NV_Read_In* in, NV_Read_Out* out)
     NV_REF    locator;
     NV_INDEX* nvIndex = NvGetIndexInfo(in->nvIndex, &locator);
     TPM_RC    result;
+
+    // Check if the index exists
+    if (nvIndex == NULL) {
+        qemu_log_mask(LOG_GUEST_ERROR, "TPM2_NV_Read: Index 0x%08X not found\n", in->nvIndex);
+        return TPM_RC_HANDLE;
+    }
 
     // Input Validation
     // Common read access checks. NvReadAccessChecks() may return
