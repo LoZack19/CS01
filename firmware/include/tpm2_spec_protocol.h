@@ -95,6 +95,11 @@
 #define TPM_CC_EncryptDecrypt2 0x00000143
 #define TPM_CC_RSA_Encrypt 0x00000173
 #define TPM_CC_RSA_Decrypt 0x00000174
+/* Key Management */
+#define TPM_CC_Create 0x00000153
+#define TPM_CC_Load 0x00000157
+#define TPM_CC_ReadPublic 0x00000173
+#define TPM_CC_ObjectChangeAuth 0x00000150
 
 // TPMI_ALG_HASH
 #warning "[MANSOUR] Values for TPM_ALG_* macros for Symmetric Algorithms do not comply with the specification"
@@ -438,6 +443,57 @@ typedef struct __packed {
     TPM2B_DATA decrypted;
 } RSA_Decrypt_Out;
 
+// Create - Creates a new key under a parent
+typedef struct __packed {
+    TPM_HANDLE parentHandle;       // Handle of parent key (e.g. primary key)
+    TPM2B_AUTH inSensitive;        // Auth value for the new key
+    TPM2B_DATA inPublic;           // Template for public area
+    TPM2B_DATA outsideInfo;        // External data for ticket generation
+    UINT16 creationPCR;            // PCR selection for creation data
+} Create_In;
+
+typedef struct __packed {
+    TPM2B_DATA outPrivate;         // Encrypted private portion
+    TPM2B_DATA outPublic;          // Public portion of created key
+    TPM2B_DIGEST creationData;     // Creation data digest
+    TPM2B_DIGEST creationHash;     // Hash of creation data
+    TPM2B_DATA creationTicket;     // Ticket from TPM
+} Create_Out;
+
+// Load - Loads a key into the TPM
+typedef struct __packed {
+    TPM_HANDLE parentHandle;       // Handle of parent key
+    TPM2B_DATA inPrivate;          // Encrypted private portion (from Create)
+    TPM2B_DATA inPublic;           // Public portion (from Create)
+} Load_In;
+
+typedef struct __packed {
+    TPM_HANDLE objectHandle;       // Handle of loaded object
+    TPM2B_NAME name;               // Name of loaded object
+} Load_Out;
+
+// ReadPublic - Read the public area of a loaded object
+typedef struct __packed {
+    TPM_HANDLE objectHandle;       // Handle of object to read
+} ReadPublic_In;
+
+typedef struct __packed {
+    TPM2B_DATA outPublic;          // Public area of the object
+    TPM2B_NAME name;               // Name of the object
+    TPM2B_NAME qualifiedName;      // Qualified name of the object
+} ReadPublic_Out;
+
+// ObjectChangeAuth - Change authorization value of an object
+typedef struct __packed {
+    TPM_HANDLE objectHandle;       // Handle of object to modify
+    TPM_HANDLE parentHandle;       // Handle of parent key
+    TPM2B_AUTH newAuth;            // New authorization value
+} ObjectChangeAuth_In;
+
+typedef struct __packed {
+    TPM2B_DATA outPrivate;         // New encrypted private portion with updated auth
+} ObjectChangeAuth_Out;
+
 /* Section #6: Function Prototypes */
 
 /* Subsection #6.1: Marshalling and Unmarshalling functions */
@@ -476,3 +532,8 @@ TPM_RC TPM2_RSA_Decrypt(RSA_Decrypt_In *in, RSA_Decrypt_Out *out);
 TPM_RC TPM2_NV_DefineSpace(NV_DefineSpace_In *in);
 TPM_RC TPM2_NV_Write(NV_Write_In* in);
 TPM_RC TPM2_NV_Read(NV_Read_In* in, NV_Read_Out* out);
+/* Key Management */
+TPM_RC TPM2_Create(Create_In *in, Create_Out *out);
+TPM_RC TPM2_Load(Load_In *in, Load_Out *out);
+TPM_RC TPM2_ReadPublic(ReadPublic_In *in, ReadPublic_Out *out);
+TPM_RC TPM2_ObjectChangeAuth(ObjectChangeAuth_In *in, ObjectChangeAuth_Out *out);
