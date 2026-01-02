@@ -631,18 +631,18 @@ static bool g_key_loaded = false;       /* Flag: key was loaded successfully */
 /**
  * @brief Test TPM2_Create command
  *
- * SCOPO: Verifica che il comando TPM2_Create riesca a creare una nuova chiave
- *        sotto un parent (es. primary key nella Owner hierarchy).
+ * PURPOSE: Verify that the TPM2_Create command successfully creates a new key
+ *          under a parent (e.g., primary key in the Owner hierarchy).
  *
  * PASS:
- *   - TPM_RC_SUCCESS restituito
- *   - outPrivate.dataSize > 0 (private portion generata)
- *   - outPublic.dataSize > 0 (public portion generata)
+ *   - TPM_RC_SUCCESS returned
+ *   - outPrivate.dataSize > 0 (private portion generated)
+ *   - outPublic.dataSize > 0 (public portion generated)
  *
  * FAIL:
- *   - Qualsiasi TPM_RC diverso da SUCCESS
- *   - TPM_RC_BAD_TAG o TPM_RC_COMMAND_SIZE (errori di marshalling)
- *   - Output vuoti (size == 0)
+ *   - Any TPM_RC other than SUCCESS
+ *   - TPM_RC_BAD_TAG or TPM_RC_COMMAND_SIZE (marshalling errors)
+ *   - Empty outputs (size == 0)
  */
 void TPM2_Create_test(void) {
     TPM_RC res;
@@ -721,20 +721,20 @@ void TPM2_Create_test(void) {
 /**
  * @brief Test TPM2_Load command
  *
- * SCOPO: Verifica che una chiave creata con TPM2_Create possa essere caricata
- *        nel TPM per l'utilizzo.
+ * PURPOSE: Verify that a key created with TPM2_Create can be loaded
+ *          into the TPM for use.
  *
- * PREREQUISITO: TPM2_Create_test deve essere passato (g_key_created == true)
+ * PREREQUISITE: TPM2_Create_test must have passed (g_key_created == true)
  *
  * PASS:
- *   - TPM_RC_SUCCESS restituito
- *   - objectHandle != 0 e != TPM_RH_UNASSIGNED (handle valido assegnato)
- *   - name.size > 0 (nome dell'oggetto calcolato)
+ *   - TPM_RC_SUCCESS returned
+ *   - objectHandle != 0 and != TPM_RH_UNASSIGNED (valid handle assigned)
+ *   - name.size > 0 (object name computed)
  *
  * FAIL:
- *   - Qualsiasi TPM_RC diverso da SUCCESS
- *   - Handle restituito non valido
- *   - Name vuoto
+ *   - Any TPM_RC other than SUCCESS
+ *   - Invalid handle returned
+ *   - Empty name
  */
 void TPM2_Load_test(void) {
     TPM_RC res;
@@ -811,20 +811,20 @@ void TPM2_Load_test(void) {
 /**
  * @brief Test TPM2_ReadPublic command
  *
- * SCOPO: Verifica che la public area di una chiave caricata possa essere letta
- *        e che i dati siano coerenti con quanto creato.
+ * PURPOSE: Verify that the public area of a loaded key can be read
+ *          and that the data is consistent with what was created.
  *
- * PREREQUISITO: TPM2_Load_test deve essere passato (g_key_loaded == true)
+ * PREREQUISITE: TPM2_Load_test must have passed (g_key_loaded == true)
  *
  * PASS:
- *   - TPM_RC_SUCCESS restituito
- *   - outPublic.dataSize > 0 (public area non vuota)
- *   - name.size > 0 (nome presente)
- *   - qualifiedName.size > 0 (qualified name presente)
+ *   - TPM_RC_SUCCESS returned
+ *   - outPublic.dataSize > 0 (public area not empty)
+ *   - name.size > 0 (name present)
+ *   - qualifiedName.size > 0 (qualified name present)
  *
  * FAIL:
- *   - Qualsiasi TPM_RC diverso da SUCCESS
- *   - Output vuoti
+ *   - Any TPM_RC other than SUCCESS
+ *   - Empty outputs
  */
 void TPM2_ReadPublic_test(void) {
     TPM_RC res;
@@ -901,19 +901,19 @@ void TPM2_ReadPublic_test(void) {
 /**
  * @brief Test TPM2_ObjectChangeAuth command
  *
- * SCOPO: Verifica che il valore di autorizzazione di un oggetto possa essere
- *        cambiato correttamente.
+ * PURPOSE: Verify that the authorization value of an object can be
+ *          changed correctly.
  *
- * PREREQUISITO: TPM2_Load_test deve essere passato (g_key_loaded == true)
+ * PREREQUISITE: TPM2_Load_test must have passed (g_key_loaded == true)
  *
  * PASS:
- *   - TPM_RC_SUCCESS restituito
- *   - outPrivate.dataSize > 0 (nuova private portion generata)
- *   - La nuova private portion è diversa dall'originale (auth cambiato)
+ *   - TPM_RC_SUCCESS returned
+ *   - outPrivate.dataSize > 0 (new private portion generated)
+ *   - The new private portion differs from the original (auth changed)
  *
  * FAIL:
- *   - Qualsiasi TPM_RC diverso da SUCCESS
- *   - Output vuoto
+ *   - Any TPM_RC other than SUCCESS
+ *   - Empty output
  */
 void TPM2_ObjectChangeAuth_test(void) {
     TPM_RC res;
