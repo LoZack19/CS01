@@ -31,7 +31,7 @@ void tpm_send_response(S32k358TPMState *s, TPM_RC rc,
     if (rc == TPM_RC_SUCCESS && data != NULL && size > 0) {
         rsp_header.responseSize = sizeof(rsp_header) + size;
     } else {
-        rsp_header.responseSize = sizeof(rsp_header);
+    rsp_header.responseSize = sizeof(rsp_header);
     }
 
     // Marshal the response header onto the output FIFO
@@ -279,34 +279,34 @@ TPM_RC TPM2_EncryptDecrypt2(EncryptDecrypt2_In *in, EncryptDecrypt2_Out *out) {
     if (in->inData.bufferSize == 0) {
         return TPM_RC_VALUE;
     }
-
+    
     if (in->mode != TPM_ALG_ECB && in->mode != TPM_ALG_CBC &&
         in->mode != TPM_ALG_CFB && in->mode != TPM_ALG_OFB &&
         in->mode != TPM_ALG_CTR) {
         qemu_log_mask(LOG_GUEST_ERROR, "TPM2_EncryptDecrypt2: Unsupported mode 0x%04X\n", in->mode);
         return TPM_RC_MODE;
     }
-
+    
     if ((in->mode == TPM_ALG_ECB || in->mode == TPM_ALG_CBC) &&
         in->inData.bufferSize % 16 != 0) {
-        qemu_log_mask(LOG_GUEST_ERROR, "TPM2_EncryptDecrypt2: Data size %u not block-aligned for mode 0x%04X\n",
+        qemu_log_mask(LOG_GUEST_ERROR, "TPM2_EncryptDecrypt2: Data size %u not block-aligned for mode 0x%04X\n", 
                       in->inData.bufferSize, in->mode);
         return TPM_RC_VALUE;
     }
-
+    
     if (in->mode != TPM_ALG_ECB && in->ivIn.ivSize != 16) {
-        qemu_log_mask(LOG_GUEST_ERROR, "TPM2_EncryptDecrypt2: Invalid IV size %u for mode 0x%04X\n",
+        qemu_log_mask(LOG_GUEST_ERROR, "TPM2_EncryptDecrypt2: Invalid IV size %u for mode 0x%04X\n", 
                       in->ivIn.ivSize, in->mode);
         return TPM_RC_VALUE;
     }
-
+    
     switch (in->mode) {
         case TPM_ALG_ECB: {
-            if (in->decrypt) {
+                if (in->decrypt) {
                 TPM_AES_ECB_Decrypt(in->inData.buffer, in->inData.bufferSize,
                                     DEFAULT_AES_KEY, DEFAULT_AES_KEY_SIZE,
                                     out->outData.buffer);
-            } else {
+                } else {
                 TPM_AES_ECB_Encrypt(in->inData.buffer, in->inData.bufferSize,
                                     DEFAULT_AES_KEY, DEFAULT_AES_KEY_SIZE,
                                     out->outData.buffer);
@@ -319,11 +319,11 @@ TPM_RC TPM2_EncryptDecrypt2(EncryptDecrypt2_In *in, EncryptDecrypt2_Out *out) {
             if (in->decrypt) {
                 TPM_AES_CBC_Decrypt(in->inData.buffer, in->inData.bufferSize,
                                     DEFAULT_AES_KEY, DEFAULT_AES_KEY_SIZE,
-                                    in->ivIn.iv, out->outData.buffer, out->ivOut.iv);
+                              in->ivIn.iv, out->outData.buffer, out->ivOut.iv);
             } else {
                 TPM_AES_CBC_Encrypt(in->inData.buffer, in->inData.bufferSize,
                                     DEFAULT_AES_KEY, DEFAULT_AES_KEY_SIZE,
-                                    in->ivIn.iv, out->outData.buffer, out->ivOut.iv);
+                              in->ivIn.iv, out->outData.buffer, out->ivOut.iv);
             }
             out->outData.bufferSize = in->inData.bufferSize;
             out->ivOut.ivSize = 16;
@@ -332,11 +332,11 @@ TPM_RC TPM2_EncryptDecrypt2(EncryptDecrypt2_In *in, EncryptDecrypt2_Out *out) {
             if (in->decrypt) {
                 TPM_AES_CFB_Decrypt(in->inData.buffer, in->inData.bufferSize,
                                     DEFAULT_AES_KEY, DEFAULT_AES_KEY_SIZE,
-                                    in->ivIn.iv, out->outData.buffer, out->ivOut.iv);
+                              in->ivIn.iv, out->outData.buffer, out->ivOut.iv);
             } else {
                 TPM_AES_CFB_Encrypt(in->inData.buffer, in->inData.bufferSize,
                                     DEFAULT_AES_KEY, DEFAULT_AES_KEY_SIZE,
-                                    in->ivIn.iv, out->outData.buffer, out->ivOut.iv);
+                              in->ivIn.iv, out->outData.buffer, out->ivOut.iv);
             }
             out->outData.bufferSize = in->inData.bufferSize;
             out->ivOut.ivSize = 16;
@@ -344,14 +344,14 @@ TPM_RC TPM2_EncryptDecrypt2(EncryptDecrypt2_In *in, EncryptDecrypt2_Out *out) {
         case TPM_ALG_OFB:
             TPM_AES_OFB_Process(in->inData.buffer, in->inData.bufferSize,
                                 DEFAULT_AES_KEY, DEFAULT_AES_KEY_SIZE,
-                                in->ivIn.iv, out->outData.buffer, out->ivOut.iv);
+                          in->ivIn.iv, out->outData.buffer, out->ivOut.iv);
             out->outData.bufferSize = in->inData.bufferSize;
             out->ivOut.ivSize = 16;
             break;
         case TPM_ALG_CTR:
             TPM_AES_CTR_Process(in->inData.buffer, in->inData.bufferSize,
                                 DEFAULT_AES_KEY, DEFAULT_AES_KEY_SIZE,
-                                in->ivIn.iv, out->outData.buffer, out->ivOut.iv);
+                          in->ivIn.iv, out->outData.buffer, out->ivOut.iv);
             out->outData.bufferSize = in->inData.bufferSize;
             out->ivOut.ivSize = 16;
             break;
