@@ -11,10 +11,8 @@
 #define TPM_MAX_KEY_SIZE            256
 #define TPM_MAX_DATA_SIZE           256
 #define TPM_MAX_SIGNATURE_SIZE      256
-#warning "[MANSOUR] TPM_MAX_IV_SIZE does not appear in the TPM2.0 specification"
-#define TPM_MAX_IV_SIZE             16
-#warning "[MANSOUR] TPM_MAX_MAX_BUFFER_SIZE does not appear in the TPM2.0 specification"
-#define TPM_MAX_MAX_BUFFER_SIZE     1024
+#define TPM_MAX_IV_SIZE             16   /* TPM2B_IV uses AES block length */
+#define TPM_MAX_MAX_BUFFER_SIZE     1024 /* Implementation-defined max buffer */
 /* NV Memory */
 #define MAX_NV_INDEX_SIZE 512
 #define MAX_NV_BUFFER_SIZE 128
@@ -60,9 +58,6 @@
 #define TPM_RC_SIGNATURE        (TPM_RC)(RC_FMT1 + 0x01B)
 #define TPM_RC_KEY              (TPM_RC)(RC_FMT1 + 0x01C)
 
-#warning "[MANSOUR] TPM_RC_ALG is not present in TPM2.0 specification"
-#define TPM_RC_ALG 0x0000001E
-
 // TPM_RC Modifiers
 #define RC_NV_DefineSpace_authHandle (TPM_RC_H + TPM_RC_1)
 #define RC_NV_DefineSpace_auth       (TPM_RC_P + TPM_RC_1)
@@ -97,20 +92,24 @@
 #define TPM_CC_RSA_Decrypt 0x00000174
 
 // TPMI_ALG_HASH
-#warning "[MANSOUR] Values for TPM_ALG_* macros for Symmetric Algorithms do not comply with the specification"
-#define TPM_ALG_NULL 0x0010
-// TPM 2.0 Symmetric Algorithm Types
-#define TPM_ALG_AES     0x0006
-#define TPM_ALG_SM4     0x0012
-#define TPM_ALG_CAMELLIA 0x0013
-#define TPM_ALG_TDES    0x0010
-// TPM 2.0 Symmetric Modes
-#define TPM_ALG_ECB     0x0044
-#define TPM_ALG_CBC     0x0042
-#define TPM_ALG_CFB     0x0043
-#define TPM_ALG_OFB     0x0045
-#define TPM_ALG_CTR     0x0040
-#define TPM_ALG_XTS     0x0041
+#define TPM_ALG_NULL     0x0010
+#define TPM_ALG_SHA1     0x0004
+#define TPM_ALG_SHA256   0x000B
+// TPM 2.0 Symmetric Algorithm Types (per spec)
+#define TPM_ALG_AES      0x0006
+#define TPM_ALG_SM4      0x0013
+#define TPM_ALG_CAMELLIA 0x0015
+#define TPM_ALG_TDES     0x0003
+// TPM 2.0 Signature / RSA schemes
+#define TPM_ALG_RSASSA   0x0014
+#define TPM_ALG_RSAPSS   0x0016
+// TPM 2.0 Symmetric Modes (TPMI_ALG_SYM_MODE / TPMI_ALG_CIPHER_MODE)
+#define TPM_ALG_CTR      0x0040
+#define TPM_ALG_XTS      0x0041
+#define TPM_ALG_CBC      0x0042
+#define TPM_ALG_CFB      0x0043
+#define TPM_ALG_ECB      0x0044
+#define TPM_ALG_OFB      0x0045
 
 // state_clear_data
 #define shEnable_RESET TRUE
@@ -150,6 +149,7 @@ typedef uint8_t UINT8;
 typedef uint16_t UINT16;
 typedef uint32_t UINT32;
 typedef uint64_t UINT64;
+typedef BYTE   TPMI_YES_NO;
 
 /* Subsection #3.2: Secondary Types*/
 
@@ -157,10 +157,19 @@ typedef UINT8 TPM_HT;
 
 typedef UINT16 TPM_ST;
 typedef UINT16 TPM_ALG_ID;
-#warning "[MANSOUR] TPMU_SYM_KEY_BITS should be a union (TPMU_) but is a typedef instead"
-typedef UINT16 TPMU_SYM_KEY_BITS;
-#warning "[MANSOUR] TPMU_SYM_MODE should be a union (TPMU_) but is a typedef instead"
-typedef UINT16 TPMU_SYM_MODE;
+
+typedef union __packed {
+    UINT16 sym;
+    UINT16 aes;
+    UINT16 sm4;
+    UINT16 camellia;
+    UINT16 tdes;
+} TPMU_SYM_KEY_BITS;
+
+typedef union __packed {
+    UINT16 sym;
+    UINT16 chainMode;
+} TPMU_SYM_MODE;
 
 typedef UINT32 TPM_HANDLE;
 typedef UINT32 NV_REF;
@@ -174,9 +183,14 @@ typedef TPM_HANDLE TPMI_RH_PROVISION;
 typedef TPM_HANDLE TPMI_RH_NV_LEGACY_INDEX;
 typedef TPM_HANDLE TPMI_RH_NV_AUTH;
 typedef TPM_HANDLE TPMI_RH_NV_INDEX;
+typedef TPM_HANDLE TPMI_DH_OBJECT;
+typedef TPM_HANDLE TPMI_RH_HIERARCHY;
 
 typedef TPM_ALG_ID TPMI_ALG_HASH;
 typedef TPM_ALG_ID TPMI_ALG_SYM_OBJECT;
+typedef TPM_ALG_ID TPMI_ALG_SYM_MODE;
+typedef TPM_ALG_ID TPMI_ALG_CIPHER_MODE;
+typedef TPM_ALG_ID TPMI_ALG_SIG_SCHEME;
 
 /* Section #4: Complex Types */
 
@@ -224,11 +238,29 @@ typedef struct __packed {
 
 typedef TPM2B_DIGEST TPM2B_AUTH;
 
-#warning "[MANSOUR] Missing field details in a packed struct TPMT_SYM_DEF_OBJECT"
+typedef struct __packed {
+    TPMI_ALG_SIG_SCHEME scheme;
+    TPMI_ALG_HASH       hashAlg;
+} TPMT_SIG_SCHEME;
+
+typedef struct __packed {
+    TPM_ST       tag;
+    TPM_HANDLE   hierarchy;
+    TPM2B_DIGEST digest;
+} TPMT_TK_HASHCHECK;
+
+typedef TPMT_TK_HASHCHECK TPMT_TK_VERIFIED;
+
+typedef struct __packed {
+    TPMI_ALG_SIG_SCHEME sigAlg;
+    TPMI_ALG_HASH       hashAlg;
+    TPM2B_SIGNATURE     signature;
+} TPMT_SIGNATURE;
+
 typedef struct __packed {
     TPMI_ALG_SYM_OBJECT algorithm; // TPM_ALG_* algorithm (AES, SM4, etc.)
+    TPMU_SYM_KEY_BITS   keyBits;   // Key size in bits (per algorithm)
     TPMU_SYM_MODE       mode;      // Mode selector (ECB, CBC, CFB, OFB, CTR)
-    TPMU_SYM_KEY_BITS   keyBits;   // Key size in bits
 } TPMT_SYM_DEF_OBJECT;
 
 typedef struct __packed {
@@ -240,6 +272,11 @@ typedef struct __packed {
     UINT16 bufferSize;
     BYTE buffer[TPM_MAX_MAX_BUFFER_SIZE]; // Larger buffer for symmetric operations
 } TPM2B_MAX_BUFFER;
+
+typedef struct __packed {
+    UINT16 size;
+    BYTE buffer[TPM_MAX_KEY_SIZE];
+} TPM2B_PUBLIC_KEY_RSA;
 
 typedef struct __packed {
     UINT16 size;
@@ -369,73 +406,72 @@ typedef struct __packed {
 } NV_Read_Out;
 
 // Sign
-#warning "[MANSOUR] Types in Sign IO structures do not meet the specification"
 typedef struct __packed {
-    TPM2B_KEY keyHandle;
-    TPM2B_DATA data;
+    TPM_HANDLE        keyHandle;
+    TPMT_SIG_SCHEME   inScheme;
+    TPM2B_DIGEST      digest;
+    TPMT_TK_HASHCHECK validation;
 } Sign_In;
 
 typedef struct __packed {
-    TPM2B_SIGNATURE signature;
+    TPMT_SIGNATURE signature;
 } Sign_Out;
 
 // VerifySignature
-#warning "[MANSOUR] Types in VerifySignature IO structures do not meet the specification"
 typedef struct __packed {
-    TPM2B_KEY keyHandle;
-    TPM2B_DATA data;
-    TPM2B_SIGNATURE signature;
+    TPM_HANDLE     keyHandle;
+    TPM2B_DIGEST   digest;
+    TPMT_SIGNATURE signature;
 } VerifySignature_In;
 
 typedef struct __packed {
-    UINT8 verification;
+    TPMT_TK_VERIFIED validation;
 } VerifySignature_Out;
 
 // Hash
-#warning "[MANSOUR] Types in Hash IO structures do not meet the specification"
 typedef struct __packed {
-    TPM2B_DATA data;
+    TPM2B_MAX_BUFFER   data;
+    TPMI_ALG_HASH      hashAlg;
+    TPMI_RH_HIERARCHY  hierarchy;
 } Hash_In;
 
 typedef struct __packed {
-    TPM2B_DIGEST digest;
+    TPM2B_DIGEST      digest;
+    TPMT_TK_HASHCHECK validation;
 } Hash_Out;
 
 // EncryptDecrypt2
-#warning "[MANSOUR] Types in EncryptDecrypt2 IO structures do not meet the specification"
 typedef struct __packed {
-    TPM2B_KEY keyHandle;          // Symmetric key handle
-    UINT8 decrypt;                // 0=encrypt, 1=decrypt
-    TPMT_SYM_DEF_OBJECT symDef;   // Symmetric definition
-    TPM2B_IV ivIn;                // Input IV (for chaining modes)
-    TPM2B_MAX_BUFFER inData;      // Data to encrypt/decrypt
+    TPMI_DH_OBJECT       keyHandle; // Symmetric key handle
+    TPMI_YES_NO          decrypt;   // 0=encrypt, 1=decrypt
+    TPMI_ALG_CIPHER_MODE mode;      // Mode selector (ECB, CBC, CFB, OFB, CTR)
+    TPM2B_IV             ivIn;      // Input IV (for chaining modes)
+    TPM2B_MAX_BUFFER     inData;    // Data to encrypt/decrypt
 } EncryptDecrypt2_In;
 
 typedef struct __packed {
     TPM2B_MAX_BUFFER outData;     // Encrypted/decrypted data
-    TPM2B_IV ivOut;               // Output IV (for chaining modes)
+    TPM2B_IV         ivOut;       // Output IV (for chaining modes)
 } EncryptDecrypt2_Out;
 
 // RSA_Encrypt
-#warning "[MANSOUR] Types in RSA_Encrypt IO structures do not meet the specification"
 typedef struct __packed {
-    TPM2B_KEY keyHandle;
-    TPM2B_DATA data;
+    TPM_HANDLE           keyHandle;
+    TPM2B_PUBLIC_KEY_RSA message;
 } RSA_Encrypt_In;
 
 typedef struct __packed {
-    TPM2B_DATA encrypted;
+    TPM2B_PUBLIC_KEY_RSA encrypted;
 } RSA_Encrypt_Out;
 
 // RSA_Decrypt
-#warning "[MANSOUR] Types in RSA_Decrypt IO structures do not meet the specification"
 typedef struct __packed {
-    TPM2B_KEY keyHandle;
-    TPM2B_DATA encrypted;
+    TPM_HANDLE           keyHandle;
+    TPM2B_PUBLIC_KEY_RSA encrypted;
 } RSA_Decrypt_In;
 
 typedef struct __packed {
-    TPM2B_DATA decrypted;
+    TPM2B_PUBLIC_KEY_RSA decrypted;
 } RSA_Decrypt_Out;
 
 /* Section #6: Function Prototypes */

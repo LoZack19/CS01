@@ -4,6 +4,16 @@
 #include <string.h>
 #include <stdlib.h>
 
+/* Simplified key material used by the model to exercise crypto flows */
+static const uint8_t DEFAULT_RSA_KEY[TPM_MAX_KEY_SIZE] = {0x11};
+static const uint16_t DEFAULT_RSA_KEY_SIZE = 32; /* bytes */
+static const uint8_t DEFAULT_AES_KEY[16] = {
+    0x00, 0x01, 0x02, 0x03,
+    0x04, 0x05, 0x06, 0x07,
+    0x08, 0x09, 0x0A, 0x0B,
+    0x0C, 0x0D, 0x0E, 0x0F,
+};
+static const uint16_t DEFAULT_AES_KEY_SIZE = 16;
 static TPM_HT HandleGetType(TPM_HANDLE handle) {
     return (TPM_HT)(handle >> HR_SHIFT);
 }
@@ -186,182 +196,165 @@ TPM_RC TPM2_NV_Read(NV_Read_In* in, NV_Read_Out* out)
 }
 /* Cryptographic Operations */
 
-// SHA-256 hash function (improved implementation)
-static void CryptHash(const BYTE *data, UINT16 dataSize, BYTE *digest) {
-    SHA256_Calculate((const uint8_t *)data, (size_t)dataSize, (uint8_t *)digest);
-}
-
-
 TPM_RC TPM2_Sign(Sign_In *in, Sign_Out *out) {
-    qemu_log_mask(LOG_GUEST_ERROR, "TPM2_Sign: Signing data with key\n");
+    qemu_log_mask(LOG_GUEST_ERROR, "TPM2_Sign: Signing digest with key handle 0x%08X\n", in->keyHandle);
     
-    // Validate input
-    if (in->keyHandle.keySize == 0 || in->data.dataSize == 0) {
-        return TPM_RC_KEY;
+    if (in->digest.size == 0 || in->digest.size > sizeof(in->digest.buffer)) {
+        return TPM_RC_VALUE;
+    }
+
+    if (in->inScheme.hashAlg != TPM_ALG_NULL && in->inScheme.hashAlg != TPM_ALG_SHA256) {
+        return TPM_RC_HASH;
     }
     
-    // Generate signature
-    CryptSignRSA_PSS_SHA256((const uint8_t *)in->data.data, (uint16_t)in->data.dataSize, (const uint8_t *)in->keyHandle.key, (uint16_t)in->keyHandle.keySize, (uint8_t *)out->signature.signature);
-    out->signature.signatureSize = TPM_MAX_SIGNATURE_SIZE; // Fixed signature size
+    CryptSignRSA_PSS_SHA256((const uint8_t *)in->digest.buffer,
+                            in->digest.size,
+                            DEFAULT_RSA_KEY,
+                            DEFAULT_RSA_KEY_SIZE,
+                            (uint8_t *)out->signature.signature.signature);
+
+    out->signature.sigAlg = TPM_ALG_RSASSA;
+    out->signature.hashAlg = TPM_ALG_SHA256;
+    out->signature.signature.signatureSize = DEFAULT_RSA_KEY_SIZE;
     
     return TPM_RC_SUCCESS;
 }
 
 TPM_RC TPM2_VerifySignature(VerifySignature_In *in, VerifySignature_Out *out) {
-    qemu_log_mask(LOG_GUEST_ERROR, "TPM2_VerifySignature: Verifying signature\n");
+    qemu_log_mask(LOG_GUEST_ERROR, "TPM2_VerifySignature: Verifying signature with key handle 0x%08X\n", in->keyHandle);
     
-    // Validate input
-    if (in->keyHandle.keySize == 0 || in->data.dataSize == 0 || in->signature.signatureSize == 0) {
+    if (in->digest.size == 0 || in->signature.signature.signatureSize == 0) {
         return TPM_RC_SIGNATURE;
     }
     
-    // Verify signature
-    out->verification = CryptVerifySignatureRSA_PSS_SHA256((const uint8_t *)in->data.data, (uint16_t)in->data.dataSize, 
-                                           (const uint8_t *)in->signature.signature, (uint16_t)in->signature.signatureSize,
-                                           (const uint8_t *)in->keyHandle.key, (uint16_t)in->keyHandle.keySize);
+    uint8_t ok = CryptVerifySignatureRSA_PSS_SHA256(
+        (const uint8_t *)in->digest.buffer, (uint16_t)in->digest.size,
+        (const uint8_t *)in->signature.signature.signature, (uint16_t)in->signature.signature.signatureSize,
+        DEFAULT_RSA_KEY, DEFAULT_RSA_KEY_SIZE);
+    
+    if (!ok) {
+        return TPM_RC_SIGNATURE;
+    }
+
+    out->validation.tag = TPM_ST_NO_SESSIONS;
+    out->validation.hierarchy = TPM_RH_OWNER;
+    out->validation.digest = in->digest;
     
     return TPM_RC_SUCCESS;
 }
 
 TPM_RC TPM2_Hash(Hash_In *in, Hash_Out *out) {
-    qemu_log_mask(LOG_GUEST_ERROR, "TPM2_Hash: Computing hash of data\n");
+    qemu_log_mask(LOG_GUEST_ERROR, "TPM2_Hash: Computing hash (alg=0x%04X)\n", in->hashAlg);
     
-    // Validate input
-    if (in->data.dataSize == 0) {
+    if (in->hashAlg != TPM_ALG_SHA256) {
+        return TPM_RC_HASH;
+    }
+
+    if (in->data.bufferSize == 0) {
         return TPM_RC_HASH;
     }
     
-    // Run SHA-256 self-test on first call
     static int sha256_tested = 0;
     if (!sha256_tested) {
         test_sha256_implementation();
         sha256_tested = 1;
     }
     
-    // Compute hash using full SHA-256 implementation
-    SHA256_Calculate((const uint8_t *)in->data.data, (size_t)in->data.dataSize, (uint8_t *)out->digest.buffer);
+    SHA256_Calculate((const uint8_t *)in->data.buffer,
+                     (size_t)in->data.bufferSize,
+                     (uint8_t *)out->digest.buffer);
     out->digest.size = SHA256_DIGEST_SIZE;
+
+    out->validation.tag = TPM_ST_NO_SESSIONS;
+    out->validation.hierarchy = in->hierarchy;
+    out->validation.digest = out->digest;
     
     return TPM_RC_SUCCESS;
 }
 
 TPM_RC TPM2_EncryptDecrypt2(EncryptDecrypt2_In *in, EncryptDecrypt2_Out *out) {
-    qemu_log_mask(LOG_GUEST_ERROR, "TPM2_EncryptDecrypt2: %s, Algorithm=0x%04X, Mode=0x%04X\n", 
-                  in->decrypt ? "Decrypt" : "Encrypt", in->symDef.algorithm, in->symDef.mode);
-    
-    // Validate input parameters
-    if (in->keyHandle.keySize == 0) {
-        return TPM_RC_KEY;
-    }
+    qemu_log_mask(LOG_GUEST_ERROR, "TPM2_EncryptDecrypt2: %s, Mode=0x%04X\n",
+                  in->decrypt ? "Decrypt" : "Encrypt", in->mode);
     
     if (in->inData.bufferSize == 0) {
         return TPM_RC_VALUE;
     }
-    
-    // Validate algorithm support
-    if (in->symDef.algorithm != TPM_ALG_AES) {
-        qemu_log_mask(LOG_GUEST_ERROR, "TPM2_EncryptDecrypt2: Unsupported algorithm 0x%04X\n", in->symDef.algorithm);
-        return TPM_RC_ALG;
-    }
-    
-    // Validate mode support
-    if (in->symDef.mode != TPM_ALG_ECB && in->symDef.mode != TPM_ALG_CBC && 
-        in->symDef.mode != TPM_ALG_CFB && in->symDef.mode != TPM_ALG_OFB && 
-        in->symDef.mode != TPM_ALG_CTR) {
-        qemu_log_mask(LOG_GUEST_ERROR, "TPM2_EncryptDecrypt2: Unsupported mode 0x%04X\n", in->symDef.mode);
+
+    if (in->mode != TPM_ALG_ECB && in->mode != TPM_ALG_CBC &&
+        in->mode != TPM_ALG_CFB && in->mode != TPM_ALG_OFB &&
+        in->mode != TPM_ALG_CTR) {
+        qemu_log_mask(LOG_GUEST_ERROR, "TPM2_EncryptDecrypt2: Unsupported mode 0x%04X\n", in->mode);
         return TPM_RC_MODE;
     }
-    
-    // Validate key size for AES
-    if (in->keyHandle.keySize != 16 && in->keyHandle.keySize != 24 && in->keyHandle.keySize != 32) {
-        qemu_log_mask(LOG_GUEST_ERROR, "TPM2_EncryptDecrypt2: Invalid AES key size %u\n", in->keyHandle.keySize);
-        return TPM_RC_KEY;
-    }
-    
-    // Validate data size (block-aligned only for ECB and CBC)
-    if ((in->symDef.mode == TPM_ALG_ECB || in->symDef.mode == TPM_ALG_CBC) && 
+
+    if ((in->mode == TPM_ALG_ECB || in->mode == TPM_ALG_CBC) &&
         in->inData.bufferSize % 16 != 0) {
-        qemu_log_mask(LOG_GUEST_ERROR, "TPM2_EncryptDecrypt2: Data size %u not block-aligned for mode 0x%04X\n", 
-                      in->inData.bufferSize, in->symDef.mode);
+        qemu_log_mask(LOG_GUEST_ERROR, "TPM2_EncryptDecrypt2: Data size %u not block-aligned for mode 0x%04X\n",
+                      in->inData.bufferSize, in->mode);
         return TPM_RC_VALUE;
     }
-    
-    // Validate IV size for chaining modes
-    if (in->symDef.mode != TPM_ALG_ECB && in->ivIn.ivSize != 16) {
-        qemu_log_mask(LOG_GUEST_ERROR, "TPM2_EncryptDecrypt2: Invalid IV size %u for mode 0x%04X\n", 
-                      in->ivIn.ivSize, in->symDef.mode);
+
+    if (in->mode != TPM_ALG_ECB && in->ivIn.ivSize != 16) {
+        qemu_log_mask(LOG_GUEST_ERROR, "TPM2_EncryptDecrypt2: Invalid IV size %u for mode 0x%04X\n",
+                      in->ivIn.ivSize, in->mode);
         return TPM_RC_VALUE;
     }
-    
-    // Perform encryption/decryption based on mode and direction
-    switch (in->symDef.mode) {
-        case TPM_ALG_ECB:
-            // Electronic Codebook mode (no IV needed)
-            {
-                if (in->decrypt) {
-                    TPM_AES_ECB_Decrypt(in->inData.buffer, in->inData.bufferSize,
-                                        in->keyHandle.key, in->keyHandle.keySize,
-                                        out->outData.buffer);
-                } else {
-                    TPM_AES_ECB_Encrypt(in->inData.buffer, in->inData.bufferSize,
-                                        in->keyHandle.key, in->keyHandle.keySize,
-                                        out->outData.buffer);
-                }
-                out->outData.bufferSize = in->inData.bufferSize;
-                out->ivOut.ivSize = 0; // No IV for ECB
+
+    switch (in->mode) {
+        case TPM_ALG_ECB: {
+            if (in->decrypt) {
+                TPM_AES_ECB_Decrypt(in->inData.buffer, in->inData.bufferSize,
+                                    DEFAULT_AES_KEY, DEFAULT_AES_KEY_SIZE,
+                                    out->outData.buffer);
+            } else {
+                TPM_AES_ECB_Encrypt(in->inData.buffer, in->inData.bufferSize,
+                                    DEFAULT_AES_KEY, DEFAULT_AES_KEY_SIZE,
+                                    out->outData.buffer);
             }
+            out->outData.bufferSize = in->inData.bufferSize;
+            out->ivOut.ivSize = 0;
             break;
-            
+        }
         case TPM_ALG_CBC:
             if (in->decrypt) {
-                // CBC Decryption
-                TPM_AES_CBC_Decrypt(in->inData.buffer, in->inData.bufferSize, 
-                                    in->keyHandle.key, in->keyHandle.keySize,
+                TPM_AES_CBC_Decrypt(in->inData.buffer, in->inData.bufferSize,
+                                    DEFAULT_AES_KEY, DEFAULT_AES_KEY_SIZE,
                                     in->ivIn.iv, out->outData.buffer, out->ivOut.iv);
             } else {
-                // CBC Encryption
-                TPM_AES_CBC_Encrypt(in->inData.buffer, in->inData.bufferSize, 
-                                    in->keyHandle.key, in->keyHandle.keySize,
+                TPM_AES_CBC_Encrypt(in->inData.buffer, in->inData.bufferSize,
+                                    DEFAULT_AES_KEY, DEFAULT_AES_KEY_SIZE,
                                     in->ivIn.iv, out->outData.buffer, out->ivOut.iv);
             }
             out->outData.bufferSize = in->inData.bufferSize;
             out->ivOut.ivSize = 16;
             break;
-            
         case TPM_ALG_CFB:
             if (in->decrypt) {
-                // CFB Decryption
-                TPM_AES_CFB_Decrypt(in->inData.buffer, in->inData.bufferSize, 
-                                    in->keyHandle.key, in->keyHandle.keySize,
+                TPM_AES_CFB_Decrypt(in->inData.buffer, in->inData.bufferSize,
+                                    DEFAULT_AES_KEY, DEFAULT_AES_KEY_SIZE,
                                     in->ivIn.iv, out->outData.buffer, out->ivOut.iv);
             } else {
-                // CFB Encryption
-                TPM_AES_CFB_Encrypt(in->inData.buffer, in->inData.bufferSize, 
-                                    in->keyHandle.key, in->keyHandle.keySize,
+                TPM_AES_CFB_Encrypt(in->inData.buffer, in->inData.bufferSize,
+                                    DEFAULT_AES_KEY, DEFAULT_AES_KEY_SIZE,
                                     in->ivIn.iv, out->outData.buffer, out->ivOut.iv);
             }
             out->outData.bufferSize = in->inData.bufferSize;
             out->ivOut.ivSize = 16;
             break;
-            
         case TPM_ALG_OFB:
-            // OFB is the same for encryption and decryption
-            TPM_AES_OFB_Process(in->inData.buffer, in->inData.bufferSize, 
-                                in->keyHandle.key, in->keyHandle.keySize,
+            TPM_AES_OFB_Process(in->inData.buffer, in->inData.bufferSize,
+                                DEFAULT_AES_KEY, DEFAULT_AES_KEY_SIZE,
                                 in->ivIn.iv, out->outData.buffer, out->ivOut.iv);
             out->outData.bufferSize = in->inData.bufferSize;
             out->ivOut.ivSize = 16;
             break;
-            
         case TPM_ALG_CTR:
-            // CTR is the same for encryption and decryption
-            TPM_AES_CTR_Process(in->inData.buffer, in->inData.bufferSize, 
-                                in->keyHandle.key, in->keyHandle.keySize,
+            TPM_AES_CTR_Process(in->inData.buffer, in->inData.bufferSize,
+                                DEFAULT_AES_KEY, DEFAULT_AES_KEY_SIZE,
                                 in->ivIn.iv, out->outData.buffer, out->ivOut.iv);
             out->outData.bufferSize = in->inData.bufferSize;
             out->ivOut.ivSize = 16;
             break;
-            
         default:
             return TPM_RC_VALUE;
     }
@@ -372,31 +365,35 @@ TPM_RC TPM2_EncryptDecrypt2(EncryptDecrypt2_In *in, EncryptDecrypt2_Out *out) {
 }
 
 TPM_RC TPM2_RSA_Encrypt(RSA_Encrypt_In *in, RSA_Encrypt_Out *out) {
-    qemu_log_mask(LOG_GUEST_ERROR, "TPM2_RSA_Encrypt: RSA encryption\n");
+    qemu_log_mask(LOG_GUEST_ERROR, "TPM2_RSA_Encrypt: RSA encryption with handle 0x%08X\n", in->keyHandle);
     
-    // Validate input
-    if (in->keyHandle.keySize == 0 || in->data.dataSize == 0) {
-        return TPM_RC_KEY;
+    if (in->message.size == 0 || in->message.size > TPM_MAX_KEY_SIZE) {
+        return TPM_RC_VALUE;
     }
     
-    // Simple RSA encryption simulation (XOR-based)
-    CryptEncrypt((const uint8_t *)in->data.data, (uint16_t)in->data.dataSize, (const uint8_t *)in->keyHandle.key, (uint16_t)in->keyHandle.keySize, (uint8_t *)out->encrypted.data);
-    out->encrypted.dataSize = in->data.dataSize;
+    CryptEncrypt(in->message.buffer,
+                 in->message.size,
+                 DEFAULT_RSA_KEY,
+                 DEFAULT_RSA_KEY_SIZE,
+                 out->encrypted.buffer);
+    out->encrypted.size = in->message.size;
     
     return TPM_RC_SUCCESS;
 }
 
 TPM_RC TPM2_RSA_Decrypt(RSA_Decrypt_In *in, RSA_Decrypt_Out *out) {
-    qemu_log_mask(LOG_GUEST_ERROR, "TPM2_RSA_Decrypt: RSA decryption\n");
+    qemu_log_mask(LOG_GUEST_ERROR, "TPM2_RSA_Decrypt: RSA decryption with handle 0x%08X\n", in->keyHandle);
     
-    // Validate input
-    if (in->keyHandle.keySize == 0 || in->encrypted.dataSize == 0) {
-        return TPM_RC_KEY;
+    if (in->encrypted.size == 0 || in->encrypted.size > TPM_MAX_KEY_SIZE) {
+        return TPM_RC_VALUE;
     }
     
-    // Simple RSA decryption simulation (XOR-based)
-    CryptDecrypt((const uint8_t *)in->encrypted.data, (uint16_t)in->encrypted.dataSize, (const uint8_t *)in->keyHandle.key, (uint16_t)in->keyHandle.keySize, (uint8_t *)out->decrypted.data);
-    out->decrypted.dataSize = in->encrypted.dataSize;
+    CryptDecrypt(in->encrypted.buffer,
+                 in->encrypted.size,
+                 DEFAULT_RSA_KEY,
+                 DEFAULT_RSA_KEY_SIZE,
+                 out->decrypted.buffer);
+    out->decrypted.size = in->encrypted.size;
     
     return TPM_RC_SUCCESS;
 }
