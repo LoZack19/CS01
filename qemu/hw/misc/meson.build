@@ -156,4 +156,6 @@ system_ss.add(when: 'CONFIG_LASI', if_true: files('lasi.c'))
 system_ss.add(when: 'CONFIG_S32K358_TPM', if_true: files(
   's32k358_tpm.c',
   'tpm_cmds.c',
-  'tpm_marshal.c'))
+  'tpm_marshal.c',
+  'NvStorage.c',
+  'tpm_crypt.c'))

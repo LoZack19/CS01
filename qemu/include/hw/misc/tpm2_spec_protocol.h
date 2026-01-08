@@ -1,6 +1,5 @@
 #include <stdint.h>
-#include <stddef.h>
-#include "fifo8.h"
+#include "include/qemu/fifo8.h"
 
 #define __packed __attribute__((packed))
 

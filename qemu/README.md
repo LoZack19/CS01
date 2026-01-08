@@ -95,12 +95,49 @@ If you have run out of energy or time for your project, put a note at the top of
 
 # NXP S32K358 EXTENSION
 
+This introduces a comprehensive QEMU machine model for the **NXP S32K3X8EVB-Q289 evaluation board**, which is based on the S32K358 microcontroller. This allows for the emulation and testing of firmware for this specific automotive-grade platform.
+
+The core of this feature is the new device model for the **S32K358 SoC**, which includes an ARM Cortex-M7 core and a detailed memory map with ITCM, DTCM, SRAM, and flash regions.
+
+### Key Features:
+
+* **New Machine:** Adds the `-machine s32k3x8evb-q289` option to QEMU.
+* **Peripheral Emulation:**
+    * **SIUL2:** Implements the System Integration Unit for GPIO, handling pin configuration and I/O for over 300 pins.
+    * **LPUART:** Provides a complete model for the Low-Power UART, enabling serial communication through a QEMU character device backend.
+* **New Virtual Devices for Interaction:**
+    * **`virt-button`**: A virtual button that can be "pressed" and "released" via QMP commands (`virt-button-press`, `virt-button-release`) to drive a GPIO input on the SoC.
+    * **`virt-led`**: A virtual LED whose state is controlled by a GPIO output from the SoC. Its status (`on`/`off`) can be queried via the `virt-led-get` QMP command.
+* **Board-Level Integration:** The machine model instantiates and connects all components, linking the virtual button and LED to the SoC's GPIO pins, providing a ready-to-use emulation environment. A large portion of the SoC's memory map is stubbed with unimplemented devices to prevent guest faults on access.
+
+## Compiling and testing out the setup
+
+1.  **Clone the QEMU repository:**
+```bash
+git clone $repository_url
+```
+
+2.  **Configure QEMU for ARM softmmu target:**
+```bash
+./configure --target-list=arm-softmmu
+```
+
+3.  **Compile QEMU:**
+```bash
+make -j4
+```
+
+4.  **Run QEMU self-tests (optional but recommended):**
+```bash
+make check-qtest -j4
+```
+
 ## Running qemu
 
 The command used to run qemu with our firmware is:
 
 ```bash
-./group3/build/qemu-system-arm -kernel firmware/Debug_FLASH/FreeRTOS_Toggle_Led_Example_S32K358.elf -machine s32k3x8evb-q289 -nographic -d guest_errors -serial none -serial none -serial none -serial mon:stdio
+./EOS03/build/qemu-system-arm -kernel $firmware_path -machine s32k3x8evb-q289 -nographic -d guest_errors -serial none -serial none -serial none -serial mon:stdio
 ```
 
 **Explanation:**
@@ -109,31 +146,31 @@ The command used to run qemu with our firmware is:
 ./group3/build/qemu-system-arm
 ```
 
-→ Runs the QEMU ARM emulator (custom build in `group3/build`).
+Runs the QEMU ARM emulator (custom build in `group3/build`).
 
 ```bash
--kernel firmware/Debug_FLASH/FreeRTOS_Toggle_Led_Example_S32K358.elf
+-kernel $firmware_path
 ```
 
-→ Loads and runs the specified FreeRTOS firmware ELF file.
+Loads and runs the specified firmware ELF file.
 
 ```bash
 -machine s32k3x8evb-q289
 ```
 
-→ Emulates the S32K3x8EVB-Q289 development board (matches the hardware).
+Emulates the S32K3x8EVB-Q289 development board (matches the hardware).
 
 ```bash
 -nographic
 ```
 
-→ Disables GUI; all I/O is done through the terminal.
+Disables GUI; all I/O is done through the terminal.
 
 ```bash
 -d guest_errors
 ```
 
-→ Enables logging of errors from the guest (firmware) side.
+Enables logging of errors from the guest (firmware) side.
 
 ```bash
 -serial none
@@ -141,15 +178,24 @@ The command used to run qemu with our firmware is:
 -serial none
 ```
 
-→ Disables serial ports 0, 1, and 2 (no output or devices attached).
+Disables serial ports 0, 1, and 2 (no output or devices attached).
 
 ```bash
 -serial mon:stdio
 ```
 
-→ Redirects QEMU monitor to terminal using serial port 3 (i.e. `lpuart[3]`)
+Redirects QEMU monitor to terminal using serial port 3 (i.e. `lpuart[3]`)
 
----
+### Additions
 
-**Summary**:
-This command runs FreeRTOS firmware for the S32K358 board on a headless QEMU emulator, logs guest-side errors, disables unused serial ports, and uses the terminal for monitor interaction.
+Use this qemu command to stream the monitor on `localhost:4444`
+
+```bash
+-monitor tcp:127.0.0.1:4444,server,nowait
+```
+
+And this command (on another terminal) to connect:
+
+```bash
+telnet 127.0.0.1 4444
+```
