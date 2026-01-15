@@ -406,6 +406,16 @@ static void s32k358_tpm_realize(DeviceState *dev, Error **errp)
 {
     S32k358TPMState *s = S32K358_TPM(dev);
 
+    // Initialize TPM global state (including PCRs zeroed at reset)
+    memset(&s->gc, 0, sizeof(s->gc));
+    s->gc.shEnable = shEnable_RESET;
+    s->gc.ehEnable = ehEnable_RESET;
+    s->gc.phEnableNV = phEnableNV_RESET;
+    s->gc.platformAlg = platformAlg_RESET;
+    s->gc.platformPolicy = platformPolicy_RESET;
+    s->gc.platformAuth = platformAuth_RESET;
+    // PCRs are already zeroed by memset above
+
     // Initialize NV memory size and storage module
     s->nvmem_size = S32K358_TPM_NV_MEM_SIZE;
     memset(s->mem, 0, s->nvmem_size);  // Zero-initialize NV memory

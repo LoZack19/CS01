@@ -13,6 +13,16 @@
 #define TPM_MAX_SIGNATURE_SIZE      256
 #define TPM_MAX_IV_SIZE             16   /* TPM2B_IV uses AES block length */
 #define TPM_MAX_MAX_BUFFER_SIZE     1024 /* Implementation-defined max buffer */
+/* Key Lifecycle Management */
+#define MAX_SYM_DATA 128
+#define LABEL_MAX_BUFFER 32
+#define HASH_COUNT 5 /* Implementation-defined; TODO: check */
+/* PCRs: minimal implementation provides 24 PCR registers (0..23). */
+#define TPM_PCR_COUNT 24
+#define PLATFORM_PCR (TPM_PCR_COUNT - 1)
+#define IMPLEMENTATION_PCR (TPM_PCR_COUNT - 1)
+#define PCR_SELECT_MAX ((IMPLEMENTATION_PCR + 7) / 8)  /* in bytes */
+#define PCR_SELECT_MIN ((PLATFORM_PCR + 7) / 8)        /* in bytes */
 /* NV Memory */
 #define MAX_NV_INDEX_SIZE 512
 #define MAX_NV_BUFFER_SIZE 128
@@ -176,6 +186,7 @@ typedef UINT32 NV_REF;
 typedef UINT32 TPM_RC;
 typedef UINT32 TPM_CC;
 
+
 /* Subsection #3.3: Specializations of Secondary Types*/
 typedef TPM_ST TPMI_ST_COMMAND_TAG;
 
@@ -191,6 +202,7 @@ typedef TPM_ALG_ID TPMI_ALG_SYM_OBJECT;
 typedef TPM_ALG_ID TPMI_ALG_SYM_MODE;
 typedef TPM_ALG_ID TPMI_ALG_CIPHER_MODE;
 typedef TPM_ALG_ID TPMI_ALG_SIG_SCHEME;
+typedef TPM_ALG_ID TPMI_ALG_PUBLIC;
 
 /* Section #4: Complex Types */
 
@@ -250,6 +262,7 @@ typedef struct __packed {
 } TPMT_TK_HASHCHECK;
 
 typedef TPMT_TK_HASHCHECK TPMT_TK_VERIFIED;
+typedef TPMT_TK_HASHCHECK TPMT_TK_CREATION;
 
 typedef struct __packed {
     TPMI_ALG_SIG_SCHEME sigAlg;
@@ -289,6 +302,11 @@ typedef struct __packed {
 } TPM2B_NAME;
 
 typedef struct __packed {
+    UINT16 size;
+    BYTE buffer[TPM_MAX_MAX_BUFFER_SIZE];
+} TPM2B_CREATION_DATA;
+
+typedef struct __packed {
     UINT32 PPWRITE             : 1;
     UINT32 OWNERWRITE          : 1;
     UINT32 AUTHWRITE           : 1;
@@ -316,6 +334,27 @@ typedef struct __packed {
 } TPMA_NV;
 
 typedef struct __packed {
+    UINT32 Reserved0            : 1; /* Shall be 0*/
+    UINT32 fixedTPM             : 1;
+    UINT32 stClear              : 1;
+    UINT32 Reserved1            : 1;
+    UINT32 fixedParent          : 1;
+    UINT32 sensitiveDataOrigin  : 1;
+    UINT32 userWithAuth         : 1;
+    UINT32 adminWithPolicy      : 1;
+    UINT32 firmwareLimited      : 1;
+    UINT32 svnLimited           : 1;
+    UINT32 noDA                 : 1;
+    UINT32 encryptedDuplication : 1;
+    UINT32 Reserved2            : 4;
+    UINT32 restricted           : 1;
+    UINT32 decrypt              : 1;
+    UINT32 sign_encrypt         : 1;
+    UINT32 x509sign             : 1;
+    UINT32 Reserved3            : 12;
+} TPMA_OBJECT;
+
+typedef struct __packed {
     TPMI_RH_NV_LEGACY_INDEX nvIndex;
     TPMI_ALG_HASH nameAlg;
     TPMA_NV attributes;
@@ -337,6 +376,73 @@ typedef struct __packed {
     UINT32 size;
     TPM_HANDLE handle;
 } NV_ENTRY_HEADER;
+
+typedef struct __packed {
+    UINT16 size;
+    BYTE buffer[LABEL_MAX_BUFFER];
+} TPM2B_LABEL;
+
+typedef struct __packed {
+    TPM2B_LABEL label;
+    TPM2B_LABEL context;
+} TPMS_DERIVE;
+
+typedef union __packed {
+    BYTE create[MAX_SYM_DATA];
+    TPMS_DERIVE derive;
+} TPMU_SENSITIVE_CREATE;
+
+typedef struct __packed {
+    UINT16 size;
+    BYTE buffer[sizeof(TPMU_SENSITIVE_CREATE)];
+} TPM2B_SENSITIVE_DATA;
+
+typedef struct __packed {
+    UINT16 size;
+    TPM2B_AUTH userAuth;
+    TPM2B_SENSITIVE_DATA data;
+} TPM2B_SENSITIVE_CREATE;
+
+typedef struct __packed {
+    // TPMS_KEYDHASH_PARAMS keyedHashDetail;
+    // TPMS_SYMCIPHER_PARAMS symDetail;
+    // TPMS_RSA_PARAMS rsaDetail;
+    // TPMS_ECC_PARAMS eccDetail;
+    // TPMS_ASYM_PARAMS asymDetail;
+} TPMU_PUBLIC_PARAMS;
+
+typedef struct __packed {
+    TPM2B_DIGEST keyedHash;
+    TPM2B_DIGEST sym;
+    TPM2B_PUBLIC_KEY_RSA rsa;
+    // TPMS_ECC_POINT ecc;
+    TPMS_DERIVE derive;
+} TPMU_PUBLIC_ID;
+
+typedef struct __packed {
+    TPMI_ALG_PUBLIC type;
+    TPMI_ALG_HASH nameAlg;
+    TPMA_OBJECT objectAttributes;
+    TPM2B_DIGEST authPolicy;
+    TPMU_PUBLIC_PARAMS parameters; /*[type]*/
+    TPMU_PUBLIC_ID unique; /*[type]*/
+} TPMT_PUBLIC;
+
+typedef struct __packed {
+    UINT16 size;
+    TPMT_PUBLIC publicArea;
+} TPM2B_PUBLIC;
+
+typedef struct __packed {
+    TPMI_ALG_HASH hash;
+    UINT8 sizeofSelect; /* lower bound PCR_SELECT_MIN */
+    BYTE pcrSelect[PCR_SELECT_MAX];
+} TPMS_PCR_SELECTION;
+
+typedef struct __packed {
+    UINT32 count;
+    TPMS_PCR_SELECTION pcrSelections[HASH_COUNT];  
+} TPML_PCR_SELECTION;
 
 /* Subsection #4.2: Useful Additions */
 
@@ -363,7 +469,8 @@ typedef struct __packed {
     TPM2B_DIGEST platformPolicy;
     TPM2B_AUTH platformAuth;
     
-    /* PCR (empty) */
+    /* PCR: SHA-256 bank (minimal) */
+    BYTE pcr_sha256[TPM_PCR_COUNT][SHA256_DIGEST_SIZE];
     /* ACT (empty) */
 } state_clear_data;
 
@@ -474,6 +581,25 @@ typedef struct __packed {
     TPM2B_PUBLIC_KEY_RSA decrypted;
 } RSA_Decrypt_Out;
 
+// CreatePrimary
+
+typedef struct __packed {
+    TPMI_RH_HIERARCHY primaryHandle;
+    TPM2B_SENSITIVE_CREATE inSensitive;
+    TPM2B_PUBLIC inPublic;
+    TPM2B_DATA outsideInfo;
+    TPML_PCR_SELECTION creationPCR;
+} CreatePrimary_In;
+
+typedef struct __packed {
+    TPM_HANDLE objectHandle;
+    TPM2B_PUBLIC outPublic;
+    TPM2B_CREATION_DATA creationData;
+    TPM2B_DIGEST creationHash;
+    TPMT_TK_CREATION creationTicket;
+    TPM2B_NAME name;
+} CreatePrimary_Out;
+
 /* Section #6: Function Prototypes */
 
 /* Subsection #6.1: Marshalling and Unmarshalling functions */
@@ -508,6 +634,8 @@ TPM_RC TPM2_Hash(Hash_In *in, Hash_Out *out);
 TPM_RC TPM2_EncryptDecrypt2(EncryptDecrypt2_In *in, EncryptDecrypt2_Out *out);
 TPM_RC TPM2_RSA_Encrypt(RSA_Encrypt_In *in, RSA_Encrypt_Out *out);
 TPM_RC TPM2_RSA_Decrypt(RSA_Decrypt_In *in, RSA_Decrypt_Out *out);
+/* Key Lifecycle Management */
+TPM_RC TPM2_CreatePrimary(CreatePrimary_In *in, CreatePrimary_Out *out);
 /* NV Memory */
 TPM_RC TPM2_NV_DefineSpace(NV_DefineSpace_In *in);
 TPM_RC TPM2_NV_Write(NV_Write_In* in);
