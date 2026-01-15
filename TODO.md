@@ -68,7 +68,7 @@ Design and implement a generic TPM simulation in Qemu with a focus on practical 
 # Next Steps
 
 1. Implement
-    - [ ] `TPM2_Create`
+    - [ ] `TPM2_CreatePrimary`
     - [ ] `TPM2_Load`
     - [ ] `TPM2_ReadPublic`
     - [ ] `TPM2_ObjectChangeAuth`
