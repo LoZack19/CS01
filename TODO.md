@@ -23,21 +23,21 @@ Design and implement a generic TPM simulation in Qemu with a focus on practical 
 
 #### Specific Implementation Features
 
-- [ ] [ ] Asymmetric Key Pair Generation
-- [ ] [ ] Secure Key Storage
-- [ ] [ ] Key Lifecycle Management
-- [X] [ ] Basic Cryptographic Operations
+- [W] [*] Asymmetric Key Pair Generation
+- [W] [*] Secure Key Storage
+- [W] [*] Key Lifecycle Management
+- [X] [*] Basic Cryptographic Operations
 
 ## Proposed Technical Architecture
 1. **Software Simulation Layer**
    - [X] Command Parsing Mechanism: When the simulator receives a command, this component reads that byte stream. It decodes the command to figure out which TPM command is being requested.
-   - [?] State Management: A real TPM maintains internal state.
+   - [X] State Management: A real TPM maintains internal state.
    - [X] Simulated Hardware Interaction: It defines the API or mechanism through which external software sends commands to the simulator and receives responses from it. It manages the flow of command/response data.
 
 2. **Cryptographic Module**
-   - [ ] RSA Key Generation
-   - [ ] Key Integrity Verification
-   - [ ] Secure Storage Simulation
+   - [W] RSA Key Generation
+   - [W] Key Integrity Verification
+   - [W] Secure Storage Simulation
 
 ## Practical Implementation Approach
 - Language: C/C++
@@ -68,17 +68,16 @@ Design and implement a generic TPM simulation in Qemu with a focus on practical 
 # Next Steps
 
 1. Implement
-    - [ ] `TPM2_Create`
+    - [ ] `TPM2_CreatePrimary`
     - [ ] `TPM2_Load`
     - [ ] `TPM2_ReadPublic`
     - [ ] `TPM2_ObjectChangeAuth`
 2. Implement firmware tests for
-    - [ ] `TPM2_Create`
-    - [ ] `TPM2_Load`
-    - [ ] `TPM2_ReadPublic`
-    - [ ] `TPM2_ObjectChangeAuth`
-3. Solve `[MANSOUR]` warnings in `/include/hw/misc/tpm2_spec_protocol.h`
+    - [X] `TPM2_CreatePrimary`
+    - [X] `TPM2_Load`
+    - [X] `TPM2_ReadPublic`
+    - [X] `TPM2_ObjectChangeAuth`
+3. Create meaningful tests for cryptographic functions and run them to assess correctness.
 
 - [ ] Giovanni & Mateus: 1
-- [ ] Tommaso: 2
-- [ ] Mansour: 3
+- [ ] Tommaso & Mansour: 3
