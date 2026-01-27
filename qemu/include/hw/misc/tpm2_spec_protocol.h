@@ -13,6 +13,8 @@
 #define TPM_MAX_SIGNATURE_SIZE      256
 #define TPM_MAX_IV_SIZE             16   /* TPM2B_IV uses AES block length */
 #define TPM_MAX_MAX_BUFFER_SIZE     1024 /* Implementation-defined max buffer */
+#define RSA_PRIVATE_SIZE            256  /* Supports up to RSA-2048 keys */
+#define DRBG_SEED_SIZE_BYTES        256
 /* Key Lifecycle Management */
 #define MAX_SYM_DATA 128
 #define LABEL_MAX_BUFFER 32
@@ -158,6 +160,7 @@ typedef uint8_t UINT8;
 typedef uint16_t UINT16;
 typedef uint32_t UINT32;
 typedef uint64_t UINT64;
+typedef uint64_t crypt_uword_t;
 typedef BYTE   TPMI_YES_NO;
 
 /* Subsection #3.2: Secondary Types*/
@@ -467,6 +470,74 @@ typedef struct __packed {
     UINT32 count;
     TPMS_PCR_SELECTION pcrSelections[HASH_COUNT];  
 } TPML_PCR_SELECTION;
+
+typedef union __packed {
+    BYTE          bytes[DRBG_SEED_SIZE_BYTES];
+    crypt_uword_t words[DRBG_SEED_SIZE_WORDS];
+} DRBG_SEED;
+
+typedef struct __packed {
+    UINT64    reseedCounter;
+    UINT32    magic;
+    DRBG_SEED seed;
+    UINT32    lastValue[4];
+} DRBG_STATE;
+
+typedef struct {
+    uint16_t size;
+    uint8_t  buffer[64];
+} TPM2B_SEED;
+
+typedef struct __packed {
+    unsigned publicOnly : 1;
+    unsigned epsHierarchy : 1;
+    unsigned ppsHierarchy : 1;
+    unsigned spsHierarchy : 1;
+    unsigned evict : 1;
+    unsigned primary   : 1;
+    unsigned temporary : 1;
+    unsigned stClear   : 1;
+    unsigned hmacSeq   : 1;
+    unsigned hashSeq    : 1;
+    unsigned eventSeq   : 1;
+    unsigned ticketSafe : 1;
+    unsigned firstBlock : 1;
+    unsigned isParent : 1;
+    unsigned not_used_14 : 1;
+    unsigned occupied    : 1;
+    unsigned derivation  : 1;
+    unsigned external : 1;
+} OBJECT_ATTRIBUTES;
+
+typedef struct __packed {
+    UINT16 size;
+    BYTE buffer[RSA_PRIVATE_SIZE];
+} TPM2B_PRIVATE_KEY_RSA;
+
+typedef union __packed {
+    TPM2B_PRIVATE_KEY_RSA rsa;
+    // TPM2B_ECC_PARAMETER ecc;
+    // TPM2B_SENSITIVE_DATA bits;
+    // TPM2B_SYM_KEY sym;
+    // TPM2B_PRIVATE_VENDOR_SPECIFIC any;
+} TPMU_SENSITIVE_COMPOSITE;
+
+typedef struct __packed {
+    TPMI_ALG_PUBLIC sensitiveType;
+    TPM2B_AUTH authValue;
+    TPM2B_DIGEST seedValue;
+    TPMU_SENSITIVE_COMPOSITE sensitive;
+} TPMT_SENSITIVE;
+
+typedef struct __packed {
+    OBJECT_ATTRIBUTES attributes;     
+    TPMT_PUBLIC       publicArea;
+    TPMT_SENSITIVE    sensitive;
+    TPM2B_NAME        qualifiedName;  
+    TPMI_DH_OBJECT    evictHandle;
+    TPM2B_NAME name;
+    TPMI_RH_HIERARCHY hierarchy;
+} OBJECT;
 
 /* Subsection #4.2: Useful Additions */
 
