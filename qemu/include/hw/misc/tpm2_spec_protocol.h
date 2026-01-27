@@ -76,6 +76,7 @@
 // TPM_ST
 #define TPM_ST_NO_SESSIONS 0x8001
 #define TPM_ST_SESSIONS    0x8002
+#define TPM_ST_CREATION    0x8021
 
 // TPM_HANDLE
 #define TPM_RH_OWNER 0x40000001
@@ -102,18 +103,16 @@
 #define TPM_CC_RSA_Decrypt 0x00000174
 
 // TPMI_ALG_HASH
-#define TPM_ALG_NULL     0x0010
-#define TPM_ALG_SHA1     0x0004
-#define TPM_ALG_SHA256   0x000B
-// TPM 2.0 Symmetric Algorithm Types (per spec)
-#define TPM_ALG_AES      0x0006
-#define TPM_ALG_SM4      0x0013
-#define TPM_ALG_CAMELLIA 0x0015
+#define TPM_ALG_RSA      0x0001
 #define TPM_ALG_TDES     0x0003
-// TPM 2.0 Signature / RSA schemes
+#define TPM_ALG_SHA1     0x0004
+#define TPM_ALG_AES      0x0006
+#define TPM_ALG_SHA256   0x000B
+#define TPM_ALG_NULL     0x0010
+#define TPM_ALG_SM4      0x0013
 #define TPM_ALG_RSASSA   0x0014
+#define TPM_ALG_CAMELLIA 0x0015
 #define TPM_ALG_RSAPSS   0x0016
-// TPM 2.0 Symmetric Modes (TPMI_ALG_SYM_MODE / TPMI_ALG_CIPHER_MODE)
 #define TPM_ALG_CTR      0x0040
 #define TPM_ALG_XTS      0x0041
 #define TPM_ALG_CBC      0x0042
@@ -203,6 +202,7 @@ typedef TPM_ALG_ID TPMI_ALG_SYM_MODE;
 typedef TPM_ALG_ID TPMI_ALG_CIPHER_MODE;
 typedef TPM_ALG_ID TPMI_ALG_SIG_SCHEME;
 typedef TPM_ALG_ID TPMI_ALG_PUBLIC;
+typedef TPM_ALG_ID TPMI_ALG_RSA_SCHEME;
 
 /* Section #4: Complex Types */
 
@@ -219,7 +219,7 @@ typedef union __packed {
 } TPMU_HA;
 
 typedef struct __packed {
-    UINT16 dataSize;
+    UINT16 size;
     BYTE data[TPM_MAX_DATA_SIZE]; // Max data size for simplicity
 } TPM2B_DATA;
 
@@ -398,15 +398,39 @@ typedef struct __packed {
 } TPM2B_SENSITIVE_DATA;
 
 typedef struct __packed {
-    UINT16 size;
     TPM2B_AUTH userAuth;
     TPM2B_SENSITIVE_DATA data;
+} TPMS_SENSITIVE_CREATE;
+
+typedef struct __packed {
+    UINT16 size;
+    TPMS_SENSITIVE_CREATE sensitive;
 } TPM2B_SENSITIVE_CREATE;
+
+typedef struct __packed {
+    TPMI_ALG_HASH hashAlg;
+} TPMS_SCHEME_HASH;
+
+typedef union __packed {
+    TPMS_SCHEME_HASH anySig;
+} TPMU_ASYM_SCHEME;
+
+typedef struct __packed {
+    TPMI_ALG_RSA_SCHEME scheme;
+    TPMU_ASYM_SCHEME details;
+} TPMT_RSA_SCHEME;
+
+typedef struct __packed {
+    TPMT_SYM_DEF_OBJECT symmetric;
+    TPMT_RSA_SCHEME scheme;
+    TPMI_RSA_KEY_BITS keyBits;
+    UINT32 exponent;
+} TPMS_RSA_PARAMS; 
 
 typedef struct __packed {
     // TPMS_KEYDHASH_PARAMS keyedHashDetail;
     // TPMS_SYMCIPHER_PARAMS symDetail;
-    // TPMS_RSA_PARAMS rsaDetail;
+    TPMS_RSA_PARAMS rsaDetail;
     // TPMS_ECC_PARAMS eccDetail;
     // TPMS_ASYM_PARAMS asymDetail;
 } TPMU_PUBLIC_PARAMS;

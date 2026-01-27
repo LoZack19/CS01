@@ -6,120 +6,145 @@
 #include "Lpuart_Uart_Ip.h"
 #include "IntCtrl_Ip.h"
 #include "FreeRTOS.h"
+#include "sha256.h"
 #include <stdio.h>
 #include "tpm2_spec_protocol.h"
 
-#define LPUART_INSTANCE         (3U)    // Usare LPUART3
+#define LPUART_INSTANCE (3U) // Usare LPUART3
 
 // Debug logging - set to 1 to enable verbose output
 #define TPM_DEBUG 1
 
 #if TPM_DEBUG
-#define DBG_PRINT(msg) do { \
-    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)(msg), strlen(msg), portMAX_DELAY); \
-} while(0)
+#define DBG_PRINT(msg)                                                         \
+    do {                                                                       \
+        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)(msg),             \
+                                strlen(msg), portMAX_DELAY);                   \
+    } while (0)
 
-#define DBG_PRINTF(fmt, ...) do { \
-    char _dbg_buf[128]; \
-    int _dbg_len = snprintf(_dbg_buf, sizeof(_dbg_buf), fmt, ##__VA_ARGS__); \
-    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)_dbg_buf, _dbg_len, portMAX_DELAY); \
-} while(0)
+#define DBG_PRINTF(fmt, ...)                                                   \
+    do {                                                                       \
+        char _dbg_buf[128];                                                    \
+        int _dbg_len =                                                         \
+            snprintf(_dbg_buf, sizeof(_dbg_buf), fmt, ##__VA_ARGS__);          \
+        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)_dbg_buf,          \
+                                _dbg_len, portMAX_DELAY);                      \
+    } while (0)
 #else
-#define DBG_PRINT(msg) ((void)0)
+#define DBG_PRINT(msg)       ((void)0)
 #define DBG_PRINTF(fmt, ...) ((void)0)
 #endif
 
 // MMIO Register Definitions
-#define TPM_BASE         0x40000000
+#define TPM_BASE 0x40000000
 
-#define TPM_ACCESS       (*(volatile uint8_t*)(TPM_BASE + 0x0000)) // Used to request and check access to the TPM
-#define TPM_STS          (*(volatile uint32_t*)(TPM_BASE + 0x0018))  // only 3 bytes used
-#define TPM_DATA_FIFO    (*(volatile uint8_t*)(TPM_BASE + 0x0024)) // The FIFO register for sending commands and reading responses.
+#define TPM_ACCESS                                                             \
+    (*(volatile uint8_t *)(TPM_BASE + 0x0000)) // Used to request and check
+                                               // access to the TPM
+#define TPM_STS (*(volatile uint32_t *)(TPM_BASE + 0x0018)) // only 3 bytes used
+#define TPM_DATA_FIFO                                                          \
+    (*(volatile uint8_t *)(TPM_BASE +                                          \
+                           0x0024)) // The FIFO register for sending commands
+                                    // and reading responses.
 
 // Bitmask Constants
-#define TPM_ACCESS_REQUEST_USE   0x02
-#define TPM_ACCESS_ACTIVE_LOCAL  0x20
+#define TPM_ACCESS_REQUEST_USE  0x02
+#define TPM_ACCESS_ACTIVE_LOCAL 0x20
 
-#define TPM_STS_COMMAND_READY    0x40
-#define TPM_STS_GO               0x20
-#define TPM_STS_DATA_AVAIL       0x10
-#define TPM_STS_EXPECT           0x08
+#define TPM_STS_COMMAND_READY 0x40
+#define TPM_STS_GO            0x20
+#define TPM_STS_DATA_AVAIL    0x10
+#define TPM_STS_EXPECT        0x08
 
 // TPM Utilities
 
-const char* string_from_TPM_RC(TPM_RC rc) {
+const char *string_from_TPM_RC(TPM_RC rc) {
     switch (rc) {
-        /*
-         * Important: several TPM_RC_* macros in our header are *modifiers* or
-         * *aliases* (e.g. TPM_RC_H, TPM_RC_P, TPM_RC_1, RC_VER1, TPM_RCS_*).
-         * They intentionally share integer values and are not distinguishable
-         * at runtime, so they must NOT appear as distinct switch labels.
-         */
-        case TPM_RC_SUCCESS:            return "TPM_RC_SUCCESS";
-        case TPM_RC_BAD_TAG:            return "TPM_RC_BAD_TAG";
+    /*
+     * Important: several TPM_RC_* macros in our header are *modifiers* or
+     * *aliases* (e.g. TPM_RC_H, TPM_RC_P, TPM_RC_1, RC_VER1, TPM_RCS_*).
+     * They intentionally share integer values and are not distinguishable
+     * at runtime, so they must NOT appear as distinct switch labels.
+     */
+    case TPM_RC_SUCCESS:
+        return "TPM_RC_SUCCESS";
+    case TPM_RC_BAD_TAG:
+        return "TPM_RC_BAD_TAG";
 
-        /* Ver1 family (RC_VER1 is a base, not a standalone code) */
-        case TPM_RC_FAILURE:            return "TPM_RC_FAILURE";
-        case TPM_RC_COMMAND_SIZE:       return "TPM_RC_COMMAND_SIZE";
-        case TPM_RC_COMMAND_CODE:       return "TPM_RC_COMMAND_CODE";
-        case TPM_RC_NV_RANGE:           return "TPM_RC_NV_RANGE";
-        case TPM_RC_NV_LOCKED:          return "TPM_RC_NV_LOCKED";
-        case TPM_RC_NV_AUTHORIZATION:   return "TPM_RC_NV_AUTHORIZATION";
-        case TPM_RC_NV_UNINITIALIZED:   return "TPM_RC_NV_UNINITIALIZED";
-        case TPM_RC_NV_SPACE:           return "TPM_RC_NV_SPACE";
-        case TPM_RC_NV_DEFINED:         return "TPM_RC_NV_DEFINED";
+    /* Ver1 family (RC_VER1 is a base, not a standalone code) */
+    case TPM_RC_FAILURE:
+        return "TPM_RC_FAILURE";
+    case TPM_RC_COMMAND_SIZE:
+        return "TPM_RC_COMMAND_SIZE";
+    case TPM_RC_COMMAND_CODE:
+        return "TPM_RC_COMMAND_CODE";
+    case TPM_RC_NV_RANGE:
+        return "TPM_RC_NV_RANGE";
+    case TPM_RC_NV_LOCKED:
+        return "TPM_RC_NV_LOCKED";
+    case TPM_RC_NV_AUTHORIZATION:
+        return "TPM_RC_NV_AUTHORIZATION";
+    case TPM_RC_NV_UNINITIALIZED:
+        return "TPM_RC_NV_UNINITIALIZED";
+    case TPM_RC_NV_SPACE:
+        return "TPM_RC_NV_SPACE";
+    case TPM_RC_NV_DEFINED:
+        return "TPM_RC_NV_DEFINED";
 
-        /* Format-1 style base codes */
-        case TPM_RC_ATTRIBUTES:         return "TPM_RC_ATTRIBUTES";
-        case TPM_RC_HASH:               return "TPM_RC_HASH";
-        case TPM_RC_VALUE:              return "TPM_RC_VALUE";
-        case TPM_RC_HIERARCHY:          return "TPM_RC_HIERARCHY";
-        case TPM_RC_MODE:               return "TPM_RC_MODE";
-        case TPM_RC_HANDLE:             return "TPM_RC_HANDLE";
-        case TPM_RCS_SIZE:              return "TPM_RCS_SIZE";
-        case TPM_RC_SIGNATURE:          return "TPM_RC_SIGNATURE";
-        case TPM_RC_KEY:                return "TPM_RC_KEY";
+    /* Format-1 style base codes */
+    case TPM_RC_ATTRIBUTES:
+        return "TPM_RC_ATTRIBUTES";
+    case TPM_RC_HASH:
+        return "TPM_RC_HASH";
+    case TPM_RC_VALUE:
+        return "TPM_RC_VALUE";
+    case TPM_RC_HIERARCHY:
+        return "TPM_RC_HIERARCHY";
+    case TPM_RC_MODE:
+        return "TPM_RC_MODE";
+    case TPM_RC_HANDLE:
+        return "TPM_RC_HANDLE";
+    case TPM_RCS_SIZE:
+        return "TPM_RCS_SIZE";
+    case TPM_RC_SIGNATURE:
+        return "TPM_RC_SIGNATURE";
+    case TPM_RC_KEY:
+        return "TPM_RC_KEY";
 
-        default:                        return "UNKNOWN_RC";
+    default:
+        return "UNKNOWN_RC";
     }
 }
 
 int assert_count = 0;
 int assert_failures = 0;
 
-void assert(bool expression,
-    const char *msg, const char* expected, const char* actual) {
+void assert(bool expression, const char *msg, const char *expected,
+            const char *actual) {
     if (!expression) {
-
         if (msg != NULL) {
-            Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE,
-                                    (uint8_t *)msg, strlen(msg),
-                                    portMAX_DELAY);
+            Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)msg,
+                                    strlen(msg), portMAX_DELAY);
         }
 
         // Expected: <exp>, got: <got>
         if (expected != NULL) {
             Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE,
-                                    (uint8_t *)"Expected: ", 10,
-                                    portMAX_DELAY);
+                                    (uint8_t *)"Expected: ", 10, portMAX_DELAY);
 
-            Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE,
-                                    (uint8_t *)expected, strlen(expected),
-                                    portMAX_DELAY);
+            Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)expected,
+                                    strlen(expected), portMAX_DELAY);
         }
 
         if (actual != NULL) {
-            Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE,
-                                    (uint8_t *)", got: ", 7,
+            Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)", got: ", 7,
                                     portMAX_DELAY);
 
-            Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE,
-                                    (uint8_t *)actual, strlen(actual),
-                                    portMAX_DELAY);
+            Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)actual,
+                                    strlen(actual), portMAX_DELAY);
         }
 
-        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE,
-                                (uint8_t *)"\n", 1,
+        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"\n", 1,
                                 portMAX_DELAY);
 
         assert_failures++;
@@ -128,21 +153,28 @@ void assert(bool expression,
 }
 
 void assert_report(void) {
-    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE,
-                            (uint8_t *)"Assert Report\n", 14,
+    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"Assert Report\n", 14,
                             portMAX_DELAY);
 
     char buffer[50];
-    int len = snprintf(buffer, sizeof(buffer), "Total asserts: %d\n", assert_count);
-    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)buffer, len, portMAX_DELAY);
+    int len =
+        snprintf(buffer, sizeof(buffer), "Total asserts: %d\n", assert_count);
+    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)buffer, len,
+                            portMAX_DELAY);
 
-    len = snprintf(buffer, sizeof(buffer), "Failed asserts: %d\n", assert_failures);
-    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)buffer, len, portMAX_DELAY);
+    len = snprintf(buffer, sizeof(buffer), "Failed asserts: %d\n",
+                   assert_failures);
+    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)buffer, len,
+                            portMAX_DELAY);
 
     if (assert_failures == 0) {
-        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"All tests passed!\n", 18, portMAX_DELAY);
+        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE,
+                                (uint8_t *)"All tests passed!\n", 18,
+                                portMAX_DELAY);
     } else {
-        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"Some tests failed!\n", 19, portMAX_DELAY);
+        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE,
+                                (uint8_t *)"Some tests failed!\n", 19,
+                                portMAX_DELAY);
     }
 }
 
@@ -166,7 +198,8 @@ bool tpm_receive_rdy(void) {
  */
 void tpm_send(const void *data, size_t size) {
     for (size_t i = 0; i < size; i++) {
-        while (!tpm_send_rdy());
+        while (!tpm_send_rdy())
+            ;
         TPM_DATA_FIFO = ((uint8_t *)data)[i];
     }
 }
@@ -181,7 +214,8 @@ void tpm_send(const void *data, size_t size) {
  */
 void tpm_receive(void *data, size_t size) {
     for (size_t i = 0; i < size; i++) {
-        while (!tpm_receive_rdy());
+        while (!tpm_receive_rdy())
+            ;
         ((uint8_t *)data)[i] = TPM_DATA_FIFO;
     }
 }
@@ -189,25 +223,23 @@ void tpm_receive(void *data, size_t size) {
 /**
  * @brief Request TPM locality and busy wait until it's granted
  */
-static inline
-void tpm_wait_access(void) {
+static inline void tpm_wait_access(void) {
     TPM_ACCESS = TPM_ACCESS_REQUEST_USE;
-    while (!(TPM_ACCESS & TPM_ACCESS_ACTIVE_LOCAL));
+    while (!(TPM_ACCESS & TPM_ACCESS_ACTIVE_LOCAL))
+        ;
 }
 
 /**
  * @brief Notify TPM that a command is about to be sent in
  */
-static inline
-void tpm_command_ready(void) {
+static inline void tpm_command_ready(void) {
     TPM_STS |= TPM_STS_COMMAND_READY;
 }
 
 /**
  * @brief Start the execution of a command
  */
-static inline
-void tpm_go(void) {
+static inline void tpm_go(void) {
     TPM_STS |= TPM_STS_GO;
 }
 
@@ -226,135 +258,135 @@ static void tpm_drain_bytes(size_t size) {
     }
 }
 
-#define TPM2_InOut(F) TPM_RC TPM2_##F(F##_In *in, F##_Out *out) { \
-    tpm_rsp_header_t rsp; \
- \
-    tpm_cmd_header_t cmd = { \
-        .tag = TPM_ST_NO_SESSIONS, \
-        .commandSize = sizeof(cmd) + sizeof(*in), \
-        .commandCode = TPM_CC_##F \
-    }; \
- \
-    DBG_PRINTF("[DBG] TPM2_" #F ": Sending cmd (tag=0x%04X, size=%lu, code=0x%08lX)\n", \
-               cmd.tag, (unsigned long)cmd.commandSize, (unsigned long)cmd.commandCode); \
- \
-    tpm_command_ready(); \
-    tpm_send(&cmd, sizeof(cmd)); \
-    tpm_send(in, sizeof(*in)); \
- \
-    tpm_go(); \
- \
-    tpm_receive(&rsp, sizeof(rsp)); \
-    DBG_PRINTF("[DBG] TPM2_" #F ": Received rsp (tag=0x%04X, size=%lu, rc=0x%08lX)\n", \
-               rsp.tag, (unsigned long)rsp.responseSize, (unsigned long)rsp.responseCode); \
- \
-    size_t remaining = 0; \
-    if (rsp.responseSize >= sizeof(rsp) && rsp.responseSize <= 4096) { \
-        remaining = (size_t)rsp.responseSize - sizeof(rsp); \
-    } \
-    DBG_PRINTF("[DBG] TPM2_" #F ": remaining=%lu bytes\n", (unsigned long)remaining); \
- \
-    if (out != NULL) { \
-        memset(out, 0, sizeof(*out)); \
-    } \
- \
-    if (rsp.responseCode != TPM_RC_SUCCESS) { \
-        DBG_PRINTF("[DBG] TPM2_" #F ": Error response, draining %lu bytes\n", (unsigned long)remaining); \
-        tpm_drain_bytes(remaining); \
-        return rsp.responseCode; \
-    } \
- \
-    if (out != NULL) { \
-        size_t to_read = min_size(remaining, sizeof(*out)); \
-        DBG_PRINTF("[DBG] TPM2_" #F ": Reading %lu bytes to out (out size=%lu)\n", (unsigned long)to_read, (unsigned long)sizeof(*out)); \
-        tpm_receive(out, to_read); \
-        tpm_drain_bytes(remaining - to_read); \
-    } else { \
-        tpm_drain_bytes(remaining); \
-    } \
- \
-    return rsp.responseCode; \
-}
+#define TPM2_InOut(F)                                                          \
+    TPM_RC TPM2_##F(F##_In *in, F##_Out *out) {                                \
+        tpm_rsp_header_t rsp;                                                  \
+                                                                               \
+        tpm_cmd_header_t cmd = {.tag = TPM_ST_NO_SESSIONS,                     \
+                                .commandSize = sizeof(cmd) + sizeof(*in),      \
+                                .commandCode = TPM_CC_##F};                    \
+                                                                               \
+        DBG_PRINTF("[DBG] TPM2_" #F                                            \
+                   ": Sending cmd (tag=0x%04X, size=%lu, code=0x%08lX)\n",     \
+                   cmd.tag, (unsigned long)cmd.commandSize,                    \
+                   (unsigned long)cmd.commandCode);                            \
+                                                                               \
+        tpm_command_ready();                                                   \
+        tpm_send(&cmd, sizeof(cmd));                                           \
+        tpm_send(in, sizeof(*in));                                             \
+                                                                               \
+        tpm_go();                                                              \
+                                                                               \
+        tpm_receive(&rsp, sizeof(rsp));                                        \
+        DBG_PRINTF("[DBG] TPM2_" #F                                            \
+                   ": Received rsp (tag=0x%04X, size=%lu, rc=0x%08lX)\n",      \
+                   rsp.tag, (unsigned long)rsp.responseSize,                   \
+                   (unsigned long)rsp.responseCode);                           \
+                                                                               \
+        size_t remaining = 0;                                                  \
+        if (rsp.responseSize >= sizeof(rsp) && rsp.responseSize <= 4096) {     \
+            remaining = (size_t)rsp.responseSize - sizeof(rsp);                \
+        }                                                                      \
+        DBG_PRINTF("[DBG] TPM2_" #F ": remaining=%lu bytes\n",                 \
+                   (unsigned long)remaining);                                  \
+                                                                               \
+        if (out != NULL) {                                                     \
+            memset(out, 0, sizeof(*out));                                      \
+        }                                                                      \
+                                                                               \
+        if (rsp.responseCode != TPM_RC_SUCCESS) {                              \
+            DBG_PRINTF("[DBG] TPM2_" #F                                        \
+                       ": Error response, draining %lu bytes\n",               \
+                       (unsigned long)remaining);                              \
+            tpm_drain_bytes(remaining);                                        \
+            return rsp.responseCode;                                           \
+        }                                                                      \
+                                                                               \
+        if (out != NULL) {                                                     \
+            size_t to_read = min_size(remaining, sizeof(*out));                \
+            DBG_PRINTF("[DBG] TPM2_" #F                                        \
+                       ": Reading %lu bytes to out (out size=%lu)\n",          \
+                       (unsigned long)to_read, (unsigned long)sizeof(*out));   \
+            tpm_receive(out, to_read);                                         \
+            tpm_drain_bytes(remaining - to_read);                              \
+        } else {                                                               \
+            tpm_drain_bytes(remaining);                                        \
+        }                                                                      \
+                                                                               \
+        return rsp.responseCode;                                               \
+    }
 
-#define TPM2_In(F) TPM_RC TPM2_##F(F##_In *in) { \
-    tpm_rsp_header_t rsp; \
- \
-    tpm_cmd_header_t cmd = { \
-        .tag = TPM_ST_NO_SESSIONS, \
-        .commandSize = sizeof(cmd) + sizeof(*in), \
-        .commandCode = TPM_CC_##F \
-    }; \
- \
-    DBG_PRINTF("[DBG] TPM2_" #F ": Sending cmd (tag=0x%04X, size=%lu, code=0x%08lX)\n", \
-               cmd.tag, (unsigned long)cmd.commandSize, (unsigned long)cmd.commandCode); \
- \
-    tpm_command_ready(); \
-    tpm_send(&cmd, sizeof(cmd)); \
-    tpm_send(in, sizeof(*in)); \
- \
-    tpm_go(); \
- \
-    tpm_receive(&rsp, sizeof(rsp)); \
-    DBG_PRINTF("[DBG] TPM2_" #F ": Received rsp (tag=0x%04X, size=%lu, rc=0x%08lX)\n", \
-               rsp.tag, (unsigned long)rsp.responseSize, (unsigned long)rsp.responseCode); \
- \
-     size_t remaining = 0; \
-     if (rsp.responseSize >= sizeof(rsp) && rsp.responseSize <= 4096) { \
-          remaining = (size_t)rsp.responseSize - sizeof(rsp); \
-     } \
-     tpm_drain_bytes(remaining); \
- \
-     return rsp.responseCode; \
-}
+#define TPM2_In(F)                                                             \
+    TPM_RC TPM2_##F(F##_In *in) {                                              \
+        tpm_rsp_header_t rsp;                                                  \
+                                                                               \
+        tpm_cmd_header_t cmd = {.tag = TPM_ST_NO_SESSIONS,                     \
+                                .commandSize = sizeof(cmd) + sizeof(*in),      \
+                                .commandCode = TPM_CC_##F};                    \
+                                                                               \
+        DBG_PRINTF("[DBG] TPM2_" #F                                            \
+                   ": Sending cmd (tag=0x%04X, size=%lu, code=0x%08lX)\n",     \
+                   cmd.tag, (unsigned long)cmd.commandSize,                    \
+                   (unsigned long)cmd.commandCode);                            \
+                                                                               \
+        tpm_command_ready();                                                   \
+        tpm_send(&cmd, sizeof(cmd));                                           \
+        tpm_send(in, sizeof(*in));                                             \
+                                                                               \
+        tpm_go();                                                              \
+                                                                               \
+        tpm_receive(&rsp, sizeof(rsp));                                        \
+        DBG_PRINTF("[DBG] TPM2_" #F                                            \
+                   ": Received rsp (tag=0x%04X, size=%lu, rc=0x%08lX)\n",      \
+                   rsp.tag, (unsigned long)rsp.responseSize,                   \
+                   (unsigned long)rsp.responseCode);                           \
+                                                                               \
+        size_t remaining = 0;                                                  \
+        if (rsp.responseSize >= sizeof(rsp) && rsp.responseSize <= 4096) {     \
+            remaining = (size_t)rsp.responseSize - sizeof(rsp);                \
+        }                                                                      \
+        tpm_drain_bytes(remaining);                                            \
+                                                                               \
+        return rsp.responseCode;                                               \
+    }
 
-TPM2_In(NV_DefineSpace)
-TPM2_In(NV_Write)
-TPM2_InOut(NV_Read)
+TPM2_In(NV_DefineSpace) TPM2_In(NV_Write) TPM2_InOut(NV_Read)
 
-TPM2_InOut(Sign)
-TPM2_InOut(VerifySignature)
-TPM2_InOut(Hash)
-TPM2_InOut(EncryptDecrypt2)
-TPM2_InOut(RSA_Encrypt)
-TPM2_InOut(RSA_Decrypt)
+    TPM2_InOut(Sign) TPM2_InOut(VerifySignature) TPM2_InOut(Hash)
+        TPM2_InOut(EncryptDecrypt2) TPM2_InOut(RSA_Encrypt)
+            TPM2_InOut(RSA_Decrypt)
 
-/* Key Management Commands */
-TPM2_InOut(Create)
-TPM2_InOut(Load)
-TPM2_InOut(ReadPublic)
-TPM2_InOut(ObjectChangeAuth)
+    /* Key Management Commands */
+    TPM2_InOut(Create) TPM2_InOut(Load) TPM2_InOut(ReadPublic)
+        TPM2_InOut(ObjectChangeAuth)
 
-// TPM Tests
+    // TPM Tests
 
-void TPM2_NV_DefineSpace_test(void) {
+    void TPM2_NV_DefineSpace_test(void) {
     TPM_RC res;
 
     NV_DefineSpace_In test_input = {
         .authHandle = TPM_RH_OWNER,
-        .auth = {
-            .size = 0, // No authorization value (password) required for this example
-            .buffer = {0}
-        },
+        .auth = {.size = 0, // No authorization value (password) required for
+                            // this example
+                 .buffer = {0}},
         .publicInfo = {
             .size = 0,
-            .nvPublic = {
-                .nvIndex = 0x01500016, // A valid index in the allowed range
-                .nameAlg = TPM_ALG_NULL,
-                .attributes = {.OWNERREAD = 1, .OWNERWRITE = 1},
-                .dataSize = 32, // The size of the NV space in bytes
-                .authPolicy = {
-                    .size = 0, // No policy required for this example
-                    .buffer = {0}
+            .nvPublic =
+                {
+                    .nvIndex = 0x01500016, // A valid index in the allowed range
+                    .nameAlg = TPM_ALG_NULL,
+                    .attributes = {.OWNERREAD = 1, .OWNERWRITE = 1},
+                    .dataSize = 32, // The size of the NV space in bytes
+                    .authPolicy = {.size =
+                                       0, // No policy required for this example
+                                   .buffer = {0}},
                 },
-            },
-        }
-    };
+        }};
 
     res = TPM2_NV_DefineSpace(&test_input);
-    assert(res == TPM_RC_SUCCESS,
-           "TPM2_NV_DefineSpace failed",
-           string_from_TPM_RC(TPM_RC_SUCCESS),
-           string_from_TPM_RC(res));
+    assert(res == TPM_RC_SUCCESS, "TPM2_NV_DefineSpace failed",
+           string_from_TPM_RC(TPM_RC_SUCCESS), string_from_TPM_RC(res));
 }
 
 void TPM2_NV_WriteRead_test(void) {
@@ -367,52 +399,48 @@ void TPM2_NV_WriteRead_test(void) {
     // --- 1. Write Data to NV Memory ---
     TPM2B_MAX_NV_BUFFER write_data = {
         .size = data_size,
-        .buffer = { 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
-                    0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
-                    0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
-                    0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F }
-    };
+        .buffer = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+                   0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
+                   0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+                   0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F}};
 
     NV_Write_In write_input = {
-        .authHandle = TPM_RH_OWNER,       // Authorize as Owner
-        .nvIndex = nv_index,            // The index to write to
-        .data = write_data,               // The data to write
-        .offset = 0                       // Write at the beginning
+        .authHandle = TPM_RH_OWNER, // Authorize as Owner
+        .nvIndex = nv_index,        // The index to write to
+        .data = write_data,         // The data to write
+        .offset = 0                 // Write at the beginning
     };
 
     res = TPM2_NV_Write(&write_input);
-    assert(res == TPM_RC_SUCCESS,
-           "TPM2_NV_Write failed",
-           string_from_TPM_RC(TPM_RC_SUCCESS),
-           string_from_TPM_RC(res));
+    assert(res == TPM_RC_SUCCESS, "TPM2_NV_Write failed",
+           string_from_TPM_RC(TPM_RC_SUCCESS), string_from_TPM_RC(res));
 
     // --- 2. Read Data from NV Memory ---
     NV_Read_In read_input = {
-        .authHandle = TPM_RH_OWNER,       // Authorize as Owner
-        .nvIndex = nv_index,            // The index to read from
-        .size = data_size,                // Number of bytes to read
-        .offset = 0                       // Read from the beginning
+        .authHandle = TPM_RH_OWNER, // Authorize as Owner
+        .nvIndex = nv_index,        // The index to read from
+        .size = data_size,          // Number of bytes to read
+        .offset = 0                 // Read from the beginning
     };
 
     NV_Read_Out read_output = {0};
 
     res = TPM2_NV_Read(&read_input, &read_output);
-    assert(res == TPM_RC_SUCCESS,
-           "TPM2_NV_Read failed",
-           string_from_TPM_RC(TPM_RC_SUCCESS),
-           string_from_TPM_RC(res));
+    assert(res == TPM_RC_SUCCESS, "TPM2_NV_Read failed",
+           string_from_TPM_RC(TPM_RC_SUCCESS), string_from_TPM_RC(res));
 
     // --- 3. Compare Actual Data with Expected ---
     char expected_size_str[12];
     char actual_size_str[12];
-    snprintf(expected_size_str, sizeof(expected_size_str), "%u", write_data.size);
-    snprintf(actual_size_str, sizeof(actual_size_str), "%u", read_output.data.size);
-    assert(read_output.data.size == write_data.size,
-           "NV Read size mismatch",
-           expected_size_str,
-           actual_size_str);
+    snprintf(expected_size_str, sizeof(expected_size_str), "%u",
+             write_data.size);
+    snprintf(actual_size_str, sizeof(actual_size_str), "%u",
+             read_output.data.size);
+    assert(read_output.data.size == write_data.size, "NV Read size mismatch",
+           expected_size_str, actual_size_str);
 
-    assert(memcmp(read_output.data.buffer, write_data.buffer, write_data.size) == 0,
+    assert(memcmp(read_output.data.buffer, write_data.buffer,
+                  write_data.size) == 0,
            "NV Read data mismatch", NULL, NULL);
 }
 
@@ -426,20 +454,13 @@ void TPM2_Hash_smoke_test(void) {
     in.data.data[3] = 'D';
 
     TPM_RC res = TPM2_Hash(&in, &out);
-    assert(res != TPM_RC_BAD_TAG,
-           "TPM2_Hash bad tag",
-           "!= TPM_RC_BAD_TAG",
+    assert(res != TPM_RC_BAD_TAG, "TPM2_Hash bad tag", "!= TPM_RC_BAD_TAG",
            string_from_TPM_RC(res));
-    assert(res != TPM_RC_COMMAND_SIZE,
-           "TPM2_Hash command size",
-           "!= TPM_RC_COMMAND_SIZE",
-           string_from_TPM_RC(res));
+    assert(res != TPM_RC_COMMAND_SIZE, "TPM2_Hash command size",
+           "!= TPM_RC_COMMAND_SIZE", string_from_TPM_RC(res));
 
     if (res == TPM_RC_SUCCESS) {
-        assert(out.digest.size > 0,
-               "TPM2_Hash digest size",
-               "> 0",
-               "0");
+        assert(out.digest.size > 0, "TPM2_Hash digest size", "> 0", "0");
     }
 }
 
@@ -459,20 +480,14 @@ void TPM2_Sign_smoke_test(void) {
     in.data.data[3] = 'D';
 
     TPM_RC res = TPM2_Sign(&in, &out);
-    assert(res != TPM_RC_BAD_TAG,
-           "TPM2_Sign bad tag",
-           "!= TPM_RC_BAD_TAG",
+    assert(res != TPM_RC_BAD_TAG, "TPM2_Sign bad tag", "!= TPM_RC_BAD_TAG",
            string_from_TPM_RC(res));
-    assert(res != TPM_RC_COMMAND_SIZE,
-           "TPM2_Sign command size",
-           "!= TPM_RC_COMMAND_SIZE",
-           string_from_TPM_RC(res));
+    assert(res != TPM_RC_COMMAND_SIZE, "TPM2_Sign command size",
+           "!= TPM_RC_COMMAND_SIZE", string_from_TPM_RC(res));
 
     if (res == TPM_RC_SUCCESS) {
-        assert(out.signature.signatureSize > 0,
-               "TPM2_Sign signature size",
-               "> 0",
-               "0");
+        assert(out.signature.signatureSize > 0, "TPM2_Sign signature size",
+               "> 0", "0");
     }
 }
 
@@ -497,14 +512,10 @@ void TPM2_VerifySignature_smoke_test(void) {
     }
 
     TPM_RC res = TPM2_VerifySignature(&in, &out);
-    assert(res != TPM_RC_BAD_TAG,
-           "TPM2_VerifySignature bad tag",
-           "!= TPM_RC_BAD_TAG",
-           string_from_TPM_RC(res));
-    assert(res != TPM_RC_COMMAND_SIZE,
-           "TPM2_VerifySignature command size",
-           "!= TPM_RC_COMMAND_SIZE",
-           string_from_TPM_RC(res));
+    assert(res != TPM_RC_BAD_TAG, "TPM2_VerifySignature bad tag",
+           "!= TPM_RC_BAD_TAG", string_from_TPM_RC(res));
+    assert(res != TPM_RC_COMMAND_SIZE, "TPM2_VerifySignature command size",
+           "!= TPM_RC_COMMAND_SIZE", string_from_TPM_RC(res));
 
     (void)out;
 }
@@ -534,23 +545,20 @@ void TPM2_EncryptDecrypt2_smoke_test(void) {
     }
 
     TPM_RC res = TPM2_EncryptDecrypt2(&in, &out);
-    assert(res != TPM_RC_BAD_TAG,
-           "TPM2_EncryptDecrypt2 bad tag",
-           "!= TPM_RC_BAD_TAG",
-           string_from_TPM_RC(res));
-    assert(res != TPM_RC_COMMAND_SIZE,
-           "TPM2_EncryptDecrypt2 command size",
-           "!= TPM_RC_COMMAND_SIZE",
-           string_from_TPM_RC(res));
+    assert(res != TPM_RC_BAD_TAG, "TPM2_EncryptDecrypt2 bad tag",
+           "!= TPM_RC_BAD_TAG", string_from_TPM_RC(res));
+    assert(res != TPM_RC_COMMAND_SIZE, "TPM2_EncryptDecrypt2 command size",
+           "!= TPM_RC_COMMAND_SIZE", string_from_TPM_RC(res));
 
     if (res == TPM_RC_SUCCESS) {
         char expected_size_str[12];
         char actual_size_str[12];
-        snprintf(expected_size_str, sizeof(expected_size_str), "%u", in.inData.bufferSize);
-        snprintf(actual_size_str, sizeof(actual_size_str), "%u", out.outData.bufferSize);
+        snprintf(expected_size_str, sizeof(expected_size_str), "%u",
+                 in.inData.bufferSize);
+        snprintf(actual_size_str, sizeof(actual_size_str), "%u",
+                 out.outData.bufferSize);
         assert(out.outData.bufferSize == in.inData.bufferSize,
-               "EncryptDecrypt2 size mismatch",
-               expected_size_str,
+               "EncryptDecrypt2 size mismatch", expected_size_str,
                actual_size_str);
     }
 }
@@ -570,14 +578,10 @@ void TPM2_RSA_EncryptDecrypt_smoke_test(void) {
     enc_in.data.data[3] = 'D';
 
     TPM_RC res = TPM2_RSA_Encrypt(&enc_in, &enc_out);
-    assert(res != TPM_RC_BAD_TAG,
-           "TPM2_RSA_Encrypt bad tag",
-           "!= TPM_RC_BAD_TAG",
-           string_from_TPM_RC(res));
-    assert(res != TPM_RC_COMMAND_SIZE,
-           "TPM2_RSA_Encrypt command size",
-           "!= TPM_RC_COMMAND_SIZE",
-           string_from_TPM_RC(res));
+    assert(res != TPM_RC_BAD_TAG, "TPM2_RSA_Encrypt bad tag",
+           "!= TPM_RC_BAD_TAG", string_from_TPM_RC(res));
+    assert(res != TPM_RC_COMMAND_SIZE, "TPM2_RSA_Encrypt command size",
+           "!= TPM_RC_COMMAND_SIZE", string_from_TPM_RC(res));
 
     RSA_Decrypt_In dec_in = {0};
     RSA_Decrypt_Out dec_out = {0};
@@ -593,14 +597,10 @@ void TPM2_RSA_EncryptDecrypt_smoke_test(void) {
     dec_in.encrypted.data[3] = 0x44;
 
     res = TPM2_RSA_Decrypt(&dec_in, &dec_out);
-    assert(res != TPM_RC_BAD_TAG,
-           "TPM2_RSA_Decrypt bad tag",
-           "!= TPM_RC_BAD_TAG",
-           string_from_TPM_RC(res));
-    assert(res != TPM_RC_COMMAND_SIZE,
-           "TPM2_RSA_Decrypt command size",
-           "!= TPM_RC_COMMAND_SIZE",
-           string_from_TPM_RC(res));
+    assert(res != TPM_RC_BAD_TAG, "TPM2_RSA_Decrypt bad tag",
+           "!= TPM_RC_BAD_TAG", string_from_TPM_RC(res));
+    assert(res != TPM_RC_COMMAND_SIZE, "TPM2_RSA_Decrypt command size",
+           "!= TPM_RC_COMMAND_SIZE", string_from_TPM_RC(res));
 
     (void)enc_out;
     (void)dec_out;
@@ -612,6 +612,7 @@ void TPM2_RSA_EncryptDecrypt_smoke_test(void) {
  * ===========================================================================
  *
  * Test suite for TPM2 Key Management commands:
+ * - TPM2_CreatePrimary: Create a primary key in a hierarchy
  * - TPM2_Create: Create a new key object under a parent
  * - TPM2_Load: Load a key into the TPM
  * - TPM2_ReadPublic: Read public area of a loaded object
@@ -622,11 +623,187 @@ void TPM2_RSA_EncryptDecrypt_smoke_test(void) {
  */
 
 /* Shared state for key management tests */
-static Create_Out g_create_out;         /* Output from TPM2_Create */
-static Load_Out g_load_out;             /* Output from TPM2_Load */
-static TPM_HANDLE g_parent_handle;      /* Parent key handle (primary) */
-static bool g_key_created = false;      /* Flag: key was created successfully */
-static bool g_key_loaded = false;       /* Flag: key was loaded successfully */
+static CreatePrimary_Out
+    g_create_primary_out;          /* Output from TPM2_CreatePrimary */
+static Create_Out g_create_out;    /* Output from TPM2_Create */
+static Load_Out g_load_out;        /* Output from TPM2_Load */
+static TPM_HANDLE g_parent_handle; /* Parent key handle (primary) */
+static bool g_key_created = false; /* Flag: key was created successfully */
+static bool g_key_loaded = false;  /* Flag: key was loaded successfully */
+
+/**
+ * @brief Test TPM2_CreatePrimary command
+ *
+ * PURPOSE: Verify that the TPM2_CreatePrimary command successfully creates
+ *          a new primary key in the Owner hierarchy.
+ *
+ * PASS:
+ *   - TPM_RC_SUCCESS returned
+ *   - Name should match the expected value for the given template
+ *   - Hash(creationData) == creationHash
+ *   - creationTicket is valid
+ *
+ * FAIL:
+ *   - Any TPM_RC other than SUCCESS
+ *   - Name doesn't match expected value for template
+ *   - Hash(creationData) != creationHash
+ *   - Invalid creationTicket
+ */
+void TPM2_CreatePrimary_test(void) {
+    // ----------------------------------------------------------------
+    // 2. Prepare Data Structures
+    // ----------------------------------------------------------------
+
+    // A. The Hierarchy Auth (We need permission to use the Owner Hierarchy)
+    // By default, Owner Auth is empty. We pass ESYS_TR_PASSWORD.
+
+    // C. Sensitive Data (Input 3 - Password for NEW key)
+    TPM2B_SENSITIVE_CREATE inSensitive = {
+        .size = 0, // SAPI ignores this outer size on input usually, but good
+                   // practice
+        .sensitive = {.userAuth = {.size = 0}, // No password for the new key
+                      .data = {.size = 0}}};
+
+    // D. Public Template (Input 4 - The Key Definition)
+    TPM2B_PUBLIC inPublic = {
+        .size = 0, // SAPI will calculate this
+        .publicArea = {
+            .type = TPM_ALG_RSA,
+            .nameAlg = TPM_ALG_SHA256,
+            .objectAttributes = {.userWithAuth = 1,
+                                 .restricted = 1,
+                                 .decrypt = 1,
+                                 .fixedTPM = 1,
+                                 .fixedParent = 1,
+                                 .sensitiveDataOrigin = 1},
+            .authPolicy = {.size = 0},
+            .parameters.rsaDetail = {.symmetric = {.algorithm = TPM_ALG_AES,
+                                                   .keyBits.aes = 128,
+                                                   .mode.aes = TPM_ALG_CFB},
+                                     .scheme = {.scheme = TPM_ALG_NULL},
+                                     .keyBits = 2048,
+                                     .exponent = 0},
+            .unique.rsa = {.size = 0}}};
+
+    // D. Metadata structures (PCRs and outside info)
+    TPM2B_DATA outsideInfo = {.size = 0};
+    TPML_PCR_SELECTION creationPCR = {.count = 0};
+
+    CreatePrimary_In in = {.primaryHandle = TPM_RH_OWNER, // Owner Hierarchy
+                           .inSensitive = inSensitive,
+                           .inPublic = inPublic,
+                           .outsideInfo = outsideInfo,
+                           .creationPCR = creationPCR};
+
+    // ----------------------------------------------------------------
+    // 3. Execute Command
+    // ----------------------------------------------------------------
+
+    TPM_RC res = TPM2_CreatePrimary(&in, &g_create_primary_out);
+
+    // ----------------------------------------------------------------
+    // 4. Validate Results
+    // ----------------------------------------------------------------
+
+    // ----------------------------------------------------------------
+    // ASSERT TPM_RC_SUCCESS returned
+    // ----------------------------------------------------------------
+
+    assert(res == TPM_RC_SUCCESS, "TPM2_CreatePrimary failed",
+           string_from_TPM_RC(TPM_RC_SUCCESS), string_from_TPM_RC(res));
+
+    // ----------------------------------------------------------------
+    // ASSERT Name should match the expected value for the given template
+    // ----------------------------------------------------------------
+
+    // 1. Start SHA-256 Context
+    SHA256_CTX ctx;
+    SHA256_Init(&ctx);
+
+    // 2. Hash the Known Template Header (24 bytes calculated above)
+    uint8_t header[] = {
+        0x00, 0x01,                         // RSA
+        0x00, 0x0B,                         // SHA256
+        0x00, 0x03, 0x00, 0x56,             // Attributes
+        0x00, 0x00,                         // Empty Policy
+        0x00, 0x06, 0x00, 0x80, 0x00, 0x43, // AES 128 CFB
+        0x00, 0x10,                         // NULL Scheme
+        0x08, 0x00,                         // 2048 bits
+        0x00, 0x00, 0x00, 0x00              // Exponent 0
+    };
+    SHA256_Update(&ctx, header, sizeof(header));
+
+    // 3. Hash the Unknowns (Taken from TPM output)
+    // outPublic is the struct returned by Tss2_Sys_CreatePrimary
+    uint8_t unique_size[2];
+    unique_size[0] =
+        (outPublic->publicArea.unique.rsa.size >> 8) & 0xFF; // Big Endian
+    unique_size[1] = (outPublic->publicArea.unique.rsa.size) & 0xFF;
+
+    SHA256_Update(&ctx, unique_size, 2); // Hash the size (should be 0x0100)
+    SHA256_Update(&ctx, outPublic->publicArea.unique.rsa.buffer,
+                  outPublic->publicArea.unique.rsa.size);
+
+    // 4. Finalize
+    uint8_t digest[32];
+    SHA256_Final(digest, &ctx);
+
+    // 5. Prepend NameAlg (00 0B) to get the final "Name"
+    uint8_t expected_name[34];
+    expected_name[0] = 0x00;
+    expected_name[1] = 0x0B; // SHA256
+    memcpy(&expected_name[2], digest, 32);
+
+    // 6. Compare with TPM returned Name
+    assert(g_create_primary_out.name.size == sizeof(expected_name),
+           "TPM2_CreatePrimary Name size mismatch", "34",
+           string_from_uint32(g_create_primary_out.name.size));
+    assert(memcmp(g_create_primary_out.name.name, expected_name,
+                  sizeof(expected_name)) == 0,
+           "TPM2_CreatePrimary Name mismatch", NULL, NULL);
+
+    // ----------------------------------------------------------------
+    // ASSERT Hash(creationData) == creationHash
+    // ----------------------------------------------------------------
+
+    // 1. Hash the creationData returned by the TPM
+    uint8_t calculated_creation_hash[32];
+    SHA256_CTX creation_ctx;
+    SHA256_Init(&creation_ctx);
+
+    // We hash the buffer of creationData, which contains the marshaled
+    // TPMS_CREATION_DATA
+    SHA256_Update(&creation_ctx, g_create_primary_out.creationData.creationData,
+                  g_create_primary_out.creationData.size);
+    SHA256_Final(calculated_creation_hash, &creation_ctx);
+
+    // 2. Compare calculated hash against the creationHash returned by the TPM
+    assert(g_create_primary_out.creationHash.size == 32,
+           "TPM2_CreatePrimary creationHash size mismatch", "32",
+           string_from_uint32(g_create_primary_out.creationHash.size));
+
+    assert(memcmp(g_create_primary_out.creationHash.buffer,
+                  calculated_creation_hash, 32) == 0,
+           "TPM2_CreatePrimary creationHash mismatch", NULL, NULL);
+
+    // ----------------------------------------------------------------
+    // ASSERT creationTicket is valid
+    // ----------------------------------------------------------------
+
+    // A valid ticket should have the tag TPM_ST_CREATION
+    assert(g_create_primary_out.creationTicket.tag == TPM_ST_CREATION,
+           "TPM2_CreatePrimary ticket tag invalid", "TPM_ST_CREATION", "OTHER");
+
+    // The hierarchy in the ticket must match the hierarchy used to create the
+    // object
+    assert(g_create_primary_out.creationTicket.hierarchy == TPM_RH_OWNER,
+           "TPM2_CreatePrimary ticket hierarchy mismatch", "TPM_RH_OWNER",
+           "OTHER");
+
+    // The digest in the ticket must be non-zero (it's the HMAC/Signature)
+    assert(g_create_primary_out.creationTicket.digest.size > 0,
+           "TPM2_CreatePrimary ticket digest is empty", NULL, NULL);
+}
 
 /**
  * @brief Test TPM2_Create command
@@ -650,9 +827,11 @@ void TPM2_Create_test(void) {
     DBG_PRINT("[TEST] TPM2_Create: Creating new key under Owner hierarchy\n");
 
     /* Initialize parent handle - using Owner hierarchy primary handle.
-     * In a real scenario, you would first create a primary key with TPM2_CreatePrimary.
-     * Here we assume a primary key handle is already available or use a placeholder. */
-    g_parent_handle = TPM_RH_OWNER;  /* Use Owner hierarchy for simplicity */
+     * In a real scenario, you would first create a primary key with
+     * TPM2_CreatePrimary. Here we assume a primary key handle is already
+     * available or use a placeholder. */
+    g_parent_handle = TPM_RH_OWNER; /* Use Owner hierarchy for simplicity */
+#error [TOMMASO] Wrong handle. Need to implement TPM2_CreatePrimary test first to get a valid primary key handle.
 
     Create_In in = {0};
     memset(&g_create_out, 0, sizeof(g_create_out));
@@ -665,7 +844,7 @@ void TPM2_Create_test(void) {
 
     /* Public template - minimal configuration for test */
     in.inPublic.dataSize = 4;
-    in.inPublic.data[0] = 0x00;  /* Algorithm type placeholder */
+    in.inPublic.data[0] = 0x00; /* Algorithm type placeholder */
     in.inPublic.data[1] = 0x01;
     in.inPublic.data[2] = 0x00;
     in.inPublic.data[3] = 0x00;
@@ -679,15 +858,11 @@ void TPM2_Create_test(void) {
     res = TPM2_Create(&in, &g_create_out);
 
     /* Check for marshalling errors first */
-    assert(res != TPM_RC_BAD_TAG,
-           "TPM2_Create failed: bad tag\n",
-           "!= TPM_RC_BAD_TAG",
-           string_from_TPM_RC(res));
+    assert(res != TPM_RC_BAD_TAG, "TPM2_Create failed: bad tag\n",
+           "!= TPM_RC_BAD_TAG", string_from_TPM_RC(res));
 
-    assert(res != TPM_RC_COMMAND_SIZE,
-           "TPM2_Create failed: command size\n",
-           "!= TPM_RC_COMMAND_SIZE",
-           string_from_TPM_RC(res));
+    assert(res != TPM_RC_COMMAND_SIZE, "TPM2_Create failed: command size\n",
+           "!= TPM_RC_COMMAND_SIZE", string_from_TPM_RC(res));
 
     /* Check for success */
     if (res == TPM_RC_SUCCESS) {
@@ -695,26 +870,22 @@ void TPM2_Create_test(void) {
 
         /* Verify output data is present */
         assert(g_create_out.outPrivate.dataSize > 0,
-               "TPM2_Create: outPrivate is empty\n",
-               "> 0", "0");
+               "TPM2_Create: outPrivate is empty\n", "> 0", "0");
 
         assert(g_create_out.outPublic.dataSize > 0,
-               "TPM2_Create: outPublic is empty\n",
-               "> 0", "0");
+               "TPM2_Create: outPublic is empty\n", "> 0", "0");
 
-        DBG_PRINTF("[TEST] TPM2_Create: SUCCESS (private=%u, public=%u bytes)\n",
-                   g_create_out.outPrivate.dataSize,
-                   g_create_out.outPublic.dataSize);
+        DBG_PRINTF(
+            "[TEST] TPM2_Create: SUCCESS (private=%u, public=%u bytes)\n",
+            g_create_out.outPrivate.dataSize, g_create_out.outPublic.dataSize);
     } else {
         DBG_PRINTF("[TEST] TPM2_Create: FAILED with rc=0x%08lX (%s)\n",
                    (unsigned long)res, string_from_TPM_RC(res));
 
         /* Not necessarily a test failure - TPM may not support this operation
          * without proper setup (primary key, etc.) */
-        assert(res == TPM_RC_SUCCESS,
-               "TPM2_Create: command failed\n",
-               string_from_TPM_RC(TPM_RC_SUCCESS),
-               string_from_TPM_RC(res));
+        assert(res == TPM_RC_SUCCESS, "TPM2_Create: command failed\n",
+               string_from_TPM_RC(TPM_RC_SUCCESS), string_from_TPM_RC(res));
     }
 }
 
@@ -760,15 +931,11 @@ void TPM2_Load_test(void) {
     res = TPM2_Load(&in, &g_load_out);
 
     /* Check for marshalling errors */
-    assert(res != TPM_RC_BAD_TAG,
-           "TPM2_Load failed: bad tag\n",
-           "!= TPM_RC_BAD_TAG",
-           string_from_TPM_RC(res));
+    assert(res != TPM_RC_BAD_TAG, "TPM2_Load failed: bad tag\n",
+           "!= TPM_RC_BAD_TAG", string_from_TPM_RC(res));
 
-    assert(res != TPM_RC_COMMAND_SIZE,
-           "TPM2_Load failed: command size\n",
-           "!= TPM_RC_COMMAND_SIZE",
-           string_from_TPM_RC(res));
+    assert(res != TPM_RC_COMMAND_SIZE, "TPM2_Load failed: command size\n",
+           "!= TPM_RC_COMMAND_SIZE", string_from_TPM_RC(res));
 
     if (res == TPM_RC_SUCCESS) {
         g_key_loaded = true;
@@ -776,23 +943,21 @@ void TPM2_Load_test(void) {
         /* Verify handle is valid (not zero, not unassigned) */
         char expected_handle_str[32];
         char actual_handle_str[32];
-        snprintf(expected_handle_str, sizeof(expected_handle_str),
-                 "!= 0x%08X", (unsigned)TPM_RH_UNASSIGNED);
-        snprintf(actual_handle_str, sizeof(actual_handle_str),
-                 "0x%08lX", (unsigned long)g_load_out.objectHandle);
+        snprintf(expected_handle_str, sizeof(expected_handle_str), "!= 0x%08X",
+                 (unsigned)TPM_RH_UNASSIGNED);
+        snprintf(actual_handle_str, sizeof(actual_handle_str), "0x%08lX",
+                 (unsigned long)g_load_out.objectHandle);
 
         assert(g_load_out.objectHandle != 0,
-               "TPM2_Load: objectHandle is zero\n",
-               "!= 0", "0");
+               "TPM2_Load: objectHandle is zero\n", "!= 0", "0");
 
         assert(g_load_out.objectHandle != TPM_RH_UNASSIGNED,
-               "TPM2_Load: objectHandle is UNASSIGNED\n",
-               expected_handle_str, actual_handle_str);
+               "TPM2_Load: objectHandle is UNASSIGNED\n", expected_handle_str,
+               actual_handle_str);
 
         /* Verify name was calculated */
-        assert(g_load_out.name.size > 0,
-               "TPM2_Load: name is empty\n",
-               "> 0", "0");
+        assert(g_load_out.name.size > 0, "TPM2_Load: name is empty\n", "> 0",
+               "0");
 
         DBG_PRINTF("[TEST] TPM2_Load: SUCCESS (handle=0x%08lX, name_size=%u)\n",
                    (unsigned long)g_load_out.objectHandle,
@@ -801,10 +966,8 @@ void TPM2_Load_test(void) {
         DBG_PRINTF("[TEST] TPM2_Load: FAILED with rc=0x%08lX (%s)\n",
                    (unsigned long)res, string_from_TPM_RC(res));
 
-        assert(res == TPM_RC_SUCCESS,
-               "TPM2_Load: command failed\n",
-               string_from_TPM_RC(TPM_RC_SUCCESS),
-               string_from_TPM_RC(res));
+        assert(res == TPM_RC_SUCCESS, "TPM2_Load: command failed\n",
+               string_from_TPM_RC(TPM_RC_SUCCESS), string_from_TPM_RC(res));
     }
 }
 
@@ -846,55 +1009,47 @@ void TPM2_ReadPublic_test(void) {
     res = TPM2_ReadPublic(&in, &out);
 
     /* Check for marshalling errors */
-    assert(res != TPM_RC_BAD_TAG,
-           "TPM2_ReadPublic failed: bad tag\n",
-           "!= TPM_RC_BAD_TAG",
-           string_from_TPM_RC(res));
+    assert(res != TPM_RC_BAD_TAG, "TPM2_ReadPublic failed: bad tag\n",
+           "!= TPM_RC_BAD_TAG", string_from_TPM_RC(res));
 
-    assert(res != TPM_RC_COMMAND_SIZE,
-           "TPM2_ReadPublic failed: command size\n",
-           "!= TPM_RC_COMMAND_SIZE",
-           string_from_TPM_RC(res));
+    assert(res != TPM_RC_COMMAND_SIZE, "TPM2_ReadPublic failed: command size\n",
+           "!= TPM_RC_COMMAND_SIZE", string_from_TPM_RC(res));
 
     if (res == TPM_RC_SUCCESS) {
         /* Verify public area is present */
         assert(out.outPublic.dataSize > 0,
-               "TPM2_ReadPublic: outPublic is empty\n",
-               "> 0", "0");
+               "TPM2_ReadPublic: outPublic is empty\n", "> 0", "0");
 
         /* Verify name is present */
-        assert(out.name.size > 0,
-               "TPM2_ReadPublic: name is empty\n",
-               "> 0", "0");
+        assert(out.name.size > 0, "TPM2_ReadPublic: name is empty\n", "> 0",
+               "0");
 
         /* Verify qualified name is present */
         assert(out.qualifiedName.size > 0,
-               "TPM2_ReadPublic: qualifiedName is empty\n",
-               "> 0", "0");
+               "TPM2_ReadPublic: qualifiedName is empty\n", "> 0", "0");
 
         /* Verify name matches what was returned by Load */
         assert(out.name.size == g_load_out.name.size,
-               "TPM2_ReadPublic: name size mismatch with Load output\n",
-               NULL, NULL);
+               "TPM2_ReadPublic: name size mismatch with Load output\n", NULL,
+               NULL);
 
         if (out.name.size == g_load_out.name.size) {
-            assert(memcmp(out.name.buffer, g_load_out.name.buffer, out.name.size) == 0,
+            assert(memcmp(out.name.buffer, g_load_out.name.buffer,
+                          out.name.size) == 0,
                    "TPM2_ReadPublic: name content mismatch with Load output\n",
                    NULL, NULL);
         }
 
-        DBG_PRINTF("[TEST] TPM2_ReadPublic: SUCCESS (public=%u, name=%u, qname=%u bytes)\n",
-                   out.outPublic.dataSize,
-                   out.name.size,
+        DBG_PRINTF("[TEST] TPM2_ReadPublic: SUCCESS (public=%u, name=%u, "
+                   "qname=%u bytes)\n",
+                   out.outPublic.dataSize, out.name.size,
                    out.qualifiedName.size);
     } else {
         DBG_PRINTF("[TEST] TPM2_ReadPublic: FAILED with rc=0x%08lX (%s)\n",
                    (unsigned long)res, string_from_TPM_RC(res));
 
-        assert(res == TPM_RC_SUCCESS,
-               "TPM2_ReadPublic: command failed\n",
-               string_from_TPM_RC(TPM_RC_SUCCESS),
-               string_from_TPM_RC(res));
+        assert(res == TPM_RC_SUCCESS, "TPM2_ReadPublic: command failed\n",
+               string_from_TPM_RC(TPM_RC_SUCCESS), string_from_TPM_RC(res));
     }
 }
 
@@ -918,7 +1073,8 @@ void TPM2_ReadPublic_test(void) {
 void TPM2_ObjectChangeAuth_test(void) {
     TPM_RC res;
 
-    DBG_PRINT("[TEST] TPM2_ObjectChangeAuth: Changing auth value of loaded key\n");
+    DBG_PRINT(
+        "[TEST] TPM2_ObjectChangeAuth: Changing auth value of loaded key\n");
 
     /* Skip if Load failed */
     if (!g_key_loaded) {
@@ -947,44 +1103,43 @@ void TPM2_ObjectChangeAuth_test(void) {
     res = TPM2_ObjectChangeAuth(&in, &out);
 
     /* Check for marshalling errors */
-    assert(res != TPM_RC_BAD_TAG,
-           "TPM2_ObjectChangeAuth failed: bad tag\n",
-           "!= TPM_RC_BAD_TAG",
-           string_from_TPM_RC(res));
+    assert(res != TPM_RC_BAD_TAG, "TPM2_ObjectChangeAuth failed: bad tag\n",
+           "!= TPM_RC_BAD_TAG", string_from_TPM_RC(res));
 
     assert(res != TPM_RC_COMMAND_SIZE,
            "TPM2_ObjectChangeAuth failed: command size\n",
-           "!= TPM_RC_COMMAND_SIZE",
-           string_from_TPM_RC(res));
+           "!= TPM_RC_COMMAND_SIZE", string_from_TPM_RC(res));
 
     if (res == TPM_RC_SUCCESS) {
         /* Verify new private portion is present */
         assert(out.outPrivate.dataSize > 0,
-               "TPM2_ObjectChangeAuth: outPrivate is empty\n",
-               "> 0", "0");
+               "TPM2_ObjectChangeAuth: outPrivate is empty\n", "> 0", "0");
 
         /* Verify the new private portion is different from original
          * (this confirms the auth was actually changed) */
-        bool is_different = (out.outPrivate.dataSize != g_create_out.outPrivate.dataSize);
+        bool is_different =
+            (out.outPrivate.dataSize != g_create_out.outPrivate.dataSize);
         if (!is_different && out.outPrivate.dataSize > 0) {
-            is_different = (memcmp(out.outPrivate.data, g_create_out.outPrivate.data,
-                                   out.outPrivate.dataSize) != 0);
+            is_different =
+                (memcmp(out.outPrivate.data, g_create_out.outPrivate.data,
+                        out.outPrivate.dataSize) != 0);
         }
 
         assert(is_different,
-               "TPM2_ObjectChangeAuth: outPrivate unchanged (auth may not have changed)\n",
+               "TPM2_ObjectChangeAuth: outPrivate unchanged (auth may not have "
+               "changed)\n",
                "different", "same");
 
-        DBG_PRINTF("[TEST] TPM2_ObjectChangeAuth: SUCCESS (new_private=%u bytes)\n",
-                   out.outPrivate.dataSize);
+        DBG_PRINTF(
+            "[TEST] TPM2_ObjectChangeAuth: SUCCESS (new_private=%u bytes)\n",
+            out.outPrivate.dataSize);
     } else {
-        DBG_PRINTF("[TEST] TPM2_ObjectChangeAuth: FAILED with rc=0x%08lX (%s)\n",
-                   (unsigned long)res, string_from_TPM_RC(res));
+        DBG_PRINTF(
+            "[TEST] TPM2_ObjectChangeAuth: FAILED with rc=0x%08lX (%s)\n",
+            (unsigned long)res, string_from_TPM_RC(res));
 
-        assert(res == TPM_RC_SUCCESS,
-               "TPM2_ObjectChangeAuth: command failed\n",
-               string_from_TPM_RC(TPM_RC_SUCCESS),
-               string_from_TPM_RC(res));
+        assert(res == TPM_RC_SUCCESS, "TPM2_ObjectChangeAuth: command failed\n",
+               string_from_TPM_RC(TPM_RC_SUCCESS), string_from_TPM_RC(res));
     }
 }
 
@@ -1019,7 +1174,9 @@ void TPM2_KeyManagement_test_suite(void) {
 
 void tpm_test(void) {
     tpm_wait_access();
-    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] TPM access granted\n", 26, portMAX_DELAY);
+    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE,
+                            (uint8_t *)"[INFO] TPM access granted\n", 26,
+                            portMAX_DELAY);
 
     TPM2_NV_DefineSpace_test();
     TPM2_NV_WriteRead_test();
@@ -1035,18 +1192,20 @@ void tpm_test(void) {
 }
 
 int main(void) {
-
     IntCtrl_Ip_Init(&IntCtrlConfig_0);
     IntCtrl_Ip_EnableIrq(LPUART3_IRQn);
 
     Lpuart_Uart_Ip_Init(LPUART_INSTANCE, &Lpuart_Uart_Ip_xHwConfigPB_3);
-    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] Starting TPM Test\n", 25, portMAX_DELAY);
+    Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE,
+                            (uint8_t *)"[INFO] Starting TPM Test\n", 25,
+                            portMAX_DELAY);
 
     tpm_test();
 
     assert_report();
 
-    while (1);
+    while (1)
+        ;
 
     return 0;
 }

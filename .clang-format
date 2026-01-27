@@ -1,0 +1,43 @@
+---
+# Linux kernel coding style variant with modifications
+BasedOnStyle: LLVM
+IndentWidth: 4
+UseTab: Never
+ColumnLimit: 80
+
+# Function opening brace on same line
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterFunction: false
+  AfterControlStatement: Never
+  AfterStruct: false
+  AfterClass: false
+  AfterUnion: false
+  AfterEnum: false
+  BeforeCatch: false
+  BeforeElse: false
+
+# Linux style preferences
+AlignAfterOpenBracket: Align
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AlwaysBreakAfterReturnType: None
+BinPackArguments: true
+BinPackParameters: true
+BreakBeforeBinaryOperators: None
+BreakBeforeTernaryOperators: false
+IndentCaseLabels: false
+PointerAlignment: Right
+SpaceAfterCStyleCast: false
+SpaceBeforeParens: ControlStatements
+SpacesInContainerLiterals: false
+
+# Additional Linux-like settings
+AlignConsecutiveMacros: true
+AlignTrailingComments: true
+AllowAllParametersOfDeclarationOnNextLine: false
+IndentWrappedFunctionNames: false
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 1
+SortIncludes: false
