@@ -48,7 +48,7 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
 
             GetRandom_In get_random_in;
             GetRandom_Out get_random_out;
-            
+
             // Check if the command size is coherent with the expected size
             if (cmd_header.commandSize != sizeof(tpm_cmd_header_t) + sizeof(get_random_in)) {
                 tpm_send_error_response(s, TPM_RC_COMMAND_SIZE);
@@ -275,7 +275,7 @@ static void s32k358_tpm_write(void *opaque, hwaddr offset, uint64_t value, unsig
     S32k358TPMState *s = opaque;
     switch (offset) {
         case A_TPM_ACCESS:
-        
+
             // If activeLocality is set, clear it and relinquish control
             if (value & R_TPM_ACCESS_activeLocality_MASK) {
                 s->tpm_access &= ~R_TPM_ACCESS_activeLocality_MASK;
@@ -426,7 +426,7 @@ static void s32k358_tpm_init(Object *obj)
 {
     S32k358TPMState *s = S32K358_TPM(obj);
     SysBusDevice *sbd = SYS_BUS_DEVICE(obj);
-    
+
     fifo8_create(&s->infifo, S32K358_TPM_INFIFO_SIZE);
     fifo8_create(&s->outfifo, S32K358_TPM_OUTFIFO_SIZE);
 

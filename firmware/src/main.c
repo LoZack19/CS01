@@ -318,6 +318,12 @@ TPM2_InOut(EncryptDecrypt2)
 TPM2_InOut(RSA_Encrypt)
 TPM2_InOut(RSA_Decrypt)
 
+/* Key Management Commands */
+TPM2_InOut(Create)
+TPM2_InOut(Load)
+TPM2_InOut(ReadPublic)
+TPM2_InOut(ObjectChangeAuth)
+
 // TPM Tests
 
 void TPM2_NV_DefineSpace_test(void) {
@@ -600,6 +606,417 @@ void TPM2_RSA_EncryptDecrypt_smoke_test(void) {
     (void)dec_out;
 }
 
+/*
+ * ===========================================================================
+ * KEY MANAGEMENT TESTS
+ * ===========================================================================
+ *
+ * Test suite for TPM2 Key Management commands:
+ * - TPM2_Create: Create a new key object under a parent
+ * - TPM2_Load: Load a key into the TPM
+ * - TPM2_ReadPublic: Read public area of a loaded object
+ * - TPM2_ObjectChangeAuth: Change authorization value of an object
+ *
+ * These tests use shared state to test the complete key lifecycle.
+ * ===========================================================================
+ */
+
+/* Shared state for key management tests */
+static Create_Out g_create_out;         /* Output from TPM2_Create */
+static Load_Out g_load_out;             /* Output from TPM2_Load */
+static TPM_HANDLE g_parent_handle;      /* Parent key handle (primary) */
+static bool g_key_created = false;      /* Flag: key was created successfully */
+static bool g_key_loaded = false;       /* Flag: key was loaded successfully */
+
+/**
+ * @brief Test TPM2_Create command
+ *
+ * PURPOSE: Verify that the TPM2_Create command successfully creates a new key
+ *          under a parent (e.g., primary key in the Owner hierarchy).
+ *
+ * PASS:
+ *   - TPM_RC_SUCCESS returned
+ *   - outPrivate.dataSize > 0 (private portion generated)
+ *   - outPublic.dataSize > 0 (public portion generated)
+ *
+ * FAIL:
+ *   - Any TPM_RC other than SUCCESS
+ *   - TPM_RC_BAD_TAG or TPM_RC_COMMAND_SIZE (marshalling errors)
+ *   - Empty outputs (size == 0)
+ */
+void TPM2_Create_test(void) {
+    TPM_RC res;
+
+    DBG_PRINT("[TEST] TPM2_Create: Creating new key under Owner hierarchy\n");
+
+    /* Initialize parent handle - using Owner hierarchy primary handle.
+     * In a real scenario, you would first create a primary key with TPM2_CreatePrimary.
+     * Here we assume a primary key handle is already available or use a placeholder. */
+    g_parent_handle = TPM_RH_OWNER;  /* Use Owner hierarchy for simplicity */
+
+    Create_In in = {0};
+    memset(&g_create_out, 0, sizeof(g_create_out));
+
+    /* Configure input parameters */
+    in.parentHandle = g_parent_handle;
+
+    /* Auth value for the new key (empty for this test) */
+    in.inSensitive.size = 0;
+
+    /* Public template - minimal configuration for test */
+    in.inPublic.dataSize = 4;
+    in.inPublic.data[0] = 0x00;  /* Algorithm type placeholder */
+    in.inPublic.data[1] = 0x01;
+    in.inPublic.data[2] = 0x00;
+    in.inPublic.data[3] = 0x00;
+
+    /* No outside info */
+    in.outsideInfo.dataSize = 0;
+
+    /* No PCR selection */
+    in.creationPCR = 0;
+
+    res = TPM2_Create(&in, &g_create_out);
+
+    /* Check for marshalling errors first */
+    assert(res != TPM_RC_BAD_TAG,
+           "TPM2_Create failed: bad tag\n",
+           "!= TPM_RC_BAD_TAG",
+           string_from_TPM_RC(res));
+
+    assert(res != TPM_RC_COMMAND_SIZE,
+           "TPM2_Create failed: command size\n",
+           "!= TPM_RC_COMMAND_SIZE",
+           string_from_TPM_RC(res));
+
+    /* Check for success */
+    if (res == TPM_RC_SUCCESS) {
+        g_key_created = true;
+
+        /* Verify output data is present */
+        assert(g_create_out.outPrivate.dataSize > 0,
+               "TPM2_Create: outPrivate is empty\n",
+               "> 0", "0");
+
+        assert(g_create_out.outPublic.dataSize > 0,
+               "TPM2_Create: outPublic is empty\n",
+               "> 0", "0");
+
+        DBG_PRINTF("[TEST] TPM2_Create: SUCCESS (private=%u, public=%u bytes)\n",
+                   g_create_out.outPrivate.dataSize,
+                   g_create_out.outPublic.dataSize);
+    } else {
+        DBG_PRINTF("[TEST] TPM2_Create: FAILED with rc=0x%08lX (%s)\n",
+                   (unsigned long)res, string_from_TPM_RC(res));
+
+        /* Not necessarily a test failure - TPM may not support this operation
+         * without proper setup (primary key, etc.) */
+        assert(res == TPM_RC_SUCCESS,
+               "TPM2_Create: command failed\n",
+               string_from_TPM_RC(TPM_RC_SUCCESS),
+               string_from_TPM_RC(res));
+    }
+}
+
+/**
+ * @brief Test TPM2_Load command
+ *
+ * PURPOSE: Verify that a key created with TPM2_Create can be loaded
+ *          into the TPM for use.
+ *
+ * PREREQUISITE: TPM2_Create_test must have passed (g_key_created == true)
+ *
+ * PASS:
+ *   - TPM_RC_SUCCESS returned
+ *   - objectHandle != 0 and != TPM_RH_UNASSIGNED (valid handle assigned)
+ *   - name.size > 0 (object name computed)
+ *
+ * FAIL:
+ *   - Any TPM_RC other than SUCCESS
+ *   - Invalid handle returned
+ *   - Empty name
+ */
+void TPM2_Load_test(void) {
+    TPM_RC res;
+
+    DBG_PRINT("[TEST] TPM2_Load: Loading created key into TPM\n");
+
+    /* Skip if Create failed */
+    if (!g_key_created) {
+        DBG_PRINT("[TEST] TPM2_Load: SKIPPED (Create failed)\n");
+        return;
+    }
+
+    Load_In in = {0};
+    memset(&g_load_out, 0, sizeof(g_load_out));
+
+    /* Use the parent handle from Create */
+    in.parentHandle = g_parent_handle;
+
+    /* Use the private/public portions from Create output */
+    memcpy(&in.inPrivate, &g_create_out.outPrivate, sizeof(in.inPrivate));
+    memcpy(&in.inPublic, &g_create_out.outPublic, sizeof(in.inPublic));
+
+    res = TPM2_Load(&in, &g_load_out);
+
+    /* Check for marshalling errors */
+    assert(res != TPM_RC_BAD_TAG,
+           "TPM2_Load failed: bad tag\n",
+           "!= TPM_RC_BAD_TAG",
+           string_from_TPM_RC(res));
+
+    assert(res != TPM_RC_COMMAND_SIZE,
+           "TPM2_Load failed: command size\n",
+           "!= TPM_RC_COMMAND_SIZE",
+           string_from_TPM_RC(res));
+
+    if (res == TPM_RC_SUCCESS) {
+        g_key_loaded = true;
+
+        /* Verify handle is valid (not zero, not unassigned) */
+        char expected_handle_str[32];
+        char actual_handle_str[32];
+        snprintf(expected_handle_str, sizeof(expected_handle_str),
+                 "!= 0x%08X", (unsigned)TPM_RH_UNASSIGNED);
+        snprintf(actual_handle_str, sizeof(actual_handle_str),
+                 "0x%08lX", (unsigned long)g_load_out.objectHandle);
+
+        assert(g_load_out.objectHandle != 0,
+               "TPM2_Load: objectHandle is zero\n",
+               "!= 0", "0");
+
+        assert(g_load_out.objectHandle != TPM_RH_UNASSIGNED,
+               "TPM2_Load: objectHandle is UNASSIGNED\n",
+               expected_handle_str, actual_handle_str);
+
+        /* Verify name was calculated */
+        assert(g_load_out.name.size > 0,
+               "TPM2_Load: name is empty\n",
+               "> 0", "0");
+
+        DBG_PRINTF("[TEST] TPM2_Load: SUCCESS (handle=0x%08lX, name_size=%u)\n",
+                   (unsigned long)g_load_out.objectHandle,
+                   g_load_out.name.size);
+    } else {
+        DBG_PRINTF("[TEST] TPM2_Load: FAILED with rc=0x%08lX (%s)\n",
+                   (unsigned long)res, string_from_TPM_RC(res));
+
+        assert(res == TPM_RC_SUCCESS,
+               "TPM2_Load: command failed\n",
+               string_from_TPM_RC(TPM_RC_SUCCESS),
+               string_from_TPM_RC(res));
+    }
+}
+
+/**
+ * @brief Test TPM2_ReadPublic command
+ *
+ * PURPOSE: Verify that the public area of a loaded key can be read
+ *          and that the data is consistent with what was created.
+ *
+ * PREREQUISITE: TPM2_Load_test must have passed (g_key_loaded == true)
+ *
+ * PASS:
+ *   - TPM_RC_SUCCESS returned
+ *   - outPublic.dataSize > 0 (public area not empty)
+ *   - name.size > 0 (name present)
+ *   - qualifiedName.size > 0 (qualified name present)
+ *
+ * FAIL:
+ *   - Any TPM_RC other than SUCCESS
+ *   - Empty outputs
+ */
+void TPM2_ReadPublic_test(void) {
+    TPM_RC res;
+
+    DBG_PRINT("[TEST] TPM2_ReadPublic: Reading public area of loaded key\n");
+
+    /* Skip if Load failed */
+    if (!g_key_loaded) {
+        DBG_PRINT("[TEST] TPM2_ReadPublic: SKIPPED (Load failed)\n");
+        return;
+    }
+
+    ReadPublic_In in = {0};
+    ReadPublic_Out out = {0};
+
+    /* Read the public area of the loaded object */
+    in.objectHandle = g_load_out.objectHandle;
+
+    res = TPM2_ReadPublic(&in, &out);
+
+    /* Check for marshalling errors */
+    assert(res != TPM_RC_BAD_TAG,
+           "TPM2_ReadPublic failed: bad tag\n",
+           "!= TPM_RC_BAD_TAG",
+           string_from_TPM_RC(res));
+
+    assert(res != TPM_RC_COMMAND_SIZE,
+           "TPM2_ReadPublic failed: command size\n",
+           "!= TPM_RC_COMMAND_SIZE",
+           string_from_TPM_RC(res));
+
+    if (res == TPM_RC_SUCCESS) {
+        /* Verify public area is present */
+        assert(out.outPublic.dataSize > 0,
+               "TPM2_ReadPublic: outPublic is empty\n",
+               "> 0", "0");
+
+        /* Verify name is present */
+        assert(out.name.size > 0,
+               "TPM2_ReadPublic: name is empty\n",
+               "> 0", "0");
+
+        /* Verify qualified name is present */
+        assert(out.qualifiedName.size > 0,
+               "TPM2_ReadPublic: qualifiedName is empty\n",
+               "> 0", "0");
+
+        /* Verify name matches what was returned by Load */
+        assert(out.name.size == g_load_out.name.size,
+               "TPM2_ReadPublic: name size mismatch with Load output\n",
+               NULL, NULL);
+
+        if (out.name.size == g_load_out.name.size) {
+            assert(memcmp(out.name.buffer, g_load_out.name.buffer, out.name.size) == 0,
+                   "TPM2_ReadPublic: name content mismatch with Load output\n",
+                   NULL, NULL);
+        }
+
+        DBG_PRINTF("[TEST] TPM2_ReadPublic: SUCCESS (public=%u, name=%u, qname=%u bytes)\n",
+                   out.outPublic.dataSize,
+                   out.name.size,
+                   out.qualifiedName.size);
+    } else {
+        DBG_PRINTF("[TEST] TPM2_ReadPublic: FAILED with rc=0x%08lX (%s)\n",
+                   (unsigned long)res, string_from_TPM_RC(res));
+
+        assert(res == TPM_RC_SUCCESS,
+               "TPM2_ReadPublic: command failed\n",
+               string_from_TPM_RC(TPM_RC_SUCCESS),
+               string_from_TPM_RC(res));
+    }
+}
+
+/**
+ * @brief Test TPM2_ObjectChangeAuth command
+ *
+ * PURPOSE: Verify that the authorization value of an object can be
+ *          changed correctly.
+ *
+ * PREREQUISITE: TPM2_Load_test must have passed (g_key_loaded == true)
+ *
+ * PASS:
+ *   - TPM_RC_SUCCESS returned
+ *   - outPrivate.dataSize > 0 (new private portion generated)
+ *   - The new private portion differs from the original (auth changed)
+ *
+ * FAIL:
+ *   - Any TPM_RC other than SUCCESS
+ *   - Empty output
+ */
+void TPM2_ObjectChangeAuth_test(void) {
+    TPM_RC res;
+
+    DBG_PRINT("[TEST] TPM2_ObjectChangeAuth: Changing auth value of loaded key\n");
+
+    /* Skip if Load failed */
+    if (!g_key_loaded) {
+        DBG_PRINT("[TEST] TPM2_ObjectChangeAuth: SKIPPED (Load failed)\n");
+        return;
+    }
+
+    ObjectChangeAuth_In in = {0};
+    ObjectChangeAuth_Out out = {0};
+
+    /* Configure input */
+    in.objectHandle = g_load_out.objectHandle;
+    in.parentHandle = g_parent_handle;
+
+    /* New auth value - simple test value */
+    in.newAuth.size = 8;
+    in.newAuth.buffer[0] = 'N';
+    in.newAuth.buffer[1] = 'E';
+    in.newAuth.buffer[2] = 'W';
+    in.newAuth.buffer[3] = 'A';
+    in.newAuth.buffer[4] = 'U';
+    in.newAuth.buffer[5] = 'T';
+    in.newAuth.buffer[6] = 'H';
+    in.newAuth.buffer[7] = '!';
+
+    res = TPM2_ObjectChangeAuth(&in, &out);
+
+    /* Check for marshalling errors */
+    assert(res != TPM_RC_BAD_TAG,
+           "TPM2_ObjectChangeAuth failed: bad tag\n",
+           "!= TPM_RC_BAD_TAG",
+           string_from_TPM_RC(res));
+
+    assert(res != TPM_RC_COMMAND_SIZE,
+           "TPM2_ObjectChangeAuth failed: command size\n",
+           "!= TPM_RC_COMMAND_SIZE",
+           string_from_TPM_RC(res));
+
+    if (res == TPM_RC_SUCCESS) {
+        /* Verify new private portion is present */
+        assert(out.outPrivate.dataSize > 0,
+               "TPM2_ObjectChangeAuth: outPrivate is empty\n",
+               "> 0", "0");
+
+        /* Verify the new private portion is different from original
+         * (this confirms the auth was actually changed) */
+        bool is_different = (out.outPrivate.dataSize != g_create_out.outPrivate.dataSize);
+        if (!is_different && out.outPrivate.dataSize > 0) {
+            is_different = (memcmp(out.outPrivate.data, g_create_out.outPrivate.data,
+                                   out.outPrivate.dataSize) != 0);
+        }
+
+        assert(is_different,
+               "TPM2_ObjectChangeAuth: outPrivate unchanged (auth may not have changed)\n",
+               "different", "same");
+
+        DBG_PRINTF("[TEST] TPM2_ObjectChangeAuth: SUCCESS (new_private=%u bytes)\n",
+                   out.outPrivate.dataSize);
+    } else {
+        DBG_PRINTF("[TEST] TPM2_ObjectChangeAuth: FAILED with rc=0x%08lX (%s)\n",
+                   (unsigned long)res, string_from_TPM_RC(res));
+
+        assert(res == TPM_RC_SUCCESS,
+               "TPM2_ObjectChangeAuth: command failed\n",
+               string_from_TPM_RC(TPM_RC_SUCCESS),
+               string_from_TPM_RC(res));
+    }
+}
+
+/**
+ * @brief Run all key management tests in sequence
+ *
+ * Tests are run in order because they share state:
+ * Create -> Load -> ReadPublic -> ObjectChangeAuth
+ */
+void TPM2_KeyManagement_test_suite(void) {
+    DBG_PRINT("\n");
+    DBG_PRINT("==================================================\n");
+    DBG_PRINT("[SUITE] Key Management Tests\n");
+    DBG_PRINT("==================================================\n");
+
+    /* Reset shared state */
+    g_key_created = false;
+    g_key_loaded = false;
+    memset(&g_create_out, 0, sizeof(g_create_out));
+    memset(&g_load_out, 0, sizeof(g_load_out));
+
+    /* Run tests in sequence */
+    TPM2_Create_test();
+    TPM2_Load_test();
+    TPM2_ReadPublic_test();
+    TPM2_ObjectChangeAuth_test();
+
+    DBG_PRINT("==================================================\n");
+    DBG_PRINT("[SUITE] Key Management Tests Complete\n");
+    DBG_PRINT("==================================================\n\n");
+}
+
 void tpm_test(void) {
     tpm_wait_access();
     Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)"[INFO] TPM access granted\n", 26, portMAX_DELAY);
@@ -612,6 +1029,9 @@ void tpm_test(void) {
     TPM2_VerifySignature_smoke_test();
     TPM2_EncryptDecrypt2_smoke_test();
     TPM2_RSA_EncryptDecrypt_smoke_test();
+
+    /* Key Management Tests */
+    TPM2_KeyManagement_test_suite();
 }
 
 int main(void) {

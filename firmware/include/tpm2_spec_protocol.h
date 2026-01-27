@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <stddef.h>
 #include "fifo8.h"
 
 #define __packed __attribute__((packed))
@@ -100,6 +101,11 @@
 #define TPM_CC_EncryptDecrypt2 0x00000143
 #define TPM_CC_RSA_Encrypt 0x00000173
 #define TPM_CC_RSA_Decrypt 0x00000174
+/* Key Management */
+#define TPM_CC_Create 0x00000153
+#define TPM_CC_Load 0x00000157
+#define TPM_CC_ReadPublic 0x00000173
+#define TPM_CC_ObjectChangeAuth 0x00000150
 
 // TPMI_ALG_HASH
 #define TPM_ALG_NULL     0x0010
@@ -640,3 +646,8 @@ TPM_RC TPM2_CreatePrimary(CreatePrimary_In *in, CreatePrimary_Out *out);
 TPM_RC TPM2_NV_DefineSpace(NV_DefineSpace_In *in);
 TPM_RC TPM2_NV_Write(NV_Write_In* in);
 TPM_RC TPM2_NV_Read(NV_Read_In* in, NV_Read_Out* out);
+/* Key Management */
+TPM_RC TPM2_Create(Create_In *in, Create_Out *out);
+TPM_RC TPM2_Load(Load_In *in, Load_Out *out);
+TPM_RC TPM2_ReadPublic(ReadPublic_In *in, ReadPublic_Out *out);
+TPM_RC TPM2_ObjectChangeAuth(ObjectChangeAuth_In *in, ObjectChangeAuth_Out *out);
