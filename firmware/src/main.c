@@ -651,7 +651,7 @@ static bool g_key_loaded = false;  /* Flag: key was loaded successfully */
  */
 void TPM2_CreatePrimary_test(void) {
     // ----------------------------------------------------------------
-    // 2. Prepare Data Structures
+    // 1. Prepare Data Structures
     // ----------------------------------------------------------------
 
     // A. The Hierarchy Auth (We need permission to use the Owner Hierarchy)
@@ -696,13 +696,13 @@ void TPM2_CreatePrimary_test(void) {
                            .creationPCR = creationPCR};
 
     // ----------------------------------------------------------------
-    // 3. Execute Command
+    // 2. Execute Command
     // ----------------------------------------------------------------
 
     TPM_RC res = TPM2_CreatePrimary(&in, &g_create_primary_out);
 
     // ----------------------------------------------------------------
-    // 4. Validate Results
+    // 3. Validate Results
     // ----------------------------------------------------------------
 
     // ----------------------------------------------------------------
