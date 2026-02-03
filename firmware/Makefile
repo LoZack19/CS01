@@ -27,3 +27,4 @@ $(FIRMWARE_TPM2_HDR): $(QEMU_TPM2_HDR)
 		exit 1; \
 	}
 	@sed -i 's|#include "include/qemu/fifo8.h"|#include "fifo8.h"|' $@
+	@chmod a-w $@

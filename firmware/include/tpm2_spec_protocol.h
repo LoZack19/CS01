@@ -1,3 +1,7 @@
+/*
+ * NOTE: This header is the source for the generated copy at
+ * firmware/include/tpm2_spec_protocol.h. Keep changes in sync.
+ */
 #include <stdint.h>
 #include "fifo8.h"
 
@@ -13,6 +17,9 @@
 #define TPM_MAX_SIGNATURE_SIZE      256
 #define TPM_MAX_IV_SIZE             16   /* TPM2B_IV uses AES block length */
 #define TPM_MAX_MAX_BUFFER_SIZE     1024 /* Implementation-defined max buffer */
+#define RSA_PRIVATE_SIZE            256  /* Supports up to RSA-2048 keys */
+#define DRBG_SEED_SIZE_BYTES        256
+#define DRBG_SEED_SIZE_WORDS        (DRBG_SEED_SIZE_BYTES / sizeof(uint64_t))
 /* Key Lifecycle Management */
 #define MAX_SYM_DATA 128
 #define LABEL_MAX_BUFFER 32
@@ -45,6 +52,7 @@
 #define TPM_RC_BAD_TAG          (TPM_RC)0x01E
 #define RC_VER1                 (TPM_RC)0x100
 #define TPM_RC_FAILURE          (TPM_RC)(RC_VER1 + 0x01)
+#define TPM_RC_OBJECT_MEMORY    (TPM_RC)(RC_VER1 + 0x19)
 #define TPM_RC_COMMAND_SIZE     (TPM_RC)(RC_VER1 + 0x42)
 #define TPM_RC_COMMAND_CODE     (TPM_RC)(RC_VER1 + 0x43)
 #define TPM_RC_NV_RANGE         (TPM_RC)(RC_VER1 + 0x46)
@@ -72,6 +80,8 @@
 #define RC_NV_DefineSpace_authHandle (TPM_RC_H + TPM_RC_1)
 #define RC_NV_DefineSpace_auth       (TPM_RC_P + TPM_RC_1)
 #define RC_NV_DefineSpace_publicInfo (TPM_RC_P + TPM_RC_2)
+#define RC_CreatePrimary_inPublic    (TPM_RC_P + TPM_RC_1)
+#define RC_CreatePrimary_inSensitive (TPM_RC_P + TPM_RC_2)
 
 // TPM_ST
 #define TPM_ST_NO_SESSIONS 0x8001
@@ -81,6 +91,7 @@
 // TPM_HANDLE
 #define TPM_RH_OWNER 0x40000001
 #define TPM_RH_UNASSIGNED 0x40000008
+#define TPM_RH_ENDORSEMENT 0x4000000B
 #define TPM_RH_PLATFORM 0x4000000C
 #define TPM_HT_NV_INDEX 0x01
 #define HR_SHIFT 24
@@ -102,6 +113,9 @@
 #define TPM_CC_RSA_Encrypt 0x00000173
 #define TPM_CC_RSA_Decrypt 0x00000174
 
+// TPM Key Life Cycle Management
+#define TPM_CC_CreatePrimary 0x00000131
+
 // TPMI_ALG_HASH
 #define TPM_ALG_RSA      0x0001
 #define TPM_ALG_TDES     0x0003
@@ -119,6 +133,9 @@
 #define TPM_ALG_CFB      0x0043
 #define TPM_ALG_ECB      0x0044
 #define TPM_ALG_OFB      0x0045
+
+// Label context strings
+#define PRIMARY_OBJECT_CREATION "PRIMARY"
 
 // state_clear_data
 #define shEnable_RESET TRUE
@@ -158,6 +175,7 @@ typedef uint8_t UINT8;
 typedef uint16_t UINT16;
 typedef uint32_t UINT32;
 typedef uint64_t UINT64;
+typedef uint64_t crypt_uword_t;
 typedef BYTE   TPMI_YES_NO;
 
 /* Subsection #3.2: Secondary Types*/
@@ -204,6 +222,8 @@ typedef TPM_ALG_ID TPMI_ALG_SIG_SCHEME;
 typedef TPM_ALG_ID TPMI_ALG_PUBLIC;
 typedef TPM_ALG_ID TPMI_ALG_RSA_SCHEME;
 
+typedef UINT16 TPMI_RSA_KEY_BITS;
+
 /* Section #4: Complex Types */
 
 /** Defines the end-of-list marker for NV. The list terminator is a UINT32 of
@@ -217,6 +237,12 @@ typedef UINT32 NV_LIST_TERMINATOR[3];
 typedef union __packed {
     BYTE sha256[SHA256_DIGEST_SIZE];
 } TPMU_HA;
+
+// Generic TPM2B structure (variable-sized byte buffer)
+typedef struct __packed {
+    UINT16 size;
+    BYTE buffer[sizeof(TPMU_HA)];
+} TPM2B;
 
 typedef struct __packed {
     UINT16 size;
@@ -395,6 +421,15 @@ typedef union __packed {
 typedef struct __packed {
     UINT16 size;
     BYTE buffer[sizeof(TPMU_SENSITIVE_CREATE)];
+} _TPM2B_SENSITIVE_DATA_BUFFER;
+
+typedef union __packed {
+    _TPM2B_SENSITIVE_DATA_BUFFER t;
+    _TPM2B_SENSITIVE_DATA_BUFFER b;
+    struct {
+        UINT16 size;
+        BYTE buffer[sizeof(TPMU_SENSITIVE_CREATE)];
+    };
 } TPM2B_SENSITIVE_DATA;
 
 typedef struct __packed {
@@ -467,6 +502,84 @@ typedef struct __packed {
     UINT32 count;
     TPMS_PCR_SELECTION pcrSelections[HASH_COUNT];  
 } TPML_PCR_SELECTION;
+
+typedef union __packed {
+    BYTE          bytes[DRBG_SEED_SIZE_BYTES];
+    crypt_uword_t words[DRBG_SEED_SIZE_WORDS];
+} DRBG_SEED;
+
+typedef struct __packed {
+    UINT64    reseedCounter;
+    UINT32    magic;
+    DRBG_SEED seed;
+    UINT32    lastValue[4];
+} DRBG_STATE;
+
+typedef DRBG_STATE RAND_STATE;
+
+typedef struct __packed {
+    uint16_t size;
+    uint8_t  buffer[64];
+} _TPM2B_SEED_BUFFER;
+
+typedef union {
+    _TPM2B_SEED_BUFFER b;
+    struct {
+        uint16_t size;
+        uint8_t  buffer[64];
+    };
+} TPM2B_SEED;
+
+typedef struct __packed {
+    unsigned publicOnly : 1;
+    unsigned epsHierarchy : 1;
+    unsigned ppsHierarchy : 1;
+    unsigned spsHierarchy : 1;
+    unsigned evict : 1;
+    unsigned primary   : 1;
+    unsigned temporary : 1;
+    unsigned stClear   : 1;
+    unsigned hmacSeq   : 1;
+    unsigned hashSeq    : 1;
+    unsigned eventSeq   : 1;
+    unsigned ticketSafe : 1;
+    unsigned firstBlock : 1;
+    unsigned isParent : 1;
+    unsigned not_used_14 : 1;
+    unsigned occupied    : 1;
+    unsigned derivation  : 1;
+    unsigned external : 1;
+} OBJECT_ATTRIBUTES;
+
+typedef struct __packed {
+    UINT16 size;
+    BYTE buffer[RSA_PRIVATE_SIZE];
+} TPM2B_PRIVATE_KEY_RSA;
+
+typedef union __packed {
+    TPM2B_PRIVATE_KEY_RSA rsa;
+    // TPM2B_ECC_PARAMETER ecc;
+    // TPM2B_SENSITIVE_DATA bits;
+    // TPM2B_SYM_KEY sym;
+    // TPM2B_PRIVATE_VENDOR_SPECIFIC any;
+} TPMU_SENSITIVE_COMPOSITE;
+
+typedef struct __packed {
+    TPMI_ALG_PUBLIC sensitiveType;
+    TPM2B_AUTH authValue;
+    TPM2B_DIGEST seedValue;
+    TPMU_SENSITIVE_COMPOSITE sensitive;
+} TPMT_SENSITIVE;
+
+typedef struct __packed {
+    OBJECT_ATTRIBUTES attributes;     
+    TPMT_PUBLIC       publicArea;
+    TPMT_SENSITIVE    sensitive;
+    TPM2B_NAME        qualifiedName;  
+    TPMI_DH_OBJECT    evictHandle;
+    TPM2B_NAME name;
+    TPMI_RH_HIERARCHY hierarchy;
+} OBJECT;
 
 /* Subsection #4.2: Useful Additions */
 
