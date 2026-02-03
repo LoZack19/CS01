@@ -158,4 +158,5 @@ system_ss.add(when: 'CONFIG_S32K358_TPM', if_true: files(
   'tpm_cmds.c',
   'tpm_marshal.c',
   'NvStorage.c',
-  'tpm_crypt.c'))
+  'tpm_crypt.c',
+  'tpm_support.c'))
