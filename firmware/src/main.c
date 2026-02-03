@@ -9,6 +9,7 @@
 #include "sha256.h"
 #include <stdio.h>
 #include "tpm2_spec_protocol.h"
+#include "tpm_tests_config.h"
 
 #define LPUART_INSTANCE (3U) // Usare LPUART3
 
@@ -258,6 +259,7 @@ static void tpm_drain_bytes(size_t size) {
     }
 }
 
+#ifndef TPM2_InOut
 #define TPM2_InOut(F)                                                          \
     TPM_RC TPM2_##F(F##_In *in, F##_Out *out) {                                \
         tpm_rsp_header_t rsp;                                                  \
@@ -315,7 +317,9 @@ static void tpm_drain_bytes(size_t size) {
                                                                                \
         return rsp.responseCode;                                               \
     }
+#endif
 
+#ifndef TPM2_In
 #define TPM2_In(F)                                                             \
     TPM_RC TPM2_##F(F##_In *in) {                                              \
         tpm_rsp_header_t rsp;                                                  \
@@ -349,26 +353,61 @@ static void tpm_drain_bytes(size_t size) {
                                                                                \
         return rsp.responseCode;                                               \
     }
+#endif
 
+#ifdef TPM_TEST_ENABLE_NV_DEFINE
 TPM2_In(NV_DefineSpace);
+#endif
+
+#ifdef TPM_TEST_ENABLE_NV_WRITE_READ
 TPM2_In(NV_Write);
 TPM2_InOut(NV_Read);
+#endif
 
+#ifdef TPM_TEST_ENABLE_SIGN
 TPM2_InOut(Sign);
+#endif
+
+#ifdef TPM_TEST_ENABLE_VERIFY_SIGNATURE
 TPM2_InOut(VerifySignature);
+#endif
+
+#ifdef TPM_TEST_ENABLE_HASH
 TPM2_InOut(Hash);
+#endif
+
+#ifdef TPM_TEST_ENABLE_ENCRYPT_DECRYPT2
 TPM2_InOut(EncryptDecrypt2);
+#endif
+
+#ifdef TPM_TEST_ENABLE_RSA_ENCRYPT_DECRYPT
 TPM2_InOut(RSA_Encrypt);
 TPM2_InOut(RSA_Decrypt);
+#endif
 
 /* Key Management Commands */
+#ifdef TPM_TEST_ENABLE_CREATEPRIMARY
 TPM2_InOut(CreatePrimary);
+#endif
+
+#ifdef TPM_TEST_ENABLE_CREATE
 TPM2_InOut(Create);
+#endif
+
+#ifdef TPM_TEST_ENABLE_LOAD
 TPM2_InOut(Load);
+#endif
+
+#ifdef TPM_TEST_ENABLE_READPUBLIC
 TPM2_InOut(ReadPublic);
+#endif
+
+#ifdef TPM_TEST_ENABLE_OBJECTCHANGEAUTH
 TPM2_InOut(ObjectChangeAuth);
+#endif
 // TPM Tests
 
+#ifdef TPM_TEST_ENABLE_NV_DEFINE
 void TPM2_NV_DefineSpace_test(void) {
     TPM_RC res;
 
@@ -395,7 +434,9 @@ void TPM2_NV_DefineSpace_test(void) {
     assert(res == TPM_RC_SUCCESS, "TPM2_NV_DefineSpace failed",
            string_from_TPM_RC(TPM_RC_SUCCESS), string_from_TPM_RC(res));
 }
+#endif
 
+#ifdef TPM_TEST_ENABLE_NV_WRITE_READ
 void TPM2_NV_WriteRead_test(void) {
     TPM_RC res;
 
@@ -450,7 +491,9 @@ void TPM2_NV_WriteRead_test(void) {
                   write_data.size) == 0,
            "NV Read data mismatch", NULL, NULL);
 }
+#endif
 
+#ifdef TPM_TEST_ENABLE_HASH
 void TPM2_Hash_smoke_test(void) {
     Hash_In in = {0};
     Hash_Out out = {0};
@@ -470,7 +513,9 @@ void TPM2_Hash_smoke_test(void) {
         assert(out.digest.size > 0, "TPM2_Hash digest size", "> 0", "0");
     }
 }
+#endif
 
+#ifdef TPM_TEST_ENABLE_SIGN
 void TPM2_Sign_smoke_test(void) {
     Sign_In in = {0};
     Sign_Out out = {0};
@@ -494,7 +539,9 @@ void TPM2_Sign_smoke_test(void) {
                "> 0", "0");
     }
 }
+#endif
 
+#ifdef TPM_TEST_ENABLE_VERIFY_SIGNATURE
 void TPM2_VerifySignature_smoke_test(void) {
     VerifySignature_In in = {0};
     VerifySignature_Out out = {0};
@@ -520,7 +567,9 @@ void TPM2_VerifySignature_smoke_test(void) {
 
     (void)out;
 }
+#endif
 
+#ifdef TPM_TEST_ENABLE_ENCRYPT_DECRYPT2
 void TPM2_EncryptDecrypt2_smoke_test(void) {
     EncryptDecrypt2_In in = {0};
     EncryptDecrypt2_Out out = {0};
@@ -560,7 +609,9 @@ void TPM2_EncryptDecrypt2_smoke_test(void) {
                actual_size_str);
     }
 }
+#endif
 
+#ifdef TPM_TEST_ENABLE_RSA_ENCRYPT_DECRYPT
 void TPM2_RSA_EncryptDecrypt_smoke_test(void) {
     RSA_Encrypt_In enc_in = {0};
     RSA_Encrypt_Out enc_out = {0};
@@ -597,6 +648,7 @@ void TPM2_RSA_EncryptDecrypt_smoke_test(void) {
     (void)enc_out;
     (void)dec_out;
 }
+#endif
 
 /*
  * ===========================================================================
@@ -615,13 +667,23 @@ void TPM2_RSA_EncryptDecrypt_smoke_test(void) {
  */
 
 /* Shared state for key management tests */
+#ifdef TPM_TEST_ENABLE_CREATEPRIMARY
 static CreatePrimary_Out
     g_create_primary_out;          /* Output from TPM2_CreatePrimary */
+#endif
+
+#ifdef TPM_TEST_ENABLE_CREATE
 static Create_Out g_create_out;    /* Output from TPM2_Create */
+#endif
+
+#ifdef TPM_TEST_ENABLE_LOAD
 static Load_Out g_load_out;        /* Output from TPM2_Load */
+#endif
+
 static TPM_HANDLE g_parent_handle; /* Parent key handle (primary) */
 static bool g_key_created = false; /* Flag: key was created successfully */
 static bool g_key_loaded = false;  /* Flag: key was loaded successfully */
+
 
 /**
  * @brief Test TPM2_CreatePrimary command
@@ -641,6 +703,7 @@ static bool g_key_loaded = false;  /* Flag: key was loaded successfully */
  *   - Hash(creationData) != creationHash
  *   - Invalid creationTicket
  */
+#ifdef TPM_TEST_ENABLE_CREATEPRIMARY
 void TPM2_CreatePrimary_test(void) {
     // ----------------------------------------------------------------
     // 1. Prepare Data Structures
@@ -803,6 +866,7 @@ void TPM2_CreatePrimary_test(void) {
     assert(g_create_primary_out.creationTicket.digest.size > 0,
            "TPM2_CreatePrimary ticket digest is empty", NULL, NULL);
 }
+#endif
 
 /**
  * @brief Test TPM2_Create command
@@ -820,6 +884,7 @@ void TPM2_CreatePrimary_test(void) {
  *   - TPM_RC_BAD_TAG or TPM_RC_COMMAND_SIZE (marshalling errors)
  *   - Empty outputs (size == 0)
  */
+#ifdef TPM_TEST_ENABLE_CREATE
 void TPM2_Create_test(void) {
     TPM_RC res;
 
@@ -881,6 +946,7 @@ void TPM2_Create_test(void) {
                string_from_TPM_RC(TPM_RC_SUCCESS), string_from_TPM_RC(res));
     }
 }
+#endif
 
 /**
  * @brief Test TPM2_Load command
@@ -900,6 +966,7 @@ void TPM2_Create_test(void) {
  *   - Invalid handle returned
  *   - Empty name
  */
+#ifdef TPM_TEST_ENABLE_LOAD
 void TPM2_Load_test(void) {
     TPM_RC res;
 
@@ -963,6 +1030,7 @@ void TPM2_Load_test(void) {
                string_from_TPM_RC(TPM_RC_SUCCESS), string_from_TPM_RC(res));
     }
 }
+#endif
 
 /**
  * @brief Test TPM2_ReadPublic command
@@ -982,6 +1050,7 @@ void TPM2_Load_test(void) {
  *   - Any TPM_RC other than SUCCESS
  *   - Empty outputs
  */
+#ifdef TPM_TEST_ENABLE_READPUBLIC
 void TPM2_ReadPublic_test(void) {
     TPM_RC res;
 
@@ -1045,6 +1114,7 @@ void TPM2_ReadPublic_test(void) {
                string_from_TPM_RC(TPM_RC_SUCCESS), string_from_TPM_RC(res));
     }
 }
+#endif
 
 /**
  * @brief Test TPM2_ObjectChangeAuth command
@@ -1063,6 +1133,7 @@ void TPM2_ReadPublic_test(void) {
  *   - Any TPM_RC other than SUCCESS
  *   - Empty output
  */
+#ifdef TPM_TEST_ENABLE_OBJECTCHANGEAUTH
 void TPM2_ObjectChangeAuth_test(void) {
     TPM_RC res;
 
@@ -1135,6 +1206,7 @@ void TPM2_ObjectChangeAuth_test(void) {
                string_from_TPM_RC(TPM_RC_SUCCESS), string_from_TPM_RC(res));
     }
 }
+#endif
 
 /**
  * @brief Run all key management tests in sequence
@@ -1151,16 +1223,46 @@ void TPM2_KeyManagement_test_suite(void) {
     /* Reset shared state */
     g_key_created = false;
     g_key_loaded = false;
+#ifdef TPM_TEST_ENABLE_CREATEPRIMARY
     memset(&g_create_primary_out, 0, sizeof(g_create_primary_out));
+#endif
+#ifdef TPM_TEST_ENABLE_CREATE
     memset(&g_create_out, 0, sizeof(g_create_out));
+#endif
+#ifdef TPM_TEST_ENABLE_LOAD
     memset(&g_load_out, 0, sizeof(g_load_out));
+#endif
 
     /* Run tests in sequence */
+#ifdef TPM_TEST_ENABLE_CREATEPRIMARY
     TPM2_CreatePrimary_test();
+#else
+    DBG_PRINT("[TEST] TPM2_CreatePrimary: SKIPPED (not enabled)\n");
+#endif
+
+#if defined(TPM_TEST_ENABLE_CREATE) && defined(TPM_TEST_ENABLE_CREATEPRIMARY)
     TPM2_Create_test();
+#elif defined(TPM_TEST_ENABLE_CREATE)
+    DBG_PRINT("[TEST] TPM2_Create: SKIPPED (CreatePrimary not enabled)\n");
+#endif
+
+#if defined(TPM_TEST_ENABLE_LOAD) && defined(TPM_TEST_ENABLE_CREATE)
     TPM2_Load_test();
+#elif defined(TPM_TEST_ENABLE_LOAD)
+    DBG_PRINT("[TEST] TPM2_Load: SKIPPED (Create not enabled)\n");
+#endif
+
+#if defined(TPM_TEST_ENABLE_READPUBLIC) && defined(TPM_TEST_ENABLE_LOAD)
     TPM2_ReadPublic_test();
+#elif defined(TPM_TEST_ENABLE_READPUBLIC)
+    DBG_PRINT("[TEST] TPM2_ReadPublic: SKIPPED (Load not enabled)\n");
+#endif
+
+#if defined(TPM_TEST_ENABLE_OBJECTCHANGEAUTH) && defined(TPM_TEST_ENABLE_LOAD)
     TPM2_ObjectChangeAuth_test();
+#elif defined(TPM_TEST_ENABLE_OBJECTCHANGEAUTH)
+    DBG_PRINT("[TEST] TPM2_ObjectChangeAuth: SKIPPED (Load not enabled)\n");
+#endif
 
     DBG_PRINT("==================================================\n");
     DBG_PRINT("[SUITE] Key Management Tests Complete\n");
@@ -1173,14 +1275,47 @@ void tpm_test(void) {
                             (uint8_t *)"[INFO] TPM access granted\n", 26,
                             portMAX_DELAY);
 
+#ifdef TPM_TEST_ENABLE_NV_DEFINE
     TPM2_NV_DefineSpace_test();
-    TPM2_NV_WriteRead_test();
+#else
+    DBG_PRINT("[TEST] TPM2_NV_DefineSpace: SKIPPED (not enabled)\n");
+#endif
 
+#ifdef TPM_TEST_ENABLE_NV_WRITE_READ
+    TPM2_NV_WriteRead_test();
+#else
+    DBG_PRINT("[TEST] TPM2_NV_WriteRead: SKIPPED (not enabled)\n");
+#endif
+
+#ifdef TPM_TEST_ENABLE_HASH
     TPM2_Hash_smoke_test();
+#else
+    DBG_PRINT("[TEST] TPM2_Hash: SKIPPED (not enabled)\n");
+#endif
+
+#ifdef TPM_TEST_ENABLE_SIGN
     TPM2_Sign_smoke_test();
+#else
+    DBG_PRINT("[TEST] TPM2_Sign: SKIPPED (not enabled)\n");
+#endif
+
+#ifdef TPM_TEST_ENABLE_VERIFY_SIGNATURE
     TPM2_VerifySignature_smoke_test();
+#else
+    DBG_PRINT("[TEST] TPM2_VerifySignature: SKIPPED (not enabled)\n");
+#endif
+
+#ifdef TPM_TEST_ENABLE_ENCRYPT_DECRYPT2
     TPM2_EncryptDecrypt2_smoke_test();
+#else
+    DBG_PRINT("[TEST] TPM2_EncryptDecrypt2: SKIPPED (not enabled)\n");
+#endif
+
+#ifdef TPM_TEST_ENABLE_RSA_ENCRYPT_DECRYPT
     TPM2_RSA_EncryptDecrypt_smoke_test();
+#else
+    DBG_PRINT("[TEST] TPM2_RSA_EncryptDecrypt: SKIPPED (not enabled)\n");
+#endif
 
     /* Key Management Tests */
     TPM2_KeyManagement_test_suite();
