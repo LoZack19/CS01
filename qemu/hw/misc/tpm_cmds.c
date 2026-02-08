@@ -454,9 +454,9 @@ TPM_RC TPM2_CreatePrimary(CreatePrimary_In *in, CreatePrimary_Out *out) {
         return result;
 
     result = DRBG_InstantiateSeeded(
-        &rand, &primary_seed.b, PRIMARY_OBJECT_CREATION,
-        (TPM2B *)PublicMarshalAndComputeName(publicArea, &name),
-        &in->inSensitive.sensitive.data.b);
+        &rand, (const TPM2B *)&primary_seed.b, PRIMARY_OBJECT_CREATION,
+        (const TPM2B *)PublicMarshalAndComputeName(publicArea, &name),
+        (const TPM2B *)&in->inSensitive.sensitive.data.b);
     MemorySet(primary_seed.b.buffer, 0, primary_seed.b.size);
 
     if (result == TPM_RC_SUCCESS) {

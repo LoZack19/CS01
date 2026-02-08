@@ -7,6 +7,7 @@
 #include "qom/object.h"
 #include "qemu/log.h"
 #include "include/hw/misc/s32k358_tpm.h"
+#include "hw/misc/tpm_create_primary.h"
 
 static void s32k358_tpm_process_input(S32k358TPMState *s) {
     tpm_cmd_header_t cmd_header;
@@ -420,6 +421,9 @@ static void s32k358_tpm_realize(DeviceState *dev, Error **errp)
     s->nvmem_size = S32K358_TPM_NV_MEM_SIZE;
     memset(s->mem, 0, s->nvmem_size);  // Zero-initialize NV memory
     NvInit(s->mem, s->nvmem_size, &s->gc);
+
+    // Set the device state pointer for hierarchy functions
+    tpm_hierarchy_set_state(s);
 }
 
 static void s32k358_tpm_init(Object *obj)

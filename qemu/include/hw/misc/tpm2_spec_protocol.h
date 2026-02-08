@@ -2,6 +2,9 @@
  * NOTE: This header is the source for the generated copy at
  * firmware/include/tpm2_spec_protocol.h. Keep changes in sync.
  */
+#ifndef TPM2_SPEC_PROTOCOL_H
+#define TPM2_SPEC_PROTOCOL_H
+
 #include <stdint.h>
 #include <stddef.h>
 #include "include/qemu/fifo8.h"
@@ -237,11 +240,7 @@ typedef TPM_ALG_ID TPMI_ALG_SIG_SCHEME;
 typedef TPM_ALG_ID TPMI_ALG_PUBLIC;
 typedef TPM_ALG_ID TPMI_ALG_RSA_SCHEME;
 
-<<<<<<< HEAD
-typedef UINT16 TPMI_RSA_KEY_BITS;
-=======
 typedef TPM_KEY_BITS TPMI_RSA_KEY_BITS;
->>>>>>> giovanni
 
 /* Section #4: Complex Types */
 
@@ -572,7 +571,6 @@ typedef DRBG_STATE RAND_STATE;
 
 typedef struct __packed {
     uint16_t size;
-<<<<<<< HEAD
     uint8_t  buffer[64];
 } _TPM2B_SEED_BUFFER;
 
@@ -582,9 +580,6 @@ typedef union {
         uint16_t size;
         uint8_t  buffer[64];
     };
-=======
-    uint8_t buffer[64];
->>>>>>> giovanni
 } TPM2B_SEED;
 
 typedef struct __packed {
@@ -834,3 +829,5 @@ TPM_RC TPM2_CreatePrimary(CreatePrimary_In *in, CreatePrimary_Out *out);
 TPM_RC TPM2_NV_DefineSpace(NV_DefineSpace_In *in);
 TPM_RC TPM2_NV_Write(NV_Write_In *in);
 TPM_RC TPM2_NV_Read(NV_Read_In *in, NV_Read_Out *out);
+
+#endif /* TPM2_SPEC_PROTOCOL_H */

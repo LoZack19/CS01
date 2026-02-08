@@ -2,7 +2,11 @@
  * NOTE: This header is the source for the generated copy at
  * firmware/include/tpm2_spec_protocol.h. Keep changes in sync.
  */
+#ifndef TPM2_SPEC_PROTOCOL_H
+#define TPM2_SPEC_PROTOCOL_H
+
 #include <stdint.h>
+#include <stddef.h>
 #include "fifo8.h"
 
 #define __packed __attribute__((packed))
@@ -11,44 +15,44 @@
 
 // Size Configuration
 /* Cryptographic Primitives */
-#define SHA256_DIGEST_SIZE 32
-#define TPM_MAX_KEY_SIZE            256
-#define TPM_MAX_DATA_SIZE           256
-#define TPM_MAX_SIGNATURE_SIZE      256
-#define TPM_MAX_IV_SIZE             16   /* TPM2B_IV uses AES block length */
-#define TPM_MAX_MAX_BUFFER_SIZE     1024 /* Implementation-defined max buffer */
-#define RSA_PRIVATE_SIZE            256  /* Supports up to RSA-2048 keys */
-#define DRBG_SEED_SIZE_BYTES        256
-#define DRBG_SEED_SIZE_WORDS        (DRBG_SEED_SIZE_BYTES / sizeof(uint64_t))
+#define SHA256_DIGEST_SIZE      32
+#define TPM_MAX_KEY_SIZE        256
+#define TPM_MAX_DATA_SIZE       256
+#define TPM_MAX_SIGNATURE_SIZE  256
+#define TPM_MAX_IV_SIZE         16   /* TPM2B_IV uses AES block length */
+#define TPM_MAX_MAX_BUFFER_SIZE 1024 /* Implementation-defined max buffer */
+#define RSA_PRIVATE_SIZE        256  /* Supports up to RSA-2048 keys */
+#define DRBG_SEED_SIZE_BYTES    256
+#define DRBG_SEED_SIZE_WORDS    (DRBG_SEED_SIZE_BYTES / sizeof(uint64_t))
 /* Key Lifecycle Management */
-#define MAX_SYM_DATA 128
+#define MAX_SYM_DATA     128
 #define LABEL_MAX_BUFFER 32
-#define HASH_COUNT 5 /* Implementation-defined; TODO: check */
+#define HASH_COUNT       5 /* Implementation-defined; TODO: check */
 /* PCRs: minimal implementation provides 24 PCR registers (0..23). */
-#define TPM_PCR_COUNT 24
-#define PLATFORM_PCR (TPM_PCR_COUNT - 1)
+#define TPM_PCR_COUNT      24
+#define PLATFORM_PCR       (TPM_PCR_COUNT - 1)
 #define IMPLEMENTATION_PCR (TPM_PCR_COUNT - 1)
-#define PCR_SELECT_MAX ((IMPLEMENTATION_PCR + 7) / 8)  /* in bytes */
-#define PCR_SELECT_MIN ((PLATFORM_PCR + 7) / 8)        /* in bytes */
+#define PCR_SELECT_MAX     ((IMPLEMENTATION_PCR + 7) / 8) /* in bytes */
+#define PCR_SELECT_MIN     ((PLATFORM_PCR + 7) / 8)       /* in bytes */
 /* NV Memory */
-#define MAX_NV_INDEX_SIZE 512
+#define MAX_NV_INDEX_SIZE  512
 #define MAX_NV_BUFFER_SIZE 128
 
 #define TPM_NT_ORDINARY 0x0
-#define TPM_NT_COUNTER 0x1
-#define TPM_NT_BITS 0x2
-#define TPM_NT_EXTEND 0x4
+#define TPM_NT_COUNTER  0x1
+#define TPM_NT_BITS     0x2
+#define TPM_NT_EXTEND   0x4
 #define TPM_NT_PIN_FAIL 0x8
 #define TPM_NT_PIN_PASS 0x9
 
 // TPM_RC
 #define TPM_RC_SUCCESS          (TPM_RC)0x000
-#define TPM_RC_H                (TPM_RC)(0x000)  /* Error due to handle */
-#define TPM_RC_P                (TPM_RC)(0x040)  /* Error due to parameter */
+#define TPM_RC_H                (TPM_RC)(0x000) /* Error due to handle */
+#define TPM_RC_P                (TPM_RC)(0x040) /* Error due to parameter */
 #define TPM_RC_(n)              (TPM_RC)((n) << 8)
-#define TPM_RC_1                (TPM_RC)(TPM_RC_(1))  /* first (modifier) */
-#define TPM_RC_2                (TPM_RC)(TPM_RC_(2))  /* second (modifier) */
-#define TPM_RC_3                (TPM_RC)(TPM_RC_(3))  /* third (modifier) */
+#define TPM_RC_1                (TPM_RC)(TPM_RC_(1)) /* first (modifier) */
+#define TPM_RC_2                (TPM_RC)(TPM_RC_(2)) /* second (modifier) */
+#define TPM_RC_3                (TPM_RC)(TPM_RC_(3)) /* third (modifier) */
 #define TPM_RC_BAD_TAG          (TPM_RC)0x01E
 #define RC_VER1                 (TPM_RC)0x100
 #define TPM_RC_FAILURE          (TPM_RC)(RC_VER1 + 0x01)
@@ -89,32 +93,40 @@
 #define TPM_ST_CREATION    0x8021
 
 // TPM_HANDLE
-#define TPM_RH_OWNER 0x40000001
-#define TPM_RH_UNASSIGNED 0x40000008
-#define TPM_RH_ENDORSEMENT 0x4000000B
-#define TPM_RH_PLATFORM 0x4000000C
-#define TPM_HT_NV_INDEX 0x01
-#define HR_SHIFT 24
-#define HR_NV_INDEX (TPM_HT_NV_INDEX << HR_SHIFT)
-#define NV_INDEX_FIRST (HR_NV_INDEX + 0)
-#define NV_INDEX_LAST (NV_INDEX_FIRST + 0x00FFFFFF)
+#define TPM_RH_OWNER                0x40000001
+#define TPM_RH_NULL                 0x40000007
+#define TPM_RH_UNASSIGNED           0x40000008
+#define TPM_RH_ENDORSEMENT          0x4000000B
+#define TPM_RH_PLATFORM             0x4000000C
+#define TPM_RH_FW_OWNER             0x40000140
+#define TPM_RH_FW_ENDORSEMENT       0x40000141
+#define TPM_RH_FW_PLATFORM          0x40000142
+#define TPM_RH_FW_NULL              0x40000143
+#define TPM_RH_SVN_OWNER_BASE       0x40010000
+#define TPM_RH_SVN_ENDORSEMENT_BASE 0x40020000
+#define TPM_RH_SVN_PLATFORM_BASE    0x40030000
+#define TPM_RH_SVN_NULL_BASE        0x40040000
+#define TPM_HT_NV_INDEX             0x01
+#define HR_SHIFT                    24
+#define HR_NV_INDEX                 (TPM_HT_NV_INDEX << HR_SHIFT)
+#define NV_INDEX_FIRST              (HR_NV_INDEX + 0)
+#define NV_INDEX_LAST               (NV_INDEX_FIRST + 0x00FFFFFF)
 
 // TPM_CC
 #define TPM_CC_GetRandom 0x0000017B
 /* NV Memory*/
 #define TPM_CC_NV_DefineSpace 0x0000012A
-#define TPM_CC_NV_Write 0x00000137
-#define TPM_CC_NV_Read 0x0000014E
+#define TPM_CC_NV_Write       0x00000137
+#define TPM_CC_NV_Read        0x0000014E
 /* Cryptographic Primitives */
-#define TPM_CC_Sign 0x0000015D
+#define TPM_CC_Sign            0x0000015D
 #define TPM_CC_VerifySignature 0x00000177
-#define TPM_CC_Hash 0x0000017D
+#define TPM_CC_Hash            0x0000017D
 #define TPM_CC_EncryptDecrypt2 0x00000143
-#define TPM_CC_RSA_Encrypt 0x00000173
-#define TPM_CC_RSA_Decrypt 0x00000174
-
+#define TPM_CC_RSA_Encrypt     0x00000173
+#define TPM_CC_RSA_Decrypt     0x00000174
 // TPM Key Life Cycle Management
-#define TPM_CC_CreatePrimary 0x00000131
+#define TPM_CC_CreatePrimary   0x00000131
 
 // TPMI_ALG_HASH
 #define TPM_ALG_RSA      0x0001
@@ -138,18 +150,24 @@
 #define PRIMARY_OBJECT_CREATION "PRIMARY"
 
 // state_clear_data
-#define shEnable_RESET TRUE
-#define ehEnable_RESET TRUE
-#define phEnableNV_RESET TRUE
+#define shEnable_RESET    TRUE
+#define ehEnable_RESET    TRUE
+#define phEnableNV_RESET  TRUE
 #define platformAlg_RESET TPM_ALG_NULL
-#define platformPolicy_RESET (TPM2B_DIGEST){0}
-#define platformAuth_RESET (TPM2B_AUTH){0}
+#define platformPolicy_RESET \
+    (TPM2B_DIGEST) {         \
+        0                    \
+    }
+#define platformAuth_RESET \
+    (TPM2B_AUTH) {         \
+        0                  \
+    }
 
 /* Section #2: Macros */
 
 // Marshalling and Unmarshalling
 #define UNMARSHAL(data, fifo) unmarshal(data, sizeof(*(data)), fifo)
-#define MARSHAL(fifo, data) marshal(fifo, data, sizeof(*(data)))
+#define MARSHAL(fifo, data)   marshal(fifo, data, sizeof(*(data)))
 
 // Access to bitfields
 #define IS_ATTRIBUTE(a, type, b)    ((a.b) != 0)
@@ -158,16 +176,16 @@
 #define GET_ATTRIBUTE(a, type, b)   (a.b)
 
 // TPMA_NV
-#define GET_TPM_NT(attributes) GET_ATTRIBUTE(attributes, TPMA_NV, TPM_NT)
+#define GET_TPM_NT(attributes)       GET_ATTRIBUTE(attributes, TPMA_NV, TPM_NT)
 #define IsNvCounterIndex(attributes) (GET_TPM_NT(attributes) == TPM_NT_COUNTER)
-#define IsNvBitsIndex(attributes) (GET_TPM_NT(attributes) == TPM_NT_BITS)
-#define IsNvExtendIndex(attributes) (GET_TPM_NT(attributes) == TPM_NT_EXTEND)
+#define IsNvBitsIndex(attributes)    (GET_TPM_NT(attributes) == TPM_NT_BITS)
+#define IsNvExtendIndex(attributes)  (GET_TPM_NT(attributes) == TPM_NT_EXTEND)
 
 /* Section #3: Basic Types*/
 
 /* Subsection #3.1: Primitive Types */
 
-#define SET TRUE
+#define SET   TRUE
 #define CLEAR FALSE
 typedef uint8_t BOOL;
 typedef uint8_t BYTE;
@@ -176,7 +194,7 @@ typedef uint16_t UINT16;
 typedef uint32_t UINT32;
 typedef uint64_t UINT64;
 typedef uint64_t crypt_uword_t;
-typedef BYTE   TPMI_YES_NO;
+typedef BYTE TPMI_YES_NO;
 
 /* Subsection #3.2: Secondary Types*/
 
@@ -184,6 +202,7 @@ typedef UINT8 TPM_HT;
 
 typedef UINT16 TPM_ST;
 typedef UINT16 TPM_ALG_ID;
+typedef UINT16 TPM_KEY_BITS;
 
 typedef union __packed {
     UINT16 sym;
@@ -203,7 +222,6 @@ typedef UINT32 NV_REF;
 typedef UINT32 TPM_RC;
 typedef UINT32 TPM_CC;
 
-
 /* Subsection #3.3: Specializations of Secondary Types*/
 typedef TPM_ST TPMI_ST_COMMAND_TAG;
 
@@ -222,7 +240,7 @@ typedef TPM_ALG_ID TPMI_ALG_SIG_SCHEME;
 typedef TPM_ALG_ID TPMI_ALG_PUBLIC;
 typedef TPM_ALG_ID TPMI_ALG_RSA_SCHEME;
 
-typedef UINT16 TPMI_RSA_KEY_BITS;
+typedef TPM_KEY_BITS TPMI_RSA_KEY_BITS;
 
 /* Section #4: Complex Types */
 
@@ -251,7 +269,8 @@ typedef struct __packed {
 
 typedef struct __packed {
     UINT16 signatureSize;
-    BYTE signature[TPM_MAX_SIGNATURE_SIZE]; // Max signature size (supports RSA-2048 signatures)
+    BYTE signature[TPM_MAX_SIGNATURE_SIZE]; // Max signature size (supports
+                                            // RSA-2048 signatures)
 } TPM2B_SIGNATURE;
 
 typedef struct __packed {
@@ -278,12 +297,12 @@ typedef TPM2B_DIGEST TPM2B_AUTH;
 
 typedef struct __packed {
     TPMI_ALG_SIG_SCHEME scheme;
-    TPMI_ALG_HASH       hashAlg;
+    TPMI_ALG_HASH hashAlg;
 } TPMT_SIG_SCHEME;
 
 typedef struct __packed {
-    TPM_ST       tag;
-    TPM_HANDLE   hierarchy;
+    TPM_ST tag;
+    TPM_HANDLE hierarchy;
     TPM2B_DIGEST digest;
 } TPMT_TK_HASHCHECK;
 
@@ -292,14 +311,14 @@ typedef TPMT_TK_HASHCHECK TPMT_TK_CREATION;
 
 typedef struct __packed {
     TPMI_ALG_SIG_SCHEME sigAlg;
-    TPMI_ALG_HASH       hashAlg;
-    TPM2B_SIGNATURE     signature;
+    TPMI_ALG_HASH hashAlg;
+    TPM2B_SIGNATURE signature;
 } TPMT_SIGNATURE;
 
 typedef struct __packed {
     TPMI_ALG_SYM_OBJECT algorithm; // TPM_ALG_* algorithm (AES, SM4, etc.)
-    TPMU_SYM_KEY_BITS   keyBits;   // Key size in bits (per algorithm)
-    TPMU_SYM_MODE       mode;      // Mode selector (ECB, CBC, CFB, OFB, CTR)
+    TPMU_SYM_KEY_BITS keyBits;     // Key size in bits (per algorithm)
+    TPMU_SYM_MODE mode;            // Mode selector (ECB, CBC, CFB, OFB, CTR)
 } TPMT_SYM_DEF_OBJECT;
 
 typedef struct __packed {
@@ -309,7 +328,8 @@ typedef struct __packed {
 
 typedef struct __packed {
     UINT16 bufferSize;
-    BYTE buffer[TPM_MAX_MAX_BUFFER_SIZE]; // Larger buffer for symmetric operations
+    BYTE buffer[TPM_MAX_MAX_BUFFER_SIZE]; // Larger buffer for symmetric
+                                          // operations
 } TPM2B_MAX_BUFFER;
 
 typedef struct __packed {
@@ -333,51 +353,51 @@ typedef struct __packed {
 } TPM2B_CREATION_DATA;
 
 typedef struct __packed {
-    UINT32 PPWRITE             : 1;
-    UINT32 OWNERWRITE          : 1;
-    UINT32 AUTHWRITE           : 1;
-    UINT32 POLICYWRITE         : 1;
-    UINT32 TPM_NT              : 4;
-    UINT32 Reserved_bits_at_8  : 2;
-    UINT32 POLICY_DELETE       : 1;
-    UINT32 WRITELOCKED         : 1;
-    UINT32 WRITEALL            : 1;
-    UINT32 WRITEDEFINE         : 1;
-    UINT32 WRITE_STCLEAR       : 1;
-    UINT32 GLOBALLOCK          : 1;
-    UINT32 PPREAD              : 1;
-    UINT32 OWNERREAD           : 1;
-    UINT32 AUTHREAD            : 1;
-    UINT32 POLICYREAD          : 1;
+    UINT32 PPWRITE : 1;
+    UINT32 OWNERWRITE : 1;
+    UINT32 AUTHWRITE : 1;
+    UINT32 POLICYWRITE : 1;
+    UINT32 TPM_NT : 4;
+    UINT32 Reserved_bits_at_8 : 2;
+    UINT32 POLICY_DELETE : 1;
+    UINT32 WRITELOCKED : 1;
+    UINT32 WRITEALL : 1;
+    UINT32 WRITEDEFINE : 1;
+    UINT32 WRITE_STCLEAR : 1;
+    UINT32 GLOBALLOCK : 1;
+    UINT32 PPREAD : 1;
+    UINT32 OWNERREAD : 1;
+    UINT32 AUTHREAD : 1;
+    UINT32 POLICYREAD : 1;
     UINT32 Reserved_bits_at_20 : 5;
-    UINT32 NO_DA               : 1;
-    UINT32 ORDERLY             : 1;
-    UINT32 CLEAR_STCLEAR       : 1;
-    UINT32 READLOCKED          : 1;
-    UINT32 WRITTEN             : 1;
-    UINT32 PLATFORMCREATE      : 1;
-    UINT32 READ_STCLEAR        : 1;
+    UINT32 NO_DA : 1;
+    UINT32 ORDERLY : 1;
+    UINT32 CLEAR_STCLEAR : 1;
+    UINT32 READLOCKED : 1;
+    UINT32 WRITTEN : 1;
+    UINT32 PLATFORMCREATE : 1;
+    UINT32 READ_STCLEAR : 1;
 } TPMA_NV;
 
 typedef struct __packed {
-    UINT32 Reserved0            : 1; /* Shall be 0*/
-    UINT32 fixedTPM             : 1;
-    UINT32 stClear              : 1;
-    UINT32 Reserved1            : 1;
-    UINT32 fixedParent          : 1;
-    UINT32 sensitiveDataOrigin  : 1;
-    UINT32 userWithAuth         : 1;
-    UINT32 adminWithPolicy      : 1;
-    UINT32 firmwareLimited      : 1;
-    UINT32 svnLimited           : 1;
-    UINT32 noDA                 : 1;
+    UINT32 Reserved0 : 1; /* Shall be 0*/
+    UINT32 fixedTPM : 1;
+    UINT32 stClear : 1;
+    UINT32 Reserved1 : 1;
+    UINT32 fixedParent : 1;
+    UINT32 sensitiveDataOrigin : 1;
+    UINT32 userWithAuth : 1;
+    UINT32 adminWithPolicy : 1;
+    UINT32 firmwareLimited : 1;
+    UINT32 svnLimited : 1;
+    UINT32 noDA : 1;
     UINT32 encryptedDuplication : 1;
-    UINT32 Reserved2            : 4;
-    UINT32 restricted           : 1;
-    UINT32 decrypt              : 1;
-    UINT32 sign_encrypt         : 1;
-    UINT32 x509sign             : 1;
-    UINT32 Reserved3            : 12;
+    UINT32 Reserved2 : 4;
+    UINT32 restricted : 1;
+    UINT32 decrypt : 1;
+    UINT32 sign_encrypt : 1;
+    UINT32 x509sign : 1;
+    UINT32 Reserved3 : 12;
 } TPMA_OBJECT;
 
 typedef struct __packed {
@@ -385,11 +405,11 @@ typedef struct __packed {
     TPMI_ALG_HASH nameAlg;
     TPMA_NV attributes;
     TPM2B_DIGEST authPolicy;
-    UINT16 dataSize;  // {:MAX_NV_INDEX_SIZE}
+    UINT16 dataSize; // {:MAX_NV_INDEX_SIZE}
 } TPMS_NV_PUBLIC;
 
 typedef struct __packed {
-    UINT16 size;  // needs validation against actual size
+    UINT16 size; // needs validation against actual size
     TPMS_NV_PUBLIC nvPublic;
 } TPM2B_NV_PUBLIC;
 
@@ -460,7 +480,7 @@ typedef struct __packed {
     TPMT_RSA_SCHEME scheme;
     TPMI_RSA_KEY_BITS keyBits;
     UINT32 exponent;
-} TPMS_RSA_PARAMS; 
+} TPMS_RSA_PARAMS;
 
 typedef struct __packed {
     // TPMS_KEYDHASH_PARAMS keyedHashDetail;
@@ -484,7 +504,7 @@ typedef struct __packed {
     TPMA_OBJECT objectAttributes;
     TPM2B_DIGEST authPolicy;
     TPMU_PUBLIC_PARAMS parameters; /*[type]*/
-    TPMU_PUBLIC_ID unique; /*[type]*/
+    TPMU_PUBLIC_ID unique;         /*[type]*/
 } TPMT_PUBLIC;
 
 typedef struct __packed {
@@ -500,19 +520,51 @@ typedef struct __packed {
 
 typedef struct __packed {
     UINT32 count;
-    TPMS_PCR_SELECTION pcrSelections[HASH_COUNT];  
+    TPMS_PCR_SELECTION pcrSelections[HASH_COUNT];
 } TPML_PCR_SELECTION;
 
-typedef union __packed {
-    BYTE          bytes[DRBG_SEED_SIZE_BYTES];
+/* DRBG (Deterministic Random Bit Generator) Definitions */
+// AES-based DRBG configuration
+#define AES_MAX_KEY_SIZE_BITS 256
+#define AES_MAX_BLOCK_SIZE    16
+
+#define DRBG_KEY_SIZE_BITS AES_MAX_KEY_SIZE_BITS
+#define DRBG_IV_SIZE_BITS  (AES_MAX_BLOCK_SIZE * 8)
+
+#define RADIX_BITS  64
+#define RADIX_BYTES (RADIX_BITS / 8)
+
+#define BITS_TO_CRYPT_WORDS(bits) (((bits) + RADIX_BITS - 1) / RADIX_BITS)
+
+#define DRBG_KEY_SIZE_WORDS BITS_TO_CRYPT_WORDS(DRBG_KEY_SIZE_BITS)
+#define DRBG_KEY_SIZE_BYTES (DRBG_KEY_SIZE_WORDS * RADIX_BYTES)
+
+#define DRBG_IV_SIZE_WORDS BITS_TO_CRYPT_WORDS(DRBG_IV_SIZE_BITS)
+#define DRBG_IV_SIZE_BYTES (DRBG_IV_SIZE_WORDS * RADIX_BYTES)
+
+#define DRBG_SEED_SIZE_WORDS (DRBG_KEY_SIZE_WORDS + DRBG_IV_SIZE_WORDS)
+#define DRBG_SEED_SIZE_BYTES (DRBG_KEY_SIZE_BYTES + DRBG_IV_SIZE_BYTES)
+
+typedef union {
+    BYTE bytes[DRBG_KEY_SIZE_BYTES];
+    crypt_uword_t words[DRBG_KEY_SIZE_WORDS];
+} DRBG_KEY;
+
+typedef union {
+    BYTE bytes[DRBG_IV_SIZE_BYTES];
+    crypt_uword_t words[DRBG_IV_SIZE_WORDS];
+} DRBG_IV;
+
+typedef union {
+    BYTE bytes[DRBG_SEED_SIZE_BYTES];
     crypt_uword_t words[DRBG_SEED_SIZE_WORDS];
 } DRBG_SEED;
 
 typedef struct __packed {
-    UINT64    reseedCounter;
-    UINT32    magic;
+    UINT64 reseedCounter;
+    UINT32 magic;
     DRBG_SEED seed;
-    UINT32    lastValue[4];
+    UINT32 lastValue[4];
 } DRBG_STATE;
 
 typedef DRBG_STATE RAND_STATE;
@@ -536,18 +588,18 @@ typedef struct __packed {
     unsigned ppsHierarchy : 1;
     unsigned spsHierarchy : 1;
     unsigned evict : 1;
-    unsigned primary   : 1;
+    unsigned primary : 1;
     unsigned temporary : 1;
-    unsigned stClear   : 1;
-    unsigned hmacSeq   : 1;
-    unsigned hashSeq    : 1;
-    unsigned eventSeq   : 1;
+    unsigned stClear : 1;
+    unsigned hmacSeq : 1;
+    unsigned hashSeq : 1;
+    unsigned eventSeq : 1;
     unsigned ticketSafe : 1;
     unsigned firstBlock : 1;
     unsigned isParent : 1;
     unsigned not_used_14 : 1;
-    unsigned occupied    : 1;
-    unsigned derivation  : 1;
+    unsigned occupied : 1;
+    unsigned derivation : 1;
     unsigned external : 1;
 } OBJECT_ATTRIBUTES;
 
@@ -572,11 +624,11 @@ typedef struct __packed {
 } TPMT_SENSITIVE;
 
 typedef struct __packed {
-    OBJECT_ATTRIBUTES attributes;     
-    TPMT_PUBLIC       publicArea;
-    TPMT_SENSITIVE    sensitive;
-    TPM2B_NAME        qualifiedName;  
-    TPMI_DH_OBJECT    evictHandle;
+    OBJECT_ATTRIBUTES attributes;
+    TPMT_PUBLIC publicArea;
+    TPMT_SENSITIVE sensitive;
+    TPM2B_NAME qualifiedName;
+    TPMI_DH_OBJECT evictHandle;
     TPM2B_NAME name;
     TPMI_RH_HIERARCHY hierarchy;
 } OBJECT;
@@ -605,7 +657,7 @@ typedef struct __packed {
     TPMI_ALG_HASH platformAlg;
     TPM2B_DIGEST platformPolicy;
     TPM2B_AUTH platformAuth;
-    
+
     /* PCR: SHA-256 bank (minimal) */
     BYTE pcr_sha256[TPM_PCR_COUNT][SHA256_DIGEST_SIZE];
     /* ACT (empty) */
@@ -631,10 +683,10 @@ typedef struct __packed {
 
 // NV_Write
 typedef struct __packed {
-    TPMI_RH_NV_AUTH     authHandle;
-    TPMI_RH_NV_INDEX    nvIndex;
+    TPMI_RH_NV_AUTH authHandle;
+    TPMI_RH_NV_INDEX nvIndex;
     TPM2B_MAX_NV_BUFFER data;
-    UINT16              offset;
+    UINT16 offset;
 } NV_Write_In;
 
 // NV_Read
@@ -651,9 +703,9 @@ typedef struct __packed {
 
 // Sign
 typedef struct __packed {
-    TPM_HANDLE        keyHandle;
-    TPMT_SIG_SCHEME   inScheme;
-    TPM2B_DIGEST      digest;
+    TPM_HANDLE keyHandle;
+    TPMT_SIG_SCHEME inScheme;
+    TPM2B_DIGEST digest;
     TPMT_TK_HASHCHECK validation;
 } Sign_In;
 
@@ -663,8 +715,8 @@ typedef struct __packed {
 
 // VerifySignature
 typedef struct __packed {
-    TPM_HANDLE     keyHandle;
-    TPM2B_DIGEST   digest;
+    TPM_HANDLE keyHandle;
+    TPM2B_DIGEST digest;
     TPMT_SIGNATURE signature;
 } VerifySignature_In;
 
@@ -674,33 +726,33 @@ typedef struct __packed {
 
 // Hash
 typedef struct __packed {
-    TPM2B_MAX_BUFFER   data;
-    TPMI_ALG_HASH      hashAlg;
-    TPMI_RH_HIERARCHY  hierarchy;
+    TPM2B_MAX_BUFFER data;
+    TPMI_ALG_HASH hashAlg;
+    TPMI_RH_HIERARCHY hierarchy;
 } Hash_In;
 
 typedef struct __packed {
-    TPM2B_DIGEST      digest;
+    TPM2B_DIGEST digest;
     TPMT_TK_HASHCHECK validation;
 } Hash_Out;
 
 // EncryptDecrypt2
 typedef struct __packed {
-    TPMI_DH_OBJECT       keyHandle; // Symmetric key handle
-    TPMI_YES_NO          decrypt;   // 0=encrypt, 1=decrypt
-    TPMI_ALG_CIPHER_MODE mode;      // Mode selector (ECB, CBC, CFB, OFB, CTR)
-    TPM2B_IV             ivIn;      // Input IV (for chaining modes)
-    TPM2B_MAX_BUFFER     inData;    // Data to encrypt/decrypt
+    TPMI_DH_OBJECT keyHandle;  // Symmetric key handle
+    TPMI_YES_NO decrypt;       // 0=encrypt, 1=decrypt
+    TPMI_ALG_CIPHER_MODE mode; // Mode selector (ECB, CBC, CFB, OFB, CTR)
+    TPM2B_IV ivIn;             // Input IV (for chaining modes)
+    TPM2B_MAX_BUFFER inData;   // Data to encrypt/decrypt
 } EncryptDecrypt2_In;
 
 typedef struct __packed {
-    TPM2B_MAX_BUFFER outData;     // Encrypted/decrypted data
-    TPM2B_IV         ivOut;       // Output IV (for chaining modes)
+    TPM2B_MAX_BUFFER outData; // Encrypted/decrypted data
+    TPM2B_IV ivOut;           // Output IV (for chaining modes)
 } EncryptDecrypt2_Out;
 
 // RSA_Encrypt
 typedef struct __packed {
-    TPM_HANDLE           keyHandle;
+    TPM_HANDLE keyHandle;
     TPM2B_PUBLIC_KEY_RSA message;
 } RSA_Encrypt_In;
 
@@ -710,7 +762,7 @@ typedef struct __packed {
 
 // RSA_Decrypt
 typedef struct __packed {
-    TPM_HANDLE           keyHandle;
+    TPM_HANDLE keyHandle;
     TPM2B_PUBLIC_KEY_RSA encrypted;
 } RSA_Decrypt_In;
 
@@ -747,19 +799,19 @@ void marshal(Fifo8 *fifo, const void *data, size_t size);
 /* Subsection #6.2: Helper Functions */
 
 // NV Storage
-NV_INDEX* NvGetIndexInfo(TPM_HANDLE nvHandle, NV_REF *locator);
-TPM_RC NvWriteAccessChecks(TPM_HANDLE authHandle, TPM_HANDLE nvHandle, TPMA_NV attributes);
-TPM_RC NvWriteIndexData(NV_INDEX* nvIndex, UINT32 offset, UINT32 size, void* data);
-TPM_RC NvReadAccessChecks(TPM_HANDLE authHandle, TPM_HANDLE nvHandle, TPMA_NV attributes);
-void NvGetIndexData(NV_INDEX* nvIndex, NV_REF locator, UINT32 offset, UINT16 size, void* data);
+NV_INDEX *NvGetIndexInfo(TPM_HANDLE nvHandle, NV_REF *locator);
+TPM_RC NvWriteAccessChecks(TPM_HANDLE authHandle, TPM_HANDLE nvHandle,
+                           TPMA_NV attributes);
+TPM_RC NvWriteIndexData(NV_INDEX *nvIndex, UINT32 offset, UINT32 size,
+                        void *data);
+TPM_RC NvReadAccessChecks(TPM_HANDLE authHandle, TPM_HANDLE nvHandle,
+                          TPMA_NV attributes);
+void NvGetIndexData(NV_INDEX *nvIndex, NV_REF locator, UINT32 offset,
+                    UINT16 size, void *data);
 
-TPM_RC NvDefineSpace(
-    TPMI_RH_PROVISION authHandle,
-    TPM2B_AUTH* auth,
-    TPMS_NV_PUBLIC* publicInfo,
-    TPM_RC blameAuthHandle,
-    TPM_RC blameAuth,
-    TPM_RC blamePublic);
+TPM_RC NvDefineSpace(TPMI_RH_PROVISION authHandle, TPM2B_AUTH *auth,
+                     TPMS_NV_PUBLIC *publicInfo, TPM_RC blameAuthHandle,
+                     TPM_RC blameAuth, TPM_RC blamePublic);
 BOOL NvInit(void *memory, size_t size, state_clear_data *tpm_saved_state);
 
 /* Subsection #6.3: TPM Commands */
@@ -775,5 +827,7 @@ TPM_RC TPM2_RSA_Decrypt(RSA_Decrypt_In *in, RSA_Decrypt_Out *out);
 TPM_RC TPM2_CreatePrimary(CreatePrimary_In *in, CreatePrimary_Out *out);
 /* NV Memory */
 TPM_RC TPM2_NV_DefineSpace(NV_DefineSpace_In *in);
-TPM_RC TPM2_NV_Write(NV_Write_In* in);
-TPM_RC TPM2_NV_Read(NV_Read_In* in, NV_Read_Out* out);
+TPM_RC TPM2_NV_Write(NV_Write_In *in);
+TPM_RC TPM2_NV_Read(NV_Read_In *in, NV_Read_Out *out);
+
+#endif /* TPM2_SPEC_PROTOCOL_H */
