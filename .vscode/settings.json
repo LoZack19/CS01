@@ -82,4 +82,14 @@
   "C_Cpp_Runner.msvcSecureNoWarnings": false,
   "editor.fontFamily": "Cascadia Code",
   "editor.fontLigatures": true,
+  "C_Cpp.clang_format_style": "file:/home/giovanni/github/CS01/.clang-format",
+  "C_Cpp.clang_format_fallbackStyle": "LLVM",
+  "[c]": {
+    "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd",
+    "editor.formatOnSave": true
+  },
+  "[cpp]": {
+    "editor.defaultFormatter": "ms-vscode.cpptools",
+    "editor.formatOnSave": true
+  }
 }

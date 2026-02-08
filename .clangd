@@ -1,0 +1,10 @@
+CompileFlags:
+  Remove:
+    # GCC-specific flag not supported by clang
+    - -fzero-call-used-regs=used-gpr
+    # Other GCC flags that might cause issues
+    - -fno-PIE
+    - -fcf-protection=*
+  Add:
+    # Ensure C11 standard
+    - -std=gnu11

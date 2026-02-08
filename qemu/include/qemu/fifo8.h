@@ -1,6 +1,9 @@
 #ifndef QEMU_FIFO8_H
 #define QEMU_FIFO8_H
 
+#include "qemu/typedefs.h"
+#include <stdbool.h>
+#include <stdint.h>
 
 typedef struct {
     /* All fields are private */
@@ -215,16 +218,13 @@ uint32_t fifo8_num_used(Fifo8 *fifo);
 
 extern const VMStateDescription vmstate_fifo8;
 
-#define VMSTATE_FIFO8_TEST(_field, _state, _test) {                  \
-    .name         = (stringify(_field)),                             \
-    .field_exists = (_test),                                         \
-    .size         = sizeof(Fifo8),                                   \
-    .vmsd         = &vmstate_fifo8,                                  \
-    .flags        = VMS_STRUCT,                                      \
-    .offset       = vmstate_offset_value(_state, _field, Fifo8),     \
-}
+#define VMSTATE_FIFO8_TEST(_field, _state, _test)                           \
+    {                                                                       \
+        .name = (stringify(_field)), .field_exists = (_test),               \
+        .size = sizeof(Fifo8), .vmsd = &vmstate_fifo8, .flags = VMS_STRUCT, \
+        .offset = vmstate_offset_value(_state, _field, Fifo8),              \
+    }
 
-#define VMSTATE_FIFO8(_field, _state)                                \
-    VMSTATE_FIFO8_TEST(_field, _state, NULL)
+#define VMSTATE_FIFO8(_field, _state) VMSTATE_FIFO8_TEST(_field, _state, NULL)
 
 #endif /* QEMU_FIFO8_H */
