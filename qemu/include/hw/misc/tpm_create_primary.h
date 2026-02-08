@@ -111,4 +111,60 @@ TPM_RC TicketComputeCreation(TPMI_RH_HIERARCHY hierarchy, TPM2B_NAME *name,
                              TPM2B_DIGEST *creation,
                              TPMT_TK_CREATION *ticket);
 
+/* ========================================================================
+ * Object – Load support (tpm_object.c + tpm_load.c)
+ * ======================================================================== */
+
+/*
+ * HandleToObject – Resolve a transient handle to an OBJECT pointer.
+ * Returns NULL for permanent handles or if the slot is not occupied.
+ *
+ * Reference: ms-tpm-20-ref Object.c HandleToObject()
+ */
+OBJECT *HandleToObject(TPMI_DH_OBJECT handle);
+
+/*
+ * ObjectIsParent – Return TRUE if the object has the isParent attribute set.
+ *
+ * Reference: ms-tpm-20-ref Object_spt.c ObjectIsParent()
+ */
+BOOL ObjectIsParent(OBJECT *parentObject);
+
+/*
+ * PrivateToSensitive – Unwrap a TPM2B_PRIVATE blob into a TPMT_SENSITIVE.
+ *
+ * In the full spec this involves HMAC integrity check and decryption.
+ * Our simplified model just copies the marshaled TPMT_SENSITIVE out of
+ * the blob.
+ *
+ * Reference: ms-tpm-20-ref Object_spt.c PrivateToSensitive()
+ */
+TPM_RC PrivateToSensitive(TPM2B *inPrivate, TPM2B *name,
+                          OBJECT *parent, TPM_ALG_ID nameAlg,
+                          TPMT_SENSITIVE *sensitive);
+
+/*
+ * SensitiveToPrivate – Wrap a TPMT_SENSITIVE into a TPM2B_PRIVATE blob.
+ *
+ * Simplified model: copies the raw TPMT_SENSITIVE bytes into the private
+ * buffer.
+ *
+ * Reference: ms-tpm-20-ref Object_spt.c SensitiveToPrivate()
+ */
+void SensitiveToPrivate(TPMT_SENSITIVE *sensitive, TPM2B_NAME *name,
+                        OBJECT *parent, TPM_ALG_ID nameAlg,
+                        TPM2B_PRIVATE *outPrivate);
+
+/*
+ * ObjectLoad – Common function to load a non-primary object.
+ * Validates the public area, loads sensitive if present, and
+ * checks cryptographic binding.
+ *
+ * Reference: ms-tpm-20-ref Object.c ObjectLoad()
+ */
+TPM_RC ObjectLoad(OBJECT *object, OBJECT *parent,
+                  TPMT_PUBLIC *publicArea, TPMT_SENSITIVE *sensitive,
+                  TPM_RC blamePublic, TPM_RC blameSensitive,
+                  TPM2B_NAME *name);
+
 #endif /* HW_MISC_TPM_CREATE_PRIMARY_H */

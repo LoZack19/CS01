@@ -69,16 +69,21 @@
 #define TPM_RC_ATTRIBUTES       (TPM_RC)(RC_FMT1 + 0x002)
 #define TPM_RCS_ATTRIBUTES      (TPM_RC)(RC_FMT1 + 0x002)
 #define TPM_RC_HASH             (TPM_RC)(RC_FMT1 + 0x003)
+#define TPM_RCS_HASH            (TPM_RC)(RC_FMT1 + 0x003)
 #define TPM_RC_VALUE            (TPM_RC)(RC_FMT1 + 0x004)
 #define TPM_RCS_VALUE           (TPM_RC)(RC_FMT1 + 0x004)
 #define TPM_RC_HIERARCHY        (TPM_RC)(RC_FMT1 + 0x005)
 #define TPM_RCS_HIERARCHY       (TPM_RC)(RC_FMT1 + 0x005)
 #define TPM_RC_MODE             (TPM_RC)(RC_FMT1 + 0x009)
+#define TPM_RC_TYPE             (TPM_RC)(RC_FMT1 + 0x00A)
+#define TPM_RCS_TYPE            (TPM_RC)(RC_FMT1 + 0x00A)
 #define TPM_RC_HANDLE           (TPM_RC)(RC_FMT1 + 0x00B)
 #define TPM_RCS_HANDLE          (TPM_RC)(RC_FMT1 + 0x00B)
 #define TPM_RCS_SIZE            (TPM_RC)(RC_FMT1 + 0x015)
 #define TPM_RC_SIGNATURE        (TPM_RC)(RC_FMT1 + 0x01B)
 #define TPM_RC_KEY              (TPM_RC)(RC_FMT1 + 0x01C)
+#define TPM_RC_BINDING          (TPM_RC)(RC_FMT1 + 0x022)
+#define TPM_RCS_BINDING         (TPM_RC)(RC_FMT1 + 0x022)
 
 // TPM_RC Modifiers
 #define RC_NV_DefineSpace_authHandle (TPM_RC_H + TPM_RC_1)
@@ -127,6 +132,8 @@
 #define TPM_CC_RSA_Decrypt     0x00000174
 // TPM Key Life Cycle Management
 #define TPM_CC_CreatePrimary   0x00000131
+#define TPM_CC_Create          0x00000153
+#define TPM_CC_Load            0x00000157
 
 // TPMI_ALG_HASH
 #define TPM_ALG_RSA      0x0001
@@ -623,6 +630,28 @@ typedef struct __packed {
     TPMU_SENSITIVE_COMPOSITE sensitive;
 } TPMT_SENSITIVE;
 
+/*
+ * TPM2B_PRIVATE – Encrypted private area blob.
+ *
+ * The maximum size is implementation-defined.  We use a buffer large
+ * enough to hold a marshaled TPMT_SENSITIVE plus integrity + IV
+ * overhead (simplified model: just the raw TPMT_SENSITIVE bytes).
+ */
+#define MAX_PRIVATE_SIZE  (sizeof(TPMT_SENSITIVE) + SHA256_DIGEST_SIZE + 16)
+
+typedef struct __packed {
+    UINT16 size;
+    BYTE buffer[sizeof(TPMT_SENSITIVE) + SHA256_DIGEST_SIZE + 16];
+} _TPM2B_PRIVATE_BUFFER;
+
+typedef union {
+    _TPM2B_PRIVATE_BUFFER b;
+    struct {
+        UINT16 size;
+        BYTE buffer[sizeof(TPMT_SENSITIVE) + SHA256_DIGEST_SIZE + 16];
+    };
+} TPM2B_PRIVATE;
+
 typedef struct __packed {
     OBJECT_ATTRIBUTES attributes;
     TPMT_PUBLIC publicArea;
@@ -789,6 +818,45 @@ typedef struct __packed {
     TPM2B_NAME name;
 } CreatePrimary_Out;
 
+// Create (TPM2_Create – creates an object under a parent but does NOT load it)
+
+#define RC_Create_parentHandle (TPM_RC_H + TPM_RC_1)
+#define RC_Create_inSensitive  (TPM_RC_P + TPM_RC_1)
+#define RC_Create_inPublic     (TPM_RC_P + TPM_RC_2)
+
+typedef struct __packed {
+    TPMI_DH_OBJECT parentHandle;
+    TPM2B_SENSITIVE_CREATE inSensitive;
+    TPM2B_PUBLIC inPublic;
+    TPM2B_DATA outsideInfo;
+    TPML_PCR_SELECTION creationPCR;
+} Create_In;
+
+typedef struct __packed {
+    TPM2B_PRIVATE outPrivate;
+    TPM2B_PUBLIC outPublic;
+    TPM2B_CREATION_DATA creationData;
+    TPM2B_DIGEST creationHash;
+    TPMT_TK_CREATION creationTicket;
+} Create_Out;
+
+// Load (TPM2_Load – loads a key created by TPM2_Create)
+
+#define RC_Load_parentHandle (TPM_RC_H + TPM_RC_1)
+#define RC_Load_inPrivate    (TPM_RC_P + TPM_RC_1)
+#define RC_Load_inPublic     (TPM_RC_P + TPM_RC_2)
+
+typedef struct __packed {
+    TPMI_DH_OBJECT parentHandle;
+    TPM2B_PRIVATE  inPrivate;
+    TPM2B_PUBLIC   inPublic;
+} Load_In;
+
+typedef struct __packed {
+    TPM_HANDLE objectHandle;
+    TPM2B_NAME name;
+} Load_Out;
+
 /* Section #6: Function Prototypes */
 
 /* Subsection #6.1: Marshalling and Unmarshalling functions */
@@ -825,6 +893,8 @@ TPM_RC TPM2_RSA_Encrypt(RSA_Encrypt_In *in, RSA_Encrypt_Out *out);
 TPM_RC TPM2_RSA_Decrypt(RSA_Decrypt_In *in, RSA_Decrypt_Out *out);
 /* Key Lifecycle Management */
 TPM_RC TPM2_CreatePrimary(CreatePrimary_In *in, CreatePrimary_Out *out);
+TPM_RC TPM2_Create(Create_In *in, Create_Out *out);
+TPM_RC TPM2_Load(Load_In *in, Load_Out *out);
 /* NV Memory */
 TPM_RC TPM2_NV_DefineSpace(NV_DefineSpace_In *in);
 TPM_RC TPM2_NV_Write(NV_Write_In *in);

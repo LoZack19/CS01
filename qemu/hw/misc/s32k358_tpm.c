@@ -234,6 +234,57 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
 
             return;
 
+        case TPM_CC_CreatePrimary:
+            CreatePrimary_In create_primary_in;
+            CreatePrimary_Out create_primary_out;
+
+            if (cmd_header.commandSize != sizeof(tpm_cmd_header_t) + sizeof(create_primary_in)) {
+                tpm_send_error_response(s, TPM_RC_COMMAND_SIZE);
+                return;
+            }
+
+            UNMARSHAL(&create_primary_in, &s->infifo);
+
+            rc = TPM2_CreatePrimary(&create_primary_in, &create_primary_out);
+
+            tpm_send_response(s, rc, &create_primary_out, sizeof(create_primary_out));
+
+            return;
+
+        case TPM_CC_Create:
+            Create_In create_in;
+            Create_Out create_out;
+
+            if (cmd_header.commandSize != sizeof(tpm_cmd_header_t) + sizeof(create_in)) {
+                tpm_send_error_response(s, TPM_RC_COMMAND_SIZE);
+                return;
+            }
+
+            UNMARSHAL(&create_in, &s->infifo);
+
+            rc = TPM2_Create(&create_in, &create_out);
+
+            tpm_send_response(s, rc, &create_out, sizeof(create_out));
+
+            return;
+
+        case TPM_CC_Load:
+            Load_In load_in;
+            Load_Out load_out;
+
+            if (cmd_header.commandSize != sizeof(tpm_cmd_header_t) + sizeof(load_in)) {
+                tpm_send_error_response(s, TPM_RC_COMMAND_SIZE);
+                return;
+            }
+
+            UNMARSHAL(&load_in, &s->infifo);
+
+            rc = TPM2_Load(&load_in, &load_out);
+
+            tpm_send_response(s, rc, &load_out, sizeof(load_out));
+
+            return;
+
         default: /* unimplemented command */
             qemu_log_mask(LOG_GUEST_ERROR, "(ERROR) TPM: Unimplemented command\n");
             tpm_send_error_response(s, TPM_RC_COMMAND_CODE);

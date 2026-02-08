@@ -164,4 +164,5 @@ system_ss.add(when: 'CONFIG_S32K358_TPM', if_true: files(
   'tpm_hierarchy.c',
   'tpm_object.c',
   'tpm_drbg.c',
-  'tpm_ticket.c'))
+  'tpm_ticket.c',
+  'tpm_load.c'))

@@ -492,3 +492,91 @@ TPM_RC TPM2_CreatePrimary(CreatePrimary_In *in, CreatePrimary_Out *out) {
     ObjectSetLoadedAttributes(newObject, in->primaryHandle);
     return result;
 }
+
+/*
+ * TPM2_Create – Create an ordinary object under a parent key.
+ *
+ * Unlike CreatePrimary, Create uses the parent's protection seed and
+ * returns a private blob (TPM2B_PRIVATE) + public area but does NOT
+ * load the object into a transient slot.  The caller must use
+ * TPM2_Load to make the object usable.
+ *
+ * Reference: ms-tpm-20-ref Create.c TPM2_Create()
+ */
+TPM_RC TPM2_Create(Create_In *in, Create_Out *out)
+{
+    TPM_RC       result = TPM_RC_SUCCESS;
+    OBJECT      *parentObject;
+    OBJECT      *newObject;
+    TPMT_PUBLIC *publicArea;
+
+    /* Input Validation */
+    parentObject = HandleToObject(in->parentHandle);
+    if (parentObject == NULL)
+        return TPM_RCS_HANDLE + RC_Create_parentHandle;
+
+    /* Does parent have the proper attributes? */
+    if (!ObjectIsParent(parentObject))
+        return TPM_RCS_TYPE + RC_Create_parentHandle;
+
+    /* Get a temporary slot for the creation.
+     * We use FindEmptyObjectSlot to get scratch space but we will
+     * NOT leave the object loaded. */
+    newObject = FindEmptyObjectSlot(NULL);
+    if (newObject == NULL)
+        return TPM_RC_OBJECT_MEMORY;
+
+    publicArea = &newObject->publicArea;
+    *publicArea = in->inPublic.publicArea;
+
+    /* Check attributes. */
+    result = CreateChecks(parentObject, 0, publicArea,
+                          in->inSensitive.sensitive.data.t.size);
+    if (result != TPM_RC_SUCCESS) {
+        /* Free the slot before returning. */
+        newObject->attributes.occupied = CLEAR;
+        return RcSafeAddToResult(result, RC_Create_inPublic);
+    }
+
+    /* Validate the sensitive area values. */
+    if (!AdjustAuthSize(&in->inSensitive.sensitive.userAuth,
+                        publicArea->nameAlg)) {
+        newObject->attributes.occupied = CLEAR;
+        return TPM_RCS_SIZE + RC_Create_inSensitive;
+    }
+
+    /* Create the cryptographic material using the global RNG
+     * (non-primary objects do not use a seeded DRBG). */
+    result = CryptCreateObject(newObject, &in->inSensitive.sensitive, NULL);
+    if (result != TPM_RC_SUCCESS) {
+        newObject->attributes.occupied = CLEAR;
+        return result;
+    }
+
+    /* Produce the output public area. */
+    out->outPublic.publicArea = newObject->publicArea;
+    out->outPublic.size = sizeof(TPMT_PUBLIC);
+
+    /* Wrap the sensitive area into the private blob. */
+    SensitiveToPrivate(&newObject->sensitive,
+                       &newObject->name,
+                       parentObject,
+                       newObject->publicArea.nameAlg,
+                       &out->outPrivate);
+
+    /* Fill in creation data. */
+    FillInCreationData(in->parentHandle, publicArea->nameAlg,
+                       &in->creationPCR, &in->outsideInfo,
+                       &out->creationData, &out->creationHash);
+
+    /* Compute creation ticket. */
+    result = TicketComputeCreation(EntityGetHierarchy(in->parentHandle),
+                                   &newObject->name,
+                                   &out->creationHash,
+                                   &out->creationTicket);
+
+    /* Free the temporary slot – Create does NOT load the object. */
+    newObject->attributes.occupied = CLEAR;
+
+    return result;
+}

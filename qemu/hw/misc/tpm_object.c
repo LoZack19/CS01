@@ -49,6 +49,45 @@ OBJECT *FindEmptyObjectSlot(TPM_HANDLE *handle)
 }
 
 /*
+ * HandleToObject – Resolve a transient handle to an OBJECT pointer.
+ *
+ * Returns NULL for permanent handles or if the slot is not occupied.
+ *
+ * Reference: ms-tpm-20-ref Object.c HandleToObject()
+ */
+OBJECT *HandleToObject(TPMI_DH_OBJECT handle)
+{
+    UINT32 index;
+
+    /* Permanent handles have no associated OBJECT. */
+    if ((handle >> HR_SHIFT) == 0x40) {
+        return NULL;
+    }
+
+    index = handle - HR_TRANSIENT;
+    if (index >= MAX_LOADED_OBJECTS) {
+        return NULL;
+    }
+    if (!s_objectSlotUsed[index] || !s_objects[index].attributes.occupied) {
+        return NULL;
+    }
+    return &s_objects[index];
+}
+
+/*
+ * ObjectIsParent – Return TRUE if the object has the isParent attribute.
+ *
+ * Reference: ms-tpm-20-ref Object_spt.c ObjectIsParent()
+ */
+BOOL ObjectIsParent(OBJECT *parentObject)
+{
+    if (parentObject == NULL) {
+        return FALSE;
+    }
+    return parentObject->attributes.isParent;
+}
+
+/*
  * ObjectSetLoadedAttributes – Set the attributes of an object that are
  * established at load-time (hierarchy, isParent, …).
  *
