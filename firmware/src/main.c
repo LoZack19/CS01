@@ -771,51 +771,34 @@ void TPM2_CreatePrimary_test(void) {
     // ASSERT Name should match the expected value for the given template
     // ----------------------------------------------------------------
 
-    // 1. Start SHA-256 Context
+    // The TPM QEMU computes Name = nameAlg_BE(2) || SHA256(raw struct bytes
+    // of TPMT_PUBLIC). It uses a simplified "marshaling" that is just a
+    // memcpy of the struct, so we must do the same on the firmware side.
+
+    // 1. Hash the raw bytes of the TPMT_PUBLIC struct
     SHA256_CTX ctx;
     SHA256_Init(&ctx);
+    SHA256_Update(&ctx, (uint8_t *)&g_create_primary_out.outPublic.publicArea,
+                  sizeof(TPMT_PUBLIC));
 
-    // 2. Hash the Known Template Header (24 bytes calculated above)
-    uint8_t header[] = {
-        0x00, 0x01,                         // RSA
-        0x00, 0x0B,                         // SHA256
-        0x00, 0x03, 0x00, 0x56,             // Attributes
-        0x00, 0x00,                         // Empty Policy
-        0x00, 0x06, 0x00, 0x80, 0x00, 0x43, // AES 128 CFB
-        0x00, 0x10,                         // NULL Scheme
-        0x08, 0x00,                         // 2048 bits
-        0x00, 0x00, 0x00, 0x00              // Exponent 0
-    };
-    SHA256_Update(&ctx, header, sizeof(header));
-
-    // 3. Hash the Unknowns (Taken from TPM output)
-    uint8_t unique_size[2];
-    unique_size[0] =
-        (g_create_primary_out.outPublic.publicArea.unique.rsa.size >> 8) & 0xFF; // Big Endian
-    unique_size[1] = (g_create_primary_out.outPublic.publicArea.unique.rsa.size) & 0xFF;
-
-    SHA256_Update(&ctx, unique_size, 2); // Hash the size (should be 0x0100)
-    SHA256_Update(&ctx, g_create_primary_out.outPublic.publicArea.unique.rsa.buffer,
-                  g_create_primary_out.outPublic.publicArea.unique.rsa.size);
-
-    // 4. Finalize
+    // 2. Finalize
     uint8_t digest[32];
     SHA256_Final(digest, &ctx);
 
-    // 5. Prepend NameAlg (00 0B) to get the final "Name"
+    // 3. Prepend NameAlg (00 0B) to get the final "Name"
     uint8_t expected_name[34];
-    expected_name[0] = 0x00;
-    expected_name[1] = 0x0B; // SHA256
+    expected_name[0] = (uint8_t)(g_create_primary_out.outPublic.publicArea.nameAlg >> 8);
+    expected_name[1] = (uint8_t)(g_create_primary_out.outPublic.publicArea.nameAlg & 0xFF);
     memcpy(&expected_name[2], digest, 32);
 
-    // 6. Compare with TPM returned Name
-    assert(g_create_primary_out.name.size == sizeof(expected_name),
-           "TPM2_CreatePrimary Name size mismatch", "34",
-           "34"); // Hardcode string for now as simple integer to string is missing
-
-    // assert(g_create_primary_out.name.size == sizeof(expected_name),
-    //       "TPM2_CreatePrimary Name size mismatch", "34",
-    //       string_from_uint32(g_create_primary_out.name.size));
+    // 4. Compare with TPM returned Name
+    {
+        char exp_s[8], act_s[8];
+        snprintf(exp_s, sizeof(exp_s), "%u", (unsigned)sizeof(expected_name));
+        snprintf(act_s, sizeof(act_s), "%u", g_create_primary_out.name.size);
+        assert(g_create_primary_out.name.size == sizeof(expected_name),
+               "TPM2_CreatePrimary Name size mismatch", exp_s, act_s);
+    }
     assert(memcmp(g_create_primary_out.name.buffer, expected_name,
                   sizeof(expected_name)) == 0,
            "TPM2_CreatePrimary Name mismatch", NULL, NULL);
@@ -829,6 +812,11 @@ void TPM2_CreatePrimary_test(void) {
     SHA256_CTX creation_ctx;
     SHA256_Init(&creation_ctx);
 
+    DBG_PRINTF("[DBG] CreatePrimary: creationData.size = %u\n",
+               g_create_primary_out.creationData.size);
+    DBG_PRINTF("[DBG] CreatePrimary: creationHash.size = %u\n",
+               g_create_primary_out.creationHash.size);
+
     // We hash the buffer of creationData, which contains the marshaled
     // TPMS_CREATION_DATA
     SHA256_Update(&creation_ctx, g_create_primary_out.creationData.buffer,
@@ -836,13 +824,13 @@ void TPM2_CreatePrimary_test(void) {
     SHA256_Final(calculated_creation_hash, &creation_ctx);
 
     // 2. Compare calculated hash against the creationHash returned by the TPM
-    assert(g_create_primary_out.creationHash.size == 32,
-           "TPM2_CreatePrimary creationHash size mismatch", "32",
-           "32"); // Hardcode string for now
-
-    // assert(g_create_primary_out.creationHash.size == 32,
-    //       "TPM2_CreatePrimary creationHash size mismatch", "32",
-    //       string_from_uint32(g_create_primary_out.creationHash.size));
+    {
+        char exp_s[8], act_s[8];
+        snprintf(exp_s, sizeof(exp_s), "32");
+        snprintf(act_s, sizeof(act_s), "%u", g_create_primary_out.creationHash.size);
+        assert(g_create_primary_out.creationHash.size == 32,
+               "TPM2_CreatePrimary creationHash size mismatch", exp_s, act_s);
+    }
 
     assert(memcmp(g_create_primary_out.creationHash.buffer,
                   calculated_creation_hash, 32) == 0,
@@ -871,67 +859,116 @@ void TPM2_CreatePrimary_test(void) {
 /**
  * @brief Test TPM2_Create command
  *
- * PURPOSE: Verify that the TPM2_Create command successfully creates a new key
- *          under a parent (e.g., primary key in the Owner hierarchy).
+ * PURPOSE: Verify that the TPM2_Create command successfully creates a new
+ *          RSA signing key under the primary (storage) key created by
+ *          TPM2_CreatePrimary.
  *
  * PASS:
  *   - TPM_RC_SUCCESS returned
- *   - outPrivate.dataSize > 0 (private portion generated)
- *   - outPublic.dataSize > 0 (public portion generated)
+ *   - outPrivate.size > 0 (encrypted private portion generated)
+ *   - outPublic.size  > 0 (public portion generated)
+ *   - Hash(creationData) == creationHash
+ *   - creationTicket tag == TPM_ST_CREATION
  *
  * FAIL:
  *   - Any TPM_RC other than SUCCESS
  *   - TPM_RC_BAD_TAG or TPM_RC_COMMAND_SIZE (marshalling errors)
  *   - Empty outputs (size == 0)
+ *   - creationHash mismatch
  */
 #ifdef TPM_TEST_ENABLE_CREATE
 void TPM2_Create_test(void) {
     TPM_RC res;
 
-    DBG_PRINT("[TEST] TPM2_Create: Creating new key under primary key\n");
+    DBG_PRINT("[TEST] TPM2_Create: Creating RSA signing key under primary\n");
 
     /* Use the primary key handle from TPM2_CreatePrimary test */
     g_parent_handle = g_create_primary_out.objectHandle;
+    DBG_PRINTF("[TEST] TPM2_Create: parent handle = 0x%08lX\n",
+               (unsigned long)g_parent_handle);
 
     Create_In in = {0};
     memset(&g_create_out, 0, sizeof(g_create_out));
 
-    /* Configure input parameters */
+    /* ---- Parent handle ---- */
     in.parentHandle = g_parent_handle;
 
-    /* Auth value for the new key (empty for this test) */
+    /* ---- Sensitive: empty auth & no injected data ---- */
     in.inSensitive.size = 0;
+    in.inSensitive.sensitive.userAuth.size = 0;
+    in.inSensitive.sensitive.data.size = 0;
 
-    /* Public template - minimal configuration for test */
-    in.inPublic.size = 4;
+    /* ---- Public template: RSA-2048 signing key (unrestricted) ---- */
+    in.inPublic.size = 0; /* TPM/marshaller will compute */
     in.inPublic.publicArea.type = TPM_ALG_RSA;
-    // Note: Other fields in publicArea should ideally be set, but relying on {0} init and size=4 for basic test entry
+    in.inPublic.publicArea.nameAlg = TPM_ALG_SHA256;
 
-    /* No outside info */
+    in.inPublic.publicArea.objectAttributes.fixedTPM = 1;
+    in.inPublic.publicArea.objectAttributes.fixedParent = 1;
+    in.inPublic.publicArea.objectAttributes.sensitiveDataOrigin = 1;
+    in.inPublic.publicArea.objectAttributes.userWithAuth = 1;
+    in.inPublic.publicArea.objectAttributes.sign_encrypt = 1;
+    /* NOT restricted, NOT decrypt => unrestricted signing key */
+
+    in.inPublic.publicArea.authPolicy.size = 0;
+
+    /* No inner symmetric protection (signing key, not storage key) */
+    in.inPublic.publicArea.parameters.rsaDetail.symmetric.algorithm =
+        TPM_ALG_NULL;
+    in.inPublic.publicArea.parameters.rsaDetail.scheme.scheme =
+        TPM_ALG_RSASSA;
+    in.inPublic.publicArea.parameters.rsaDetail.scheme.details.anySig
+        .hashAlg = TPM_ALG_SHA256;
+    in.inPublic.publicArea.parameters.rsaDetail.keyBits = 2048;
+    in.inPublic.publicArea.parameters.rsaDetail.exponent = 0; /* default 65537 */
+
+    in.inPublic.publicArea.unique.rsa.size = 0; /* TPM generates */
+
+    /* ---- No outside info / PCR ---- */
     in.outsideInfo.size = 0;
+    in.creationPCR.count = 0;
 
-    /* No PCR selection */
-    in.creationPCR.count = 0; // It is a TPML_PCR_SELECTION struct
-
+    /* ---- Execute command ---- */
     res = TPM2_Create(&in, &g_create_out);
 
-    /* Check for marshalling errors first */
+    /* ---- Marshalling sanity ---- */
     assert(res != TPM_RC_BAD_TAG, "TPM2_Create failed: bad tag\n",
            "!= TPM_RC_BAD_TAG", string_from_TPM_RC(res));
-
     assert(res != TPM_RC_COMMAND_SIZE, "TPM2_Create failed: command size\n",
            "!= TPM_RC_COMMAND_SIZE", string_from_TPM_RC(res));
 
-    /* Check for success */
+    /* ---- Result validation ---- */
+    assert(res == TPM_RC_SUCCESS, "TPM2_Create: command failed\n",
+           string_from_TPM_RC(TPM_RC_SUCCESS), string_from_TPM_RC(res));
+
     if (res == TPM_RC_SUCCESS) {
         g_key_created = true;
 
-        /* Verify output data is present */
+        /* Private portion must be present (encrypted blob) */
         assert(g_create_out.outPrivate.size > 0,
                "TPM2_Create: outPrivate is empty\n", "> 0", "0");
 
+        /* Public portion must be present */
         assert(g_create_out.outPublic.size > 0,
                "TPM2_Create: outPublic is empty\n", "> 0", "0");
+
+        /* ---- Hash(creationData) == creationHash ---- */
+        uint8_t calc_hash[32];
+        SHA256_CTX hash_ctx;
+        SHA256_Init(&hash_ctx);
+        SHA256_Update(&hash_ctx, g_create_out.creationData.buffer,
+                      g_create_out.creationData.size);
+        SHA256_Final(calc_hash, &hash_ctx);
+
+        assert(g_create_out.creationHash.size == 32,
+               "TPM2_Create: creationHash size != 32\n", "32", "other");
+        assert(memcmp(g_create_out.creationHash.buffer, calc_hash, 32) == 0,
+               "TPM2_Create: creationHash mismatch\n", NULL, NULL);
+
+        /* ---- creationTicket tag ---- */
+        assert(g_create_out.creationTicket.tag == TPM_ST_CREATION,
+               "TPM2_Create: ticket tag invalid\n", "TPM_ST_CREATION",
+               "OTHER");
 
         DBG_PRINTF(
             "[TEST] TPM2_Create: SUCCESS (private=%u, public=%u bytes)\n",
@@ -939,11 +976,6 @@ void TPM2_Create_test(void) {
     } else {
         DBG_PRINTF("[TEST] TPM2_Create: FAILED with rc=0x%08lX (%s)\n",
                    (unsigned long)res, string_from_TPM_RC(res));
-
-        /* Not necessarily a test failure - TPM may not support this operation
-         * without proper setup (primary key, etc.) */
-        assert(res == TPM_RC_SUCCESS, "TPM2_Create: command failed\n",
-               string_from_TPM_RC(TPM_RC_SUCCESS), string_from_TPM_RC(res));
     }
 }
 #endif
@@ -958,13 +990,15 @@ void TPM2_Create_test(void) {
  *
  * PASS:
  *   - TPM_RC_SUCCESS returned
- *   - objectHandle != 0 and != TPM_RH_UNASSIGNED (valid handle assigned)
+ *   - objectHandle is in the transient range (0x80XXXXXX)
  *   - name.size > 0 (object name computed)
+ *   - Name == nameAlg || Hash(publicArea)   (computed from outPublic)
  *
  * FAIL:
  *   - Any TPM_RC other than SUCCESS
- *   - Invalid handle returned
+ *   - Handle outside transient range
  *   - Empty name
+ *   - Name mismatch with calculated value
  */
 #ifdef TPM_TEST_ENABLE_LOAD
 void TPM2_Load_test(void) {
@@ -975,6 +1009,8 @@ void TPM2_Load_test(void) {
     /* Skip if Create failed */
     if (!g_key_created) {
         DBG_PRINT("[TEST] TPM2_Load: SKIPPED (Create failed)\n");
+        assert(false, "TPM2_Load: SKIPPED because Create failed\n",
+               "g_key_created==true", "false");
         return;
     }
 
@@ -988,47 +1024,116 @@ void TPM2_Load_test(void) {
     memcpy(&in.inPrivate, &g_create_out.outPrivate, sizeof(in.inPrivate));
     memcpy(&in.inPublic, &g_create_out.outPublic, sizeof(in.inPublic));
 
+    DBG_PRINTF("[TEST] TPM2_Load: parent=0x%08lX, private=%u, public=%u\n",
+               (unsigned long)in.parentHandle,
+               in.inPrivate.size, in.inPublic.size);
+
+    /* ---- Execute command ---- */
     res = TPM2_Load(&in, &g_load_out);
 
-    /* Check for marshalling errors */
+    /* ---- Marshalling sanity ---- */
     assert(res != TPM_RC_BAD_TAG, "TPM2_Load failed: bad tag\n",
            "!= TPM_RC_BAD_TAG", string_from_TPM_RC(res));
-
     assert(res != TPM_RC_COMMAND_SIZE, "TPM2_Load failed: command size\n",
            "!= TPM_RC_COMMAND_SIZE", string_from_TPM_RC(res));
 
-    if (res == TPM_RC_SUCCESS) {
-        g_key_loaded = true;
+    /* ---- Must succeed ---- */
+    assert(res == TPM_RC_SUCCESS, "TPM2_Load: command failed\n",
+           string_from_TPM_RC(TPM_RC_SUCCESS), string_from_TPM_RC(res));
 
-    // Verify handle is valid (not zero, not unassigned)
-    if (g_load_out.objectHandle == 0 || g_load_out.objectHandle == TPM_RH_UNASSIGNED) {
-        // Handle assertion manually since we need values in message
-        char buffer[128];
-        snprintf(buffer, sizeof(buffer), "TPM2_Load: objectHandle is invalid (0x%08lX)\n",
-                 (unsigned long)g_load_out.objectHandle);
-        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)buffer, strlen(buffer), portMAX_DELAY);
-        assert_failures++;
-        assert_count++;
-    } else {
-        assert_count++;
-    }
-
-    // assert(g_load_out.objectHandle != 0,
-    //       "TPM2_Load: objectHandle is zero\n", "!= 0", "0");
-        /* Verify name was calculated */
-        assert(g_load_out.name.size > 0, "TPM2_Load: name is empty\n", "> 0",
-               "0");
-
-        DBG_PRINTF("[TEST] TPM2_Load: SUCCESS (handle=0x%08lX, name_size=%u)\n",
-                   (unsigned long)g_load_out.objectHandle,
-                   g_load_out.name.size);
-    } else {
+    if (res != TPM_RC_SUCCESS) {
         DBG_PRINTF("[TEST] TPM2_Load: FAILED with rc=0x%08lX (%s)\n",
                    (unsigned long)res, string_from_TPM_RC(res));
-
-        assert(res == TPM_RC_SUCCESS, "TPM2_Load: command failed\n",
-               string_from_TPM_RC(TPM_RC_SUCCESS), string_from_TPM_RC(res));
+        return;
     }
+
+    g_key_loaded = true;
+
+    /* ================================================================
+     * ASSERT 1: objectHandle is in transient object range (0x80XXXXXX)
+     * TPM_HT_TRANSIENT = 0x80, shifted by HR_SHIFT (24) => 0x80000000
+     * ================================================================ */
+    {
+        uint8_t ht = (uint8_t)(g_load_out.objectHandle >> HR_SHIFT);
+        char exp_str[16], act_str[16];
+        snprintf(exp_str, sizeof(exp_str), "0x80");
+        snprintf(act_str, sizeof(act_str), "0x%02X", ht);
+        assert(ht == 0x80,
+               "TPM2_Load: handle not in transient range\n",
+               exp_str, act_str);
+    }
+
+    /* ================================================================
+     * ASSERT 2: objectHandle != 0 and != TPM_RH_UNASSIGNED
+     * ================================================================ */
+    {
+        char handle_str[16];
+        snprintf(handle_str, sizeof(handle_str), "0x%08lX",
+                 (unsigned long)g_load_out.objectHandle);
+        assert(g_load_out.objectHandle != 0,
+               "TPM2_Load: objectHandle is zero\n", "!= 0", handle_str);
+        assert(g_load_out.objectHandle != TPM_RH_UNASSIGNED,
+               "TPM2_Load: objectHandle is UNASSIGNED\n",
+               "!= TPM_RH_UNASSIGNED", handle_str);
+    }
+
+    /* ================================================================
+     * ASSERT 3: name.size > 0
+     * ================================================================ */
+    assert(g_load_out.name.size > 0,
+           "TPM2_Load: name is empty\n", "> 0", "0");
+
+    /* ================================================================
+     * ASSERT 4: Name == nameAlg || Hash(TPMT_PUBLIC)
+     *
+     * The Name of a loaded object is computed as:
+     *   Name = nameAlg (2 bytes, big-endian) || Hash_nameAlg(publicArea)
+     *
+     * The TPM QEMU uses a simplified "marshaling" that hashes the raw
+     * struct bytes of TPMT_PUBLIC (memcpy, no endian conversion).
+     * We must do the same on the firmware side.
+     * ================================================================ */
+    {
+        TPMT_PUBLIC *pub = &g_create_out.outPublic.publicArea;
+
+        /* Hash the raw struct bytes of TPMT_PUBLIC */
+        SHA256_CTX ctx;
+        SHA256_Init(&ctx);
+        SHA256_Update(&ctx, (uint8_t *)pub, sizeof(TPMT_PUBLIC));
+
+        uint8_t load_digest[32];
+        SHA256_Final(load_digest, &ctx);
+
+        /* Build expected Name = nameAlg_BE || digest */
+        uint8_t expected_name[34];
+        expected_name[0] = (uint8_t)(pub->nameAlg >> 8);
+        expected_name[1] = (uint8_t)(pub->nameAlg & 0xFF);
+        memcpy(&expected_name[2], load_digest, 32);
+
+        /* Compare sizes */
+        {
+            char exp_s[8], act_s[8];
+            snprintf(exp_s, sizeof(exp_s), "%u", (unsigned)sizeof(expected_name));
+            snprintf(act_s, sizeof(act_s), "%u", g_load_out.name.size);
+            assert(g_load_out.name.size == sizeof(expected_name),
+                   "TPM2_Load: Name size mismatch\n", exp_s, act_s);
+        }
+
+        /* Compare content */
+        assert(memcmp(g_load_out.name.buffer, expected_name,
+                      sizeof(expected_name)) == 0,
+               "TPM2_Load: Name content mismatch\n", NULL, NULL);
+    }
+
+    /* ================================================================
+     * ASSERT 5: public area type matches what we requested
+     * ================================================================ */
+    assert(g_create_out.outPublic.publicArea.type == TPM_ALG_RSA,
+           "TPM2_Load: loaded key type != RSA\n", "TPM_ALG_RSA", "OTHER");
+
+    DBG_PRINTF("[TEST] TPM2_Load: SUCCESS (handle=0x%08lX, name_size=%u)\n",
+               (unsigned long)g_load_out.objectHandle,
+               g_load_out.name.size);
 }
 #endif
 

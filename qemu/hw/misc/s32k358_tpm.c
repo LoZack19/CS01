@@ -237,6 +237,7 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
         case TPM_CC_CreatePrimary:
             CreatePrimary_In create_primary_in;
             CreatePrimary_Out create_primary_out;
+            memset(&create_primary_out, 0, sizeof(create_primary_out));
 
             if (cmd_header.commandSize != sizeof(tpm_cmd_header_t) + sizeof(create_primary_in)) {
                 tpm_send_error_response(s, TPM_RC_COMMAND_SIZE);
@@ -254,6 +255,7 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
         case TPM_CC_Create:
             Create_In create_in;
             Create_Out create_out;
+            memset(&create_out, 0, sizeof(create_out));
 
             if (cmd_header.commandSize != sizeof(tpm_cmd_header_t) + sizeof(create_in)) {
                 tpm_send_error_response(s, TPM_RC_COMMAND_SIZE);
@@ -271,6 +273,7 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
         case TPM_CC_Load:
             Load_In load_in;
             Load_Out load_out;
+            memset(&load_out, 0, sizeof(load_out));
 
             if (cmd_header.commandSize != sizeof(tpm_cmd_header_t) + sizeof(load_in)) {
                 tpm_send_error_response(s, TPM_RC_COMMAND_SIZE);

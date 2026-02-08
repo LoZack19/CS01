@@ -474,6 +474,7 @@ TPM_RC TPM2_CreatePrimary(CreatePrimary_In *in, CreatePrimary_Out *out) {
 
     // Set the publicArea and name from the computed values
     out->outPublic.publicArea = newObject->publicArea;
+    out->outPublic.size = sizeof(TPMT_PUBLIC);
     out->name = newObject->name;
 
     // Fill in creation data
