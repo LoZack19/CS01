@@ -1,43 +1,85 @@
 ---
-# Linux kernel coding style variant with modifications
+# Linux coding style with 4-space indentation
 BasedOnStyle: LLVM
+
+# Indentation
 IndentWidth: 4
+TabWidth: 4
 UseTab: Never
+ContinuationIndentWidth: 4
+
+# Line length
 ColumnLimit: 80
 
-# Function opening brace on same line
+# Braces - Linux style but with function braces on same line
 BreakBeforeBraces: Custom
 BraceWrapping:
-  AfterFunction: false
-  AfterControlStatement: Never
-  AfterStruct: false
   AfterClass: false
-  AfterUnion: false
+  AfterControlStatement: Never
   AfterEnum: false
+  AfterFunction: false
+  AfterNamespace: false
+  AfterStruct: false
+  AfterUnion: false
+  AfterExternBlock: false
   BeforeCatch: false
   BeforeElse: false
+  IndentBraces: false
+  SplitEmptyFunction: true
+  SplitEmptyRecord: true
+  SplitEmptyNamespace: true
 
-# Linux style preferences
-AlignAfterOpenBracket: Align
+# Function parameters on same line as prototype
+AlwaysBreakAfterReturnType: None
+AlwaysBreakAfterDefinitionReturnType: None
+AllowAllParametersOfDeclarationOnNextLine: true
 AllowShortFunctionsOnASingleLine: None
 AllowShortIfStatementsOnASingleLine: Never
 AllowShortLoopsOnASingleLine: false
-AlwaysBreakAfterReturnType: None
-BinPackArguments: true
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: false
+
+# Parameter and argument packing
 BinPackParameters: true
-BreakBeforeBinaryOperators: None
-BreakBeforeTernaryOperators: false
-IndentCaseLabels: false
+BinPackArguments: true
+AlignAfterOpenBracket: Align
+
+# Pointers and references
 PointerAlignment: Right
+DerivePointerAlignment: false
+
+# Spaces
 SpaceAfterCStyleCast: false
 SpaceBeforeParens: ControlStatements
+SpaceBeforeAssignmentOperators: true
+SpaceInEmptyParentheses: false
+SpacesInCStyleCastParentheses: false
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
 SpacesInContainerLiterals: false
 
-# Additional Linux-like settings
-AlignConsecutiveMacros: true
+# Operators
+BreakBeforeBinaryOperators: None
+BreakBeforeTernaryOperators: false
+AlignOperands: true
+
+# Alignment
+AlignConsecutiveMacros: Consecutive
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+AlignEscapedNewlines: Left
 AlignTrailingComments: true
-AllowAllParametersOfDeclarationOnNextLine: false
+
+# Case and goto labels
+IndentCaseLabels: false
+IndentGotoLabels: true
+
+# Function names
 IndentWrappedFunctionNames: false
+
+# Other
 KeepEmptyLinesAtTheStartOfBlocks: false
 MaxEmptyLinesToKeep: 1
 SortIncludes: false
+IncludeBlocks: Preserve
+ReflowComments: true

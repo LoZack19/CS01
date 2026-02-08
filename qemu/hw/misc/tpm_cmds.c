@@ -5,13 +5,11 @@
 #include <stdlib.h>
 
 /* Simplified key material used by the model to exercise crypto flows */
-static const uint8_t DEFAULT_RSA_KEY[TPM_MAX_KEY_SIZE] = { 0x11 };
+static const uint8_t DEFAULT_RSA_KEY[TPM_MAX_KEY_SIZE] = {0x11};
 static const uint16_t DEFAULT_RSA_KEY_SIZE = 32; /* bytes */
 static const uint8_t DEFAULT_AES_KEY[16] = {
-    0x00, 0x01, 0x02, 0x03,
-    0x04, 0x05, 0x06, 0x07,
-    0x08, 0x09, 0x0A, 0x0B,
-    0x0C, 0x0D, 0x0E, 0x0F,
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+    0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
 };
 static const uint16_t DEFAULT_AES_KEY_SIZE = 16;
 static TPM_HT HandleGetType(TPM_HANDLE handle) {
@@ -20,18 +18,17 @@ static TPM_HT HandleGetType(TPM_HANDLE handle) {
 
 /* TPM responses */
 
-void tpm_send_response(S32k358TPMState* s, TPM_RC rc,
-    const void* data, size_t size) {
+void tpm_send_response(S32k358TPMState *s, TPM_RC rc, const void *data,
+                       size_t size) {
     tpm_rsp_header_t rsp_header;
 
     rsp_header.tag = TPM_ST_NO_SESSIONS; // No sessions for this response
-    rsp_header.responseCode = rc;  // Use the actual return code
+    rsp_header.responseCode = rc;        // Use the actual return code
 
     // Only include data in response if success
     if (rc == TPM_RC_SUCCESS && data != NULL && size > 0) {
         rsp_header.responseSize = sizeof(rsp_header) + size;
-    }
-    else {
+    } else {
         rsp_header.responseSize = sizeof(rsp_header);
     }
 
@@ -56,79 +53,76 @@ void tpm_send_response(S32k358TPMState* s, TPM_RC rc,
     // Update burstCount to reflect output FIFO size
     s->tpm_sts &= ~R_TPM_STS_burstCount_MASK;
     s->tpm_sts |= (fifo8_num_used(&s->outfifo) << R_TPM_STS_burstCount_SHIFT) &
-        R_TPM_STS_burstCount_MASK;
+                  R_TPM_STS_burstCount_MASK;
 
-    qemu_log_mask(LOG_GUEST_ERROR, "(INFO) TPM: Command completed, rc=0x%X, response size=%u\n",
-        rc, rsp_header.responseSize);
+    qemu_log_mask(LOG_GUEST_ERROR,
+                  "(INFO) TPM: Command completed, rc=0x%X, response size=%u\n",
+                  rc, rsp_header.responseSize);
 }
 
 /* TPM Commands */
 
-TPM_RC TPM2_GetRandom(GetRandom_In* in, GetRandom_Out* out) {
+TPM_RC TPM2_GetRandom(GetRandom_In *in, GetRandom_Out *out) {
     // Truncate size to maximum supported digest size
     if (in->bytesRequested > sizeof(TPMU_HA)) {
         qemu_log_mask(LOG_GUEST_ERROR,
-            "TPM2_GetRandom: Requested size %u exceeds maximum %zu, truncating\n",
-            in->bytesRequested, sizeof(TPMU_HA)
-        );
+                      "TPM2_GetRandom: Requested size %u exceeds maximum %zu, "
+                      "truncating\n",
+                      in->bytesRequested, sizeof(TPMU_HA));
 
         out->randomBytes.size = sizeof(TPMU_HA);
-    }
-    else {
+    } else {
         qemu_log_mask(LOG_GUEST_ERROR,
-            "TPM2_GetRandom: Requested size %u is within limits, generating random bytes\n",
-            in->bytesRequested
-        );
+                      "TPM2_GetRandom: Requested size %u is within limits, "
+                      "generating random bytes\n",
+                      in->bytesRequested);
 
         out->randomBytes.size = in->bytesRequested;
     }
 
     // Generate random bytes
-    CryptRandomGenerate((uint16_t)out->randomBytes.size, (uint8_t*)out->randomBytes.buffer);
+    CryptRandomGenerate((uint16_t)out->randomBytes.size,
+                        (uint8_t *)out->randomBytes.buffer);
 
     return TPM_RC_SUCCESS;
 }
 
-TPM_RC TPM2_NV_DefineSpace(NV_DefineSpace_In* in) {
+TPM_RC TPM2_NV_DefineSpace(NV_DefineSpace_In *in) {
     // This command only supports TPM_HT_NV_INDEX-typed NV indices.
     if (HandleGetType(in->publicInfo.nvPublic.nvIndex) != TPM_HT_NV_INDEX) {
         return TPM_RCS_HANDLE + RC_NV_DefineSpace_publicInfo;
     }
 
-    return NvDefineSpace(
-        in->authHandle,
-        &in->auth,
-        &in->publicInfo.nvPublic,
-        RC_NV_DefineSpace_authHandle,
-        RC_NV_DefineSpace_auth,
-        RC_NV_DefineSpace_publicInfo);
+    return NvDefineSpace(in->authHandle, &in->auth, &in->publicInfo.nvPublic,
+                         RC_NV_DefineSpace_authHandle, RC_NV_DefineSpace_auth,
+                         RC_NV_DefineSpace_publicInfo);
 }
 
-TPM_RC TPM2_NV_Write(NV_Write_In* in)
-{
-    NV_INDEX* nvIndex = NvGetIndexInfo(in->nvIndex, NULL);
+TPM_RC TPM2_NV_Write(NV_Write_In *in) {
+    NV_INDEX *nvIndex = NvGetIndexInfo(in->nvIndex, NULL);
 
     // Check if the index exists
     if (nvIndex == NULL) {
-        qemu_log_mask(LOG_GUEST_ERROR, "TPM2_NV_Write: Index 0x%08X not found\n", in->nvIndex);
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "TPM2_NV_Write: Index 0x%08X not found\n", in->nvIndex);
         return TPM_RC_HANDLE;
     }
 
-    TPMA_NV   attributes = nvIndex->publicArea.attributes;
-    TPM_RC    result;
+    TPMA_NV attributes = nvIndex->publicArea.attributes;
+    TPM_RC result;
 
     // Input Validation
 
-    // Common access checks, NvWriteAccessCheck() may return TPM_RC_NV_AUTHORIZATION
-    // or TPM_RC_NV_LOCKED
+    // Common access checks, NvWriteAccessCheck() may return
+    // TPM_RC_NV_AUTHORIZATION or TPM_RC_NV_LOCKED
     result = NvWriteAccessChecks(in->authHandle, in->nvIndex, attributes);
     if (result != TPM_RC_SUCCESS)
         return result;
 
     // Bits index, extend index or counter index may not be updated by
     // TPM2_NV_Write
-    if (IsNvCounterIndex(attributes) || IsNvBitsIndex(attributes)
-        || IsNvExtendIndex(attributes))
+    if (IsNvCounterIndex(attributes) || IsNvBitsIndex(attributes) ||
+        IsNvExtendIndex(attributes))
         return TPM_RC_ATTRIBUTES;
 
     // Make sure that the offset is not too large
@@ -141,10 +135,11 @@ TPM_RC TPM2_NV_Write(NV_Write_In* in)
 
     // If this index requires a full sized write, make sure that input range is
     // full sized.
-    // Note: if the requested size is the same as the Index data size, then offset
-    // will have to be zero. Otherwise, the range check above would have failed.
-    if (IS_ATTRIBUTE(attributes, TPMA_NV, WRITEALL)
-        && in->data.size < nvIndex->publicArea.dataSize)
+    // Note: if the requested size is the same as the Index data size, then
+    // offset will have to be zero. Otherwise, the range check above would have
+    // failed.
+    if (IS_ATTRIBUTE(attributes, TPMA_NV, WRITEALL) &&
+        in->data.size < nvIndex->publicArea.dataSize)
         return TPM_RC_NV_RANGE;
 
     // Internal Data Update
@@ -152,26 +147,27 @@ TPM_RC TPM2_NV_Write(NV_Write_In* in)
     // Perform the write.  This called routine will SET the TPMA_NV_WRITTEN
     // attribute if it has not already been SET. If NV isn't available, an error
     // will be returned.
-    return NvWriteIndexData(nvIndex, in->offset, in->data.size, in->data.buffer);
+    return NvWriteIndexData(nvIndex, in->offset, in->data.size,
+                            in->data.buffer);
 }
 
-TPM_RC TPM2_NV_Read(NV_Read_In* in, NV_Read_Out* out)
-{
-    NV_REF    locator;
-    NV_INDEX* nvIndex = NvGetIndexInfo(in->nvIndex, &locator);
-    TPM_RC    result;
+TPM_RC TPM2_NV_Read(NV_Read_In *in, NV_Read_Out *out) {
+    NV_REF locator;
+    NV_INDEX *nvIndex = NvGetIndexInfo(in->nvIndex, &locator);
+    TPM_RC result;
 
     // Check if the index exists
     if (nvIndex == NULL) {
-        qemu_log_mask(LOG_GUEST_ERROR, "TPM2_NV_Read: Index 0x%08X not found\n", in->nvIndex);
+        qemu_log_mask(LOG_GUEST_ERROR, "TPM2_NV_Read: Index 0x%08X not found\n",
+                      in->nvIndex);
         return TPM_RC_HANDLE;
     }
 
     // Input Validation
     // Common read access checks. NvReadAccessChecks() may return
     // TPM_RC_NV_AUTHORIZATION, TPM_RC_NV_LOCKED, or TPM_RC_NV_UNINITIALIZED
-    result = NvReadAccessChecks(
-        in->authHandle, in->nvIndex, nvIndex->publicArea.attributes);
+    result = NvReadAccessChecks(in->authHandle, in->nvIndex,
+                                nvIndex->publicArea.attributes);
     if (result != TPM_RC_SUCCESS)
         return result;
 
@@ -198,22 +194,23 @@ TPM_RC TPM2_NV_Read(NV_Read_In* in, NV_Read_Out* out)
 }
 /* Cryptographic Operations */
 
-TPM_RC TPM2_Sign(Sign_In* in, Sign_Out* out) {
-    qemu_log_mask(LOG_GUEST_ERROR, "TPM2_Sign: Signing digest with key handle 0x%08X\n", in->keyHandle);
+TPM_RC TPM2_Sign(Sign_In *in, Sign_Out *out) {
+    qemu_log_mask(LOG_GUEST_ERROR,
+                  "TPM2_Sign: Signing digest with key handle 0x%08X\n",
+                  in->keyHandle);
 
     if (in->digest.size == 0 || in->digest.size > sizeof(in->digest.buffer)) {
         return TPM_RC_VALUE;
     }
 
-    if (in->inScheme.hashAlg != TPM_ALG_NULL && in->inScheme.hashAlg != TPM_ALG_SHA256) {
+    if (in->inScheme.hashAlg != TPM_ALG_NULL &&
+        in->inScheme.hashAlg != TPM_ALG_SHA256) {
         return TPM_RC_HASH;
     }
 
-    CryptSignRSA_PSS_SHA256((const uint8_t*)in->digest.buffer,
-        in->digest.size,
-        DEFAULT_RSA_KEY,
-        DEFAULT_RSA_KEY_SIZE,
-        (uint8_t*)out->signature.signature.signature);
+    CryptSignRSA_PSS_SHA256((const uint8_t *)in->digest.buffer, in->digest.size,
+                            DEFAULT_RSA_KEY, DEFAULT_RSA_KEY_SIZE,
+                            (uint8_t *)out->signature.signature.signature);
 
     out->signature.sigAlg = TPM_ALG_RSASSA;
     out->signature.hashAlg = TPM_ALG_SHA256;
@@ -222,17 +219,21 @@ TPM_RC TPM2_Sign(Sign_In* in, Sign_Out* out) {
     return TPM_RC_SUCCESS;
 }
 
-TPM_RC TPM2_VerifySignature(VerifySignature_In* in, VerifySignature_Out* out) {
-    qemu_log_mask(LOG_GUEST_ERROR, "TPM2_VerifySignature: Verifying signature with key handle 0x%08X\n", in->keyHandle);
+TPM_RC TPM2_VerifySignature(VerifySignature_In *in, VerifySignature_Out *out) {
+    qemu_log_mask(
+        LOG_GUEST_ERROR,
+        "TPM2_VerifySignature: Verifying signature with key handle 0x%08X\n",
+        in->keyHandle);
 
     if (in->digest.size == 0 || in->signature.signature.signatureSize == 0) {
         return TPM_RC_SIGNATURE;
     }
 
     uint8_t ok = CryptVerifySignatureRSA_PSS_SHA256(
-        (const uint8_t*)in->digest.buffer, (uint16_t)in->digest.size,
-        (const uint8_t*)in->signature.signature.signature, (uint16_t)in->signature.signature.signatureSize,
-        DEFAULT_RSA_KEY, DEFAULT_RSA_KEY_SIZE);
+        (const uint8_t *)in->digest.buffer, (uint16_t)in->digest.size,
+        (const uint8_t *)in->signature.signature.signature,
+        (uint16_t)in->signature.signature.signatureSize, DEFAULT_RSA_KEY,
+        DEFAULT_RSA_KEY_SIZE);
 
     if (!ok) {
         return TPM_RC_SIGNATURE;
@@ -245,8 +246,9 @@ TPM_RC TPM2_VerifySignature(VerifySignature_In* in, VerifySignature_Out* out) {
     return TPM_RC_SUCCESS;
 }
 
-TPM_RC TPM2_Hash(Hash_In* in, Hash_Out* out) {
-    qemu_log_mask(LOG_GUEST_ERROR, "TPM2_Hash: Computing hash (alg=0x%04X)\n", in->hashAlg);
+TPM_RC TPM2_Hash(Hash_In *in, Hash_Out *out) {
+    qemu_log_mask(LOG_GUEST_ERROR, "TPM2_Hash: Computing hash (alg=0x%04X)\n",
+                  in->hashAlg);
 
     if (in->hashAlg != TPM_ALG_SHA256) {
         return TPM_RC_HASH;
@@ -262,9 +264,9 @@ TPM_RC TPM2_Hash(Hash_In* in, Hash_Out* out) {
         sha256_tested = 1;
     }
 
-    SHA256_Calculate((const uint8_t*)in->data.buffer,
-        (size_t)in->data.bufferSize,
-        (uint8_t*)out->digest.buffer);
+    SHA256_Calculate((const uint8_t *)in->data.buffer,
+                     (size_t)in->data.bufferSize,
+                     (uint8_t *)out->digest.buffer);
     out->digest.size = SHA256_DIGEST_SIZE;
 
     out->validation.tag = TPM_ST_NO_SESSIONS;
@@ -274,9 +276,9 @@ TPM_RC TPM2_Hash(Hash_In* in, Hash_Out* out) {
     return TPM_RC_SUCCESS;
 }
 
-TPM_RC TPM2_EncryptDecrypt2(EncryptDecrypt2_In* in, EncryptDecrypt2_Out* out) {
+TPM_RC TPM2_EncryptDecrypt2(EncryptDecrypt2_In *in, EncryptDecrypt2_Out *out) {
     qemu_log_mask(LOG_GUEST_ERROR, "TPM2_EncryptDecrypt2: %s, Mode=0x%04X\n",
-        in->decrypt ? "Decrypt" : "Encrypt", in->mode);
+                  in->decrypt ? "Decrypt" : "Encrypt", in->mode);
 
     if (in->inData.bufferSize == 0) {
         return TPM_RC_VALUE;
@@ -285,19 +287,25 @@ TPM_RC TPM2_EncryptDecrypt2(EncryptDecrypt2_In* in, EncryptDecrypt2_Out* out) {
     if (in->mode != TPM_ALG_ECB && in->mode != TPM_ALG_CBC &&
         in->mode != TPM_ALG_CFB && in->mode != TPM_ALG_OFB &&
         in->mode != TPM_ALG_CTR) {
-        qemu_log_mask(LOG_GUEST_ERROR, "TPM2_EncryptDecrypt2: Unsupported mode 0x%04X\n", in->mode);
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "TPM2_EncryptDecrypt2: Unsupported mode 0x%04X\n",
+                      in->mode);
         return TPM_RC_MODE;
     }
 
     if ((in->mode == TPM_ALG_ECB || in->mode == TPM_ALG_CBC) &&
         in->inData.bufferSize % 16 != 0) {
-        qemu_log_mask(LOG_GUEST_ERROR, "TPM2_EncryptDecrypt2: Data size %u not block-aligned for mode 0x%04X\n",
-            in->inData.bufferSize, in->mode);
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "TPM2_EncryptDecrypt2: Data size %u not block-aligned "
+                      "for mode 0x%04X\n",
+                      in->inData.bufferSize, in->mode);
         return TPM_RC_VALUE;
     }
 
     if (in->mode != TPM_ALG_ECB && in->ivIn.ivSize != 16) {
-        qemu_log_mask(LOG_GUEST_ERROR, "TPM2_EncryptDecrypt2: Invalid IV size %u for mode 0x%04X\n",
+        qemu_log_mask(
+            LOG_GUEST_ERROR,
+            "TPM2_EncryptDecrypt2: Invalid IV size %u for mode 0x%04X\n",
             in->ivIn.ivSize, in->mode);
         return TPM_RC_VALUE;
     }
@@ -306,13 +314,12 @@ TPM_RC TPM2_EncryptDecrypt2(EncryptDecrypt2_In* in, EncryptDecrypt2_Out* out) {
     case TPM_ALG_ECB: {
         if (in->decrypt) {
             TPM_AES_ECB_Decrypt(in->inData.buffer, in->inData.bufferSize,
-                DEFAULT_AES_KEY, DEFAULT_AES_KEY_SIZE,
-                out->outData.buffer);
-        }
-        else {
+                                DEFAULT_AES_KEY, DEFAULT_AES_KEY_SIZE,
+                                out->outData.buffer);
+        } else {
             TPM_AES_ECB_Encrypt(in->inData.buffer, in->inData.bufferSize,
-                DEFAULT_AES_KEY, DEFAULT_AES_KEY_SIZE,
-                out->outData.buffer);
+                                DEFAULT_AES_KEY, DEFAULT_AES_KEY_SIZE,
+                                out->outData.buffer);
         }
         out->outData.bufferSize = in->inData.bufferSize;
         out->ivOut.ivSize = 0;
@@ -321,13 +328,14 @@ TPM_RC TPM2_EncryptDecrypt2(EncryptDecrypt2_In* in, EncryptDecrypt2_Out* out) {
     case TPM_ALG_CBC:
         if (in->decrypt) {
             TPM_AES_CBC_Decrypt(in->inData.buffer, in->inData.bufferSize,
-                DEFAULT_AES_KEY, DEFAULT_AES_KEY_SIZE,
-                in->ivIn.iv, out->outData.buffer, out->ivOut.iv);
-        }
-        else {
+                                DEFAULT_AES_KEY, DEFAULT_AES_KEY_SIZE,
+                                in->ivIn.iv, out->outData.buffer,
+                                out->ivOut.iv);
+        } else {
             TPM_AES_CBC_Encrypt(in->inData.buffer, in->inData.bufferSize,
-                DEFAULT_AES_KEY, DEFAULT_AES_KEY_SIZE,
-                in->ivIn.iv, out->outData.buffer, out->ivOut.iv);
+                                DEFAULT_AES_KEY, DEFAULT_AES_KEY_SIZE,
+                                in->ivIn.iv, out->outData.buffer,
+                                out->ivOut.iv);
         }
         out->outData.bufferSize = in->inData.bufferSize;
         out->ivOut.ivSize = 16;
@@ -335,28 +343,29 @@ TPM_RC TPM2_EncryptDecrypt2(EncryptDecrypt2_In* in, EncryptDecrypt2_Out* out) {
     case TPM_ALG_CFB:
         if (in->decrypt) {
             TPM_AES_CFB_Decrypt(in->inData.buffer, in->inData.bufferSize,
-                DEFAULT_AES_KEY, DEFAULT_AES_KEY_SIZE,
-                in->ivIn.iv, out->outData.buffer, out->ivOut.iv);
-        }
-        else {
+                                DEFAULT_AES_KEY, DEFAULT_AES_KEY_SIZE,
+                                in->ivIn.iv, out->outData.buffer,
+                                out->ivOut.iv);
+        } else {
             TPM_AES_CFB_Encrypt(in->inData.buffer, in->inData.bufferSize,
-                DEFAULT_AES_KEY, DEFAULT_AES_KEY_SIZE,
-                in->ivIn.iv, out->outData.buffer, out->ivOut.iv);
+                                DEFAULT_AES_KEY, DEFAULT_AES_KEY_SIZE,
+                                in->ivIn.iv, out->outData.buffer,
+                                out->ivOut.iv);
         }
         out->outData.bufferSize = in->inData.bufferSize;
         out->ivOut.ivSize = 16;
         break;
     case TPM_ALG_OFB:
         TPM_AES_OFB_Process(in->inData.buffer, in->inData.bufferSize,
-            DEFAULT_AES_KEY, DEFAULT_AES_KEY_SIZE,
-            in->ivIn.iv, out->outData.buffer, out->ivOut.iv);
+                            DEFAULT_AES_KEY, DEFAULT_AES_KEY_SIZE, in->ivIn.iv,
+                            out->outData.buffer, out->ivOut.iv);
         out->outData.bufferSize = in->inData.bufferSize;
         out->ivOut.ivSize = 16;
         break;
     case TPM_ALG_CTR:
         TPM_AES_CTR_Process(in->inData.buffer, in->inData.bufferSize,
-            DEFAULT_AES_KEY, DEFAULT_AES_KEY_SIZE,
-            in->ivIn.iv, out->outData.buffer, out->ivOut.iv);
+                            DEFAULT_AES_KEY, DEFAULT_AES_KEY_SIZE, in->ivIn.iv,
+                            out->outData.buffer, out->ivOut.iv);
         out->outData.bufferSize = in->inData.bufferSize;
         out->ivOut.ivSize = 16;
         break;
@@ -364,52 +373,52 @@ TPM_RC TPM2_EncryptDecrypt2(EncryptDecrypt2_In* in, EncryptDecrypt2_Out* out) {
         return TPM_RC_VALUE;
     }
 
-    qemu_log_mask(LOG_GUEST_ERROR, "TPM2_EncryptDecrypt2: Success, output size %u\n", out->outData.bufferSize);
+    qemu_log_mask(LOG_GUEST_ERROR,
+                  "TPM2_EncryptDecrypt2: Success, output size %u\n",
+                  out->outData.bufferSize);
 
     return TPM_RC_SUCCESS;
 }
 
-TPM_RC TPM2_RSA_Encrypt(RSA_Encrypt_In* in, RSA_Encrypt_Out* out) {
-    qemu_log_mask(LOG_GUEST_ERROR, "TPM2_RSA_Encrypt: RSA encryption with handle 0x%08X\n", in->keyHandle);
+TPM_RC TPM2_RSA_Encrypt(RSA_Encrypt_In *in, RSA_Encrypt_Out *out) {
+    qemu_log_mask(LOG_GUEST_ERROR,
+                  "TPM2_RSA_Encrypt: RSA encryption with handle 0x%08X\n",
+                  in->keyHandle);
 
     if (in->message.size == 0 || in->message.size > TPM_MAX_KEY_SIZE) {
         return TPM_RC_VALUE;
     }
 
-    CryptEncrypt(in->message.buffer,
-        in->message.size,
-        DEFAULT_RSA_KEY,
-        DEFAULT_RSA_KEY_SIZE,
-        out->encrypted.buffer);
+    CryptEncrypt(in->message.buffer, in->message.size, DEFAULT_RSA_KEY,
+                 DEFAULT_RSA_KEY_SIZE, out->encrypted.buffer);
     out->encrypted.size = in->message.size;
 
     return TPM_RC_SUCCESS;
 }
 
-TPM_RC TPM2_RSA_Decrypt(RSA_Decrypt_In* in, RSA_Decrypt_Out* out) {
-    qemu_log_mask(LOG_GUEST_ERROR, "TPM2_RSA_Decrypt: RSA decryption with handle 0x%08X\n", in->keyHandle);
+TPM_RC TPM2_RSA_Decrypt(RSA_Decrypt_In *in, RSA_Decrypt_Out *out) {
+    qemu_log_mask(LOG_GUEST_ERROR,
+                  "TPM2_RSA_Decrypt: RSA decryption with handle 0x%08X\n",
+                  in->keyHandle);
 
     if (in->encrypted.size == 0 || in->encrypted.size > TPM_MAX_KEY_SIZE) {
         return TPM_RC_VALUE;
     }
 
-    CryptDecrypt(in->encrypted.buffer,
-        in->encrypted.size,
-        DEFAULT_RSA_KEY,
-        DEFAULT_RSA_KEY_SIZE,
-        out->decrypted.buffer);
+    CryptDecrypt(in->encrypted.buffer, in->encrypted.size, DEFAULT_RSA_KEY,
+                 DEFAULT_RSA_KEY_SIZE, out->decrypted.buffer);
     out->decrypted.size = in->encrypted.size;
 
     return TPM_RC_SUCCESS;
 }
 
-TPM_RC TPM2_CreatePrimary(CreatePrimary_In* in, CreatePrimary_Out* out) {
-    TPM_RC       result = TPM_RC_SUCCESS;
-    TPMT_PUBLIC* publicArea;
-    DRBG_STATE   rand;
-    OBJECT* newObject;
-    TPM2B_NAME   name;
-    TPM2B_SEED   primary_seed;
+TPM_RC TPM2_CreatePrimary(CreatePrimary_In *in, CreatePrimary_Out *out) {
+    TPM_RC result = TPM_RC_SUCCESS;
+    TPMT_PUBLIC *publicArea;
+    DRBG_STATE rand;
+    OBJECT *newObject;
+    TPM2B_NAME name;
+    TPM2B_SEED primary_seed;
 
     // Input Validation
     // Will need a place to put the result
@@ -422,15 +431,16 @@ TPM_RC TPM2_CreatePrimary(CreatePrimary_In* in, CreatePrimary_Out* out) {
 
     *publicArea = in->inPublic.publicArea;
 
-    // Check attributes in input public area. CreateChecks() checks the things that
-    // are unique to creation and then validates the attributes and values that are
-    // common to create and load.
-    result = CreateChecks(
-        NULL, in->primaryHandle, publicArea, in->inSensitive.sensitive.data.t.size);
+    // Check attributes in input public area. CreateChecks() checks the things
+    // that are unique to creation and then validates the attributes and values
+    // that are common to create and load.
+    result = CreateChecks(NULL, in->primaryHandle, publicArea,
+                          in->inSensitive.sensitive.data.t.size);
     if (result != TPM_RC_SUCCESS)
         return RcSafeAddToResult(result, RC_CreatePrimary_inPublic);
     // Validate the sensitive area values
-    if (!AdjustAuthSize(&in->inSensitive.sensitive.userAuth, publicArea->nameAlg))
+    if (!AdjustAuthSize(&in->inSensitive.sensitive.userAuth,
+                        publicArea->nameAlg))
         return TPM_RCS_SIZE + RC_CreatePrimary_inSensitive;
     // Command output
     // Compute the name using out->name as a scratch area (this is not the value
@@ -443,23 +453,20 @@ TPM_RC TPM2_CreatePrimary(CreatePrimary_In* in, CreatePrimary_Out* out) {
     if (result != TPM_RC_SUCCESS)
         return result;
 
-    result =
-        DRBG_InstantiateSeeded(&rand,
-            &primary_seed.b,
-            PRIMARY_OBJECT_CREATION,
-            (TPM2B*)PublicMarshalAndComputeName(publicArea, &name),
-            &in->inSensitive.sensitive.data.b);
+    result = DRBG_InstantiateSeeded(
+        &rand, &primary_seed.b, PRIMARY_OBJECT_CREATION,
+        (TPM2B *)PublicMarshalAndComputeName(publicArea, &name),
+        &in->inSensitive.sensitive.data.b);
     MemorySet(primary_seed.b.buffer, 0, primary_seed.b.size);
 
-    if (result == TPM_RC_SUCCESS)
-    {
+    if (result == TPM_RC_SUCCESS) {
         newObject->attributes.primary = SET;
         if (HierarchyNormalizeHandle(in->primaryHandle) == TPM_RH_ENDORSEMENT)
             newObject->attributes.epsHierarchy = SET;
 
         // Create the primary object.
-        result = CryptCreateObject(
-            newObject, &in->inSensitive.sensitive, (RAND_STATE*)&rand);
+        result = CryptCreateObject(newObject, &in->inSensitive.sensitive,
+                                   (RAND_STATE *)&rand);
         DRBG_Uninstantiate(&rand);
     }
     if (result != TPM_RC_SUCCESS)
@@ -470,18 +477,14 @@ TPM_RC TPM2_CreatePrimary(CreatePrimary_In* in, CreatePrimary_Out* out) {
     out->name = newObject->name;
 
     // Fill in creation data
-    FillInCreationData(in->primaryHandle,
-        publicArea->nameAlg,
-        &in->creationPCR,
-        &in->outsideInfo,
-        &out->creationData,
-        &out->creationHash);
+    FillInCreationData(in->primaryHandle, publicArea->nameAlg, &in->creationPCR,
+                       &in->outsideInfo, &out->creationData,
+                       &out->creationHash);
 
     // Compute creation ticket
-    result = TicketComputeCreation(EntityGetHierarchy(in->primaryHandle),
-        &out->name,
-        &out->creationHash,
-        &out->creationTicket);
+    result =
+        TicketComputeCreation(EntityGetHierarchy(in->primaryHandle), &out->name,
+                              &out->creationHash, &out->creationTicket);
     if (result != TPM_RC_SUCCESS)
         return result;
 
@@ -489,4 +492,3 @@ TPM_RC TPM2_CreatePrimary(CreatePrimary_In* in, CreatePrimary_Out* out) {
     ObjectSetLoadedAttributes(newObject, in->primaryHandle);
     return result;
 }
-
