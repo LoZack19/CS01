@@ -229,9 +229,8 @@ TPM2B *PublicMarshalAndComputeName(TPMT_PUBLIC *publicArea,
         return (TPM2B *)name;
     }
 
-    /* "Marshal" – in this simplified model, memcpy is the canonical form. */
-    marshaledSize = (UINT16)sizeof(TPMT_PUBLIC);
-    memcpy(marshalBuf, publicArea, marshaledSize);
+    /* Marshal with proper big-endian field-by-field serialization. */
+    marshaledSize = TPMT_PUBLIC_Marshal(publicArea, marshalBuf);
 
     /* Compute hash.  Only SHA-256 is supported for now. */
     /* Name = nameAlg (2 bytes, big-endian) || H(marshaled public area) */

@@ -419,10 +419,12 @@ TPM_RC TPM2_CreatePrimary(CreatePrimary_In *in, CreatePrimary_Out *out) {
     OBJECT *newObject;
     TPM2B_NAME name;
     TPM2B_SEED primary_seed;
+    TPM_HANDLE objectHandle;
 
     // Input Validation
     // Will need a place to put the result
-    newObject = FindEmptyObjectSlot(&out->objectHandle);
+    newObject = FindEmptyObjectSlot(&objectHandle);
+    out->objectHandle = objectHandle;
     if (newObject == NULL)
         return TPM_RC_OBJECT_MEMORY;
     // Get the address of the public area in the new object
@@ -474,7 +476,12 @@ TPM_RC TPM2_CreatePrimary(CreatePrimary_In *in, CreatePrimary_Out *out) {
 
     // Set the publicArea and name from the computed values
     out->outPublic.publicArea = newObject->publicArea;
-    out->outPublic.size = sizeof(TPMT_PUBLIC);
+    // Set size to actual marshaled size (not sizeof with padding)
+    {
+        BYTE marshalBuf[sizeof(TPMT_PUBLIC) * 2];
+        out->outPublic.size = TPMT_PUBLIC_Marshal(&out->outPublic.publicArea,
+                                                   marshalBuf);
+    }
     out->name = newObject->name;
 
     // Fill in creation data
@@ -504,11 +511,10 @@ TPM_RC TPM2_CreatePrimary(CreatePrimary_In *in, CreatePrimary_Out *out) {
  *
  * Reference: ms-tpm-20-ref Create.c TPM2_Create()
  */
-TPM_RC TPM2_Create(Create_In *in, Create_Out *out)
-{
-    TPM_RC       result = TPM_RC_SUCCESS;
-    OBJECT      *parentObject;
-    OBJECT      *newObject;
+TPM_RC TPM2_Create(Create_In *in, Create_Out *out) {
+    TPM_RC result = TPM_RC_SUCCESS;
+    OBJECT *parentObject;
+    OBJECT *newObject;
     TPMT_PUBLIC *publicArea;
 
     /* Input Validation */
@@ -556,24 +562,25 @@ TPM_RC TPM2_Create(Create_In *in, Create_Out *out)
 
     /* Produce the output public area. */
     out->outPublic.publicArea = newObject->publicArea;
-    out->outPublic.size = sizeof(TPMT_PUBLIC);
+    /* Set size to actual marshaled size (not sizeof with padding). */
+    {
+        BYTE marshalBuf[sizeof(TPMT_PUBLIC) * 2];
+        out->outPublic.size = TPMT_PUBLIC_Marshal(&out->outPublic.publicArea,
+                                                   marshalBuf);
+    }
 
     /* Wrap the sensitive area into the private blob. */
-    SensitiveToPrivate(&newObject->sensitive,
-                       &newObject->name,
-                       parentObject,
-                       newObject->publicArea.nameAlg,
-                       &out->outPrivate);
+    SensitiveToPrivate(&newObject->sensitive, &newObject->name, parentObject,
+                       newObject->publicArea.nameAlg, &out->outPrivate);
 
     /* Fill in creation data. */
-    FillInCreationData(in->parentHandle, publicArea->nameAlg,
-                       &in->creationPCR, &in->outsideInfo,
-                       &out->creationData, &out->creationHash);
+    FillInCreationData(in->parentHandle, publicArea->nameAlg, &in->creationPCR,
+                       &in->outsideInfo, &out->creationData,
+                       &out->creationHash);
 
     /* Compute creation ticket. */
     result = TicketComputeCreation(EntityGetHierarchy(in->parentHandle),
-                                   &newObject->name,
-                                   &out->creationHash,
+                                   &newObject->name, &out->creationHash,
                                    &out->creationTicket);
 
     /* Free the temporary slot – Create does NOT load the object. */

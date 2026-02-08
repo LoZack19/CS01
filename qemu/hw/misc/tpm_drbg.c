@@ -4,12 +4,40 @@
  * Class: DRBG
  * Functions: DRBG_InstantiateSeeded, DRBG_Uninstantiate, DRBG_Generate
  *
+ * OVERVIEW:
  * The TPM specification (Part 1, §B.5) describes a CTR_DRBG based on
- * AES-256.  This file provides a simplified implementation that derives
- * a DRBG seed from the provided inputs using SHA-256 and then produces
- * output using an AES-CTR-like counter construction.
+ * AES-256. This file provides a simplified educational implementation that:
+ *   1. Uses SHA-256 for seed derivation (KDF)
+ *   2. Uses AES-256-ECB for pseudorandom output generation
+ *   3. Maintains a counter-based state (reseedCounter)
  *
- * Reference: ms-tpm-20-ref CryptRand.c
+ * IMPLEMENTATION DETAILS:
+ * - Seed Derivation: Iterative SHA-256 hashing of (counter || seed ||
+ *   purpose || name || additional) to produce DRBG_SEED_SIZE_BYTES
+ * - Random Generation: AES-256-ECB encryption of incrementing counter
+ *   blocks using the derived seed as the key
+ * - State: DRBG_STATE contains magic number, reseedCounter, seed, and
+ *   lastValue (counter block)
+ *
+ * SIMPLIFICATIONS FROM SPEC:
+ * - No entropy collection (uses provided seed directly)
+ * - No prediction resistance
+ * - No personalization string beyond the purpose label
+ * - Simplified reseed counter (increments per block, no limit checking)
+ * - Uses AES-ECB instead of full CTR_DRBG construction
+ *
+ * SECURITY NOTES:
+ * This implementation uses NIST-approved primitives (SHA-256, AES-256)
+ * and is suitable for an educational TPM where:
+ * - The primary seed comes from a secure hierarchy seed
+ * - Output is used for key generation and nonces (not for cryptographic
+ *   keys in production systems)
+ * - Deterministic output is acceptable (same seed → same keys)
+ *
+ * For production use, consider replacing with a library implementation
+ * of NIST SP 800-90A CTR_DRBG.
+ *
+ * Reference: ms-tpm-20-ref CryptRand.c, NIST SP 800-90A
  */
 
 #include "hw/misc/s32k358_tpm.h"
@@ -143,7 +171,10 @@ TPM_RC DRBG_InstantiateSeeded(DRBG_STATE *drbgState,
     drbgState->reseedCounter = 1;
 
     /* Derive the seed with the KDF / derivation function. */
-    DrbgDerivation(&drbgState->seed, seed, purpose, name, additional);
+    /* Use local variable to avoid taking address of packed member. */
+    DRBG_SEED derivedSeed;
+    DrbgDerivation(&derivedSeed, seed, purpose, name, additional);
+    drbgState->seed = derivedSeed;
 
     /* Zero the counter block (lastValue). */
     memset(drbgState->lastValue, 0, sizeof(drbgState->lastValue));

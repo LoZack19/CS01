@@ -179,9 +179,12 @@ TPM_RC TPM2_Load(Load_In *in, Load_Out *out)
     /* Input Validation */
 
     /* Don't get invested in loading if there is no place to put it. */
-    newObject = FindEmptyObjectSlot(&out->objectHandle);
+    /* Use local variable to avoid taking address of packed member. */
+    TPM_HANDLE objectHandle;
+    newObject = FindEmptyObjectSlot(&objectHandle);
     if (newObject == NULL)
         return TPM_RC_OBJECT_MEMORY;
+    out->objectHandle = objectHandle;
 
     if (in->inPrivate.size == 0)
         return TPM_RCS_SIZE + RC_Load_inPrivate;

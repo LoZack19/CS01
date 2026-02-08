@@ -259,6 +259,76 @@ static void tpm_drain_bytes(size_t size) {
     }
 }
 
+/* ===========================================================================
+ * TPM_ST_SESSIONS Helper Functions
+ * =========================================================================== */
+
+/* Authorization area size for password auth with empty password */
+#define AUTH_AREA_SIZE (4 + 4 + 2 + 1 + 2)  /* authSize + sessionHandle + nonce + attrs + hmac */
+
+/**
+ * @brief Send empty password authorization area
+ *
+ * Format: authSize (4) || sessionHandle (4) || nonce (2+0) ||
+ *         sessionAttributes (1) || hmac (2+0)
+ */
+static void tpm_send_auth_area(void) {
+    uint32_t authSize = 4 + 2 + 1 + 2;  /* sessionHandle + nonce + attrs + hmac */
+    uint32_t sessionHandle = TPM_RS_PW; /* 0x40000009 - Password authorization */
+    uint16_t nonceSize = 0;             /* Empty nonce */
+    uint8_t attrs = 0;                  /* No special attributes */
+    uint16_t hmacSize = 0;              /* Empty HMAC (empty password) */
+
+    /* Send in big-endian format */
+    uint8_t buf[4];
+
+    /* authSize */
+    buf[0] = (uint8_t)(authSize >> 24);
+    buf[1] = (uint8_t)(authSize >> 16);
+    buf[2] = (uint8_t)(authSize >> 8);
+    buf[3] = (uint8_t)(authSize);
+    tpm_send(buf, 4);
+
+    /* sessionHandle */
+    buf[0] = (uint8_t)(sessionHandle >> 24);
+    buf[1] = (uint8_t)(sessionHandle >> 16);
+    buf[2] = (uint8_t)(sessionHandle >> 8);
+    buf[3] = (uint8_t)(sessionHandle);
+    tpm_send(buf, 4);
+
+    /* nonce size */
+    buf[0] = (uint8_t)(nonceSize >> 8);
+    buf[1] = (uint8_t)(nonceSize);
+    tpm_send(buf, 2);
+
+    /* sessionAttributes */
+    tpm_send(&attrs, 1);
+
+    /* hmac size */
+    buf[0] = (uint8_t)(hmacSize >> 8);
+    buf[1] = (uint8_t)(hmacSize);
+    tpm_send(buf, 2);
+}
+
+/**
+ * @brief Skip authorization response area in TPM_ST_SESSIONS responses
+ *
+ * Format: authSize (4) || nonce (2+N) || sessionAttributes (1) || hmac (2+N)
+ */
+static void skip_auth_response_area(void) {
+    uint8_t buf[4];
+    tpm_receive(buf, 4);
+
+    /* Read authSize (big-endian) */
+    uint32_t authSize = ((uint32_t)buf[0] << 24) |
+                        ((uint32_t)buf[1] << 16) |
+                        ((uint32_t)buf[2] << 8) |
+                        (uint32_t)buf[3];
+
+    /* Drain the auth response area */
+    tpm_drain_bytes(authSize);
+}
+
 #ifndef TPM2_InOut
 #define TPM2_InOut(F)                                                          \
     TPM_RC TPM2_##F(F##_In *in, F##_Out *out) {                                \
@@ -856,6 +926,164 @@ void TPM2_CreatePrimary_test(void) {
 }
 #endif
 
+#ifdef TPM_TEST_ENABLE_CREATEPRIMARY
+/**
+ * @brief Test TPM2_CreatePrimary with TPM_ST_SESSIONS (spec compliance test)
+ *
+ * PURPOSE: Verify that the TPM2_CreatePrimary command works with
+ *          TPM_ST_SESSIONS tag and password authorization.
+ *
+ * PASS:
+ *   - TPM_RC_SUCCESS returned
+ *   - Response tag is TPM_ST_SESSIONS (0x8002)
+ *   - Object handle is in transient range (0x80XXXXXX)
+ *   - Name is present and valid
+ *
+ * FAIL:
+ *   - Any TPM_RC other than SUCCESS
+ *   - Response tag is not TPM_ST_SESSIONS
+ *   - Invalid object handle or name
+ */
+void TPM2_CreatePrimary_with_sessions_test(void) {
+    DBG_PRINT("\n=== TPM2_CreatePrimary with TPM_ST_SESSIONS Test ===\n");
+
+    /* ----------------------------------------------------------------
+     * 1. Prepare Data Structures (same as regular CreatePrimary test)
+     * ---------------------------------------------------------------- */
+
+    TPM2B_SENSITIVE_CREATE inSensitive = {
+        .size = 0,
+        .sensitive = {.userAuth = {.size = 0},
+                      .data = {.size = 0}}};
+
+    TPM2B_PUBLIC inPublic = {
+        .size = 0,
+        .publicArea = {
+            .type = TPM_ALG_RSA,
+            .nameAlg = TPM_ALG_SHA256,
+            .objectAttributes = {.userWithAuth = 1,
+                                 .restricted = 1,
+                                 .decrypt = 1,
+                                 .fixedTPM = 1,
+                                 .fixedParent = 1,
+                                 .sensitiveDataOrigin = 1},
+            .authPolicy = {.size = 0},
+            .parameters.rsaDetail = {.symmetric = {.algorithm = TPM_ALG_AES,
+                                                   .keyBits.aes = 128,
+                                                   .mode.sym = TPM_ALG_CFB},
+                                     .scheme = {.scheme = TPM_ALG_NULL},
+                                     .keyBits = 2048,
+                                     .exponent = 0},
+            .unique.rsa = {.size = 0}}};
+
+    TPM2B_DATA outsideInfo = {.size = 0};
+    TPML_PCR_SELECTION creationPCR = {.count = 0};
+
+    CreatePrimary_In in = {.primaryHandle = TPM_RH_OWNER,
+                           .inSensitive = inSensitive,
+                           .inPublic = inPublic,
+                           .outsideInfo = outsideInfo,
+                           .creationPCR = creationPCR};
+
+    CreatePrimary_Out out;
+    memset(&out, 0, sizeof(out));
+
+    /* ----------------------------------------------------------------
+     * 2. Send Command with TPM_ST_SESSIONS
+     * ---------------------------------------------------------------- */
+
+    tpm_cmd_header_t cmd = {
+        .tag = TPM_ST_SESSIONS,
+        .commandSize = sizeof(cmd) + sizeof(in) + AUTH_AREA_SIZE,
+        .commandCode = TPM_CC_CreatePrimary
+    };
+
+    DBG_PRINTF("[DBG] TPM2_CreatePrimary_sessions: Sending cmd (tag=0x%04X, size=%lu, code=0x%08lX)\n",
+               cmd.tag, (unsigned long)cmd.commandSize,
+               (unsigned long)cmd.commandCode);
+
+    tpm_command_ready();
+    tpm_send(&cmd, sizeof(cmd));
+    tpm_send(&in, sizeof(in));
+    tpm_send_auth_area();  /* Send password session area */
+    tpm_go();
+
+    /* ----------------------------------------------------------------
+     * 3. Receive Response
+     * ---------------------------------------------------------------- */
+
+    tpm_rsp_header_t rsp;
+    tpm_receive(&rsp, sizeof(rsp));
+
+    DBG_PRINTF("[DBG] TPM2_CreatePrimary_sessions: Received rsp (tag=0x%04X, size=%lu, rc=0x%08lX)\n",
+               rsp.tag, (unsigned long)rsp.responseSize,
+               (unsigned long)rsp.responseCode);
+
+    /* ----------------------------------------------------------------
+     * 4. Validate Response
+     * ---------------------------------------------------------------- */
+
+    /* ASSERT: Command succeeded */
+    assert(rsp.responseCode == TPM_RC_SUCCESS,
+           "TPM2_CreatePrimary with sessions failed",
+           string_from_TPM_RC(TPM_RC_SUCCESS),
+           string_from_TPM_RC(rsp.responseCode));
+
+    if (rsp.responseCode != TPM_RC_SUCCESS) {
+        /* Drain remaining bytes and return */
+        size_t remaining = (rsp.responseSize > sizeof(rsp)) ?
+                          (size_t)rsp.responseSize - sizeof(rsp) : 0;
+        tpm_drain_bytes(remaining);
+        return;
+    }
+
+    /* ASSERT: Response tag is TPM_ST_SESSIONS */
+    {
+        char exp_str[8], act_str[8];
+        snprintf(exp_str, sizeof(exp_str), "0x%04X", TPM_ST_SESSIONS);
+        snprintf(act_str, sizeof(act_str), "0x%04X", rsp.tag);
+        assert(rsp.tag == TPM_ST_SESSIONS,
+               "Expected TPM_ST_SESSIONS response tag",
+               exp_str, act_str);
+    }
+
+    /* Skip auth response area */
+    skip_auth_response_area();
+
+    /* Read output */
+    tpm_receive(&out, sizeof(out));
+
+    /* Drain any remaining bytes */
+    size_t remaining = (rsp.responseSize > sizeof(rsp) + AUTH_AREA_SIZE + sizeof(out)) ?
+                      (size_t)rsp.responseSize - sizeof(rsp) - AUTH_AREA_SIZE - sizeof(out) : 0;
+    tpm_drain_bytes(remaining);
+
+    /* ----------------------------------------------------------------
+     * 5. Validate Output
+     * ---------------------------------------------------------------- */
+
+    /* ASSERT: Object handle is in transient range */
+    {
+        uint8_t ht = (uint8_t)(out.objectHandle >> HR_SHIFT);
+        char exp_str[16], act_str[16];
+        snprintf(exp_str, sizeof(exp_str), "0x80");
+        snprintf(act_str, sizeof(act_str), "0x%02X", ht);
+        assert(ht == 0x80,
+               "TPM2_CreatePrimary_sessions: handle not in transient range",
+               exp_str, act_str);
+    }
+
+    /* ASSERT: Name is present */
+    assert(out.name.size > 0,
+           "TPM2_CreatePrimary_sessions: name is empty",
+           "> 0", "0");
+
+    DBG_PRINTF("[TEST] TPM2_CreatePrimary with TPM_ST_SESSIONS: SUCCESS\n");
+    DBG_PRINTF("  Object handle: 0x%08lX\n", (unsigned long)out.objectHandle);
+    DBG_PRINTF("  Name size: %u\n", out.name.size);
+}
+#endif
+
 /**
  * @brief Test TPM2_Create command
  *
@@ -1341,6 +1569,7 @@ void TPM2_KeyManagement_test_suite(void) {
     /* Run tests in sequence */
 #ifdef TPM_TEST_ENABLE_CREATEPRIMARY
     TPM2_CreatePrimary_test();
+    TPM2_CreatePrimary_with_sessions_test();
 #else
     DBG_PRINT("[TEST] TPM2_CreatePrimary: SKIPPED (not enabled)\n");
 #endif

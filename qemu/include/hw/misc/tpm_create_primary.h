@@ -15,6 +15,7 @@
  *                                          PublicMarshalAndComputeName,
  *                                          FillInCreationData,
  *                                          CryptCreateObject
+ *   - TPM Marshaling (tpm_marshal_tpm.c): TPMT_PUBLIC_Marshal
  *   - DRBG           (tpm_drbg.c)        : DRBG_InstantiateSeeded,
  *                                          DRBG_Uninstantiate, DRBG_Generate
  *   - Ticket         (tpm_ticket.c)      : TicketComputeCreation
@@ -78,6 +79,14 @@ BOOL AdjustAuthSize(TPM2B_AUTH *auth, TPMI_ALG_HASH nameAlg);
 
 TPM2B *PublicMarshalAndComputeName(TPMT_PUBLIC *publicArea,
                                    TPM2B_NAME *name);
+
+/*
+ * TPMT_PUBLIC_Marshal – Marshal TPMT_PUBLIC structure for Name computation.
+ * Performs proper big-endian field-by-field marshaling as required by
+ * TPM 2.0 spec (Part 4: Supporting Routines - Marshaling).
+ * Returns actual marshaled size in bytes (no padding).
+ */
+UINT16 TPMT_PUBLIC_Marshal(const TPMT_PUBLIC *publicArea, BYTE *buffer);
 
 void FillInCreationData(TPM_HANDLE parentHandle, TPMI_ALG_HASH nameAlg,
                         TPML_PCR_SELECTION *creationPCR,
@@ -166,5 +175,32 @@ TPM_RC ObjectLoad(OBJECT *object, OBJECT *parent,
                   TPMT_PUBLIC *publicArea, TPMT_SENSITIVE *sensitive,
                   TPM_RC blamePublic, TPM_RC blameSensitive,
                   TPM2B_NAME *name);
+
+/* ========================================================================
+ * Authorization (tpm_auth.c)
+ * ======================================================================== */
+
+/* Forward declaration for Fifo8 to avoid including qemu/fifo8.h */
+struct Fifo8;
+
+/*
+ * ParseAuthArea – Parse authorization area from command FIFO.
+ *
+ * For TPM_ST_SESSIONS commands, this parses the authorization area that
+ * follows the command parameters. Currently supports password authorization
+ * (sessionHandle == TPM_RS_PW) with empty passwords.
+ *
+ * Returns TPM_RC_SUCCESS if valid, error otherwise.
+ */
+TPM_RC ParseAuthArea(struct Fifo8 *fifo, TPMS_AUTH_COMMAND *authCmd);
+
+/*
+ * MarshalAuthResponse – Marshal authorization response area to output FIFO.
+ *
+ * For TPM_ST_SESSIONS responses, this marshals the authorization area
+ * after the response parameters. Currently sends empty nonce and HMAC
+ * for password sessions.
+ */
+void MarshalAuthResponse(struct Fifo8 *fifo);
 
 #endif /* HW_MISC_TPM_CREATE_PRIMARY_H */

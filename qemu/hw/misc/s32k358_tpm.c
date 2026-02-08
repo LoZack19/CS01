@@ -31,6 +31,9 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
         return;
     }
 
+    // Track if command has authorization sessions
+    bool hasAuth = (cmd_header.tag == TPM_ST_SESSIONS);
+
     // Check if infifo has enough data for the command size
     if (fifo8_num_used(&s->infifo) < (cmd_header.commandSize - sizeof(tpm_cmd_header_t))) {
         qemu_log_mask(LOG_GUEST_ERROR, "(ERROR) TPM: FIFO does not have enough data wrt the specified command size\n");
@@ -235,22 +238,51 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
             return;
 
         case TPM_CC_CreatePrimary:
+        {
             CreatePrimary_In create_primary_in;
             CreatePrimary_Out create_primary_out;
             memset(&create_primary_out, 0, sizeof(create_primary_out));
 
-            if (cmd_header.commandSize != sizeof(tpm_cmd_header_t) + sizeof(create_primary_in)) {
-                tpm_send_error_response(s, TPM_RC_COMMAND_SIZE);
-                return;
-            }
-
+            /* Unmarshal command parameters */
             UNMARSHAL(&create_primary_in, &s->infifo);
 
+            /* If TPM_ST_SESSIONS, parse auth area */
+            if (hasAuth) {
+                TPMS_AUTH_COMMAND authCmd = {0};
+                rc = ParseAuthArea(&s->infifo, &authCmd);
+                if (rc != TPM_RC_SUCCESS) {
+                    tpm_send_error_response(s, rc);
+                    return;
+                }
+                /* Auth parsed successfully - for educational TPM, we accept it */
+            }
+
+            /* Execute command */
             rc = TPM2_CreatePrimary(&create_primary_in, &create_primary_out);
 
-            tpm_send_response(s, rc, &create_primary_out, sizeof(create_primary_out));
+            /* Send response */
+            if (hasAuth) {
+                /* Response with auth area */
+                UINT32 authRespSize = 4 + 2 + 1 + 2; /* authSize + nonce + attrs + hmac */
+
+                tpm_rsp_header_t rsp = {
+                    .tag = TPM_ST_SESSIONS,
+                    .responseSize = sizeof(rsp) + sizeof(create_primary_out) + authRespSize,
+                    .responseCode = rc
+                };
+
+                MARSHAL(&rsp, &s->outfifo);
+                if (rc == TPM_RC_SUCCESS) {
+                    MARSHAL(&create_primary_out, &s->outfifo);
+                    MarshalAuthResponse(&s->outfifo);
+                }
+            } else {
+                /* Standard TPM_ST_NO_SESSIONS response (backward compatible) */
+                tpm_send_response(s, rc, &create_primary_out, sizeof(create_primary_out));
+            }
 
             return;
+        }
 
         case TPM_CC_Create:
             Create_In create_in;
