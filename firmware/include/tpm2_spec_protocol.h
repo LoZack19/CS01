@@ -131,9 +131,9 @@
 #define TPM_CC_RSA_Encrypt     0x00000173
 #define TPM_CC_RSA_Decrypt     0x00000174
 // TPM Key Life Cycle Management
-#define TPM_CC_CreatePrimary   0x00000131
-#define TPM_CC_Create          0x00000153
-#define TPM_CC_Load            0x00000157
+#define TPM_CC_CreatePrimary 0x00000131
+#define TPM_CC_Create        0x00000153
+#define TPM_CC_Load          0x00000157
 
 // TPMI_ALG_HASH
 #define TPM_ALG_RSA      0x0001
@@ -549,8 +549,10 @@ typedef struct __packed {
 #define DRBG_IV_SIZE_WORDS BITS_TO_CRYPT_WORDS(DRBG_IV_SIZE_BITS)
 #define DRBG_IV_SIZE_BYTES (DRBG_IV_SIZE_WORDS * RADIX_BYTES)
 
-#define DRBG_SEED_SIZE_WORDS (DRBG_KEY_SIZE_WORDS + DRBG_IV_SIZE_WORDS)
-#define DRBG_SEED_SIZE_BYTES (DRBG_KEY_SIZE_BYTES + DRBG_IV_SIZE_BYTES)
+/* Note: DRBG_SEED_SIZE_* are already defined at the top of this file (lines
+ * 25-26) with fixed values (256 bytes). The computed values would be KEY+IV
+ * (~48 bytes), but the fixed 256-byte value is used for the DRBG_SEED buffer
+ * size. */
 
 typedef union {
     BYTE bytes[DRBG_KEY_SIZE_BYTES];
@@ -578,14 +580,14 @@ typedef DRBG_STATE RAND_STATE;
 
 typedef struct __packed {
     uint16_t size;
-    uint8_t  buffer[64];
+    uint8_t buffer[64];
 } _TPM2B_SEED_BUFFER;
 
 typedef union {
     _TPM2B_SEED_BUFFER b;
     struct {
         uint16_t size;
-        uint8_t  buffer[64];
+        uint8_t buffer[64];
     };
 } TPM2B_SEED;
 
@@ -637,7 +639,7 @@ typedef struct __packed {
  * enough to hold a marshaled TPMT_SENSITIVE plus integrity + IV
  * overhead (simplified model: just the raw TPMT_SENSITIVE bytes).
  */
-#define MAX_PRIVATE_SIZE  (sizeof(TPMT_SENSITIVE) + SHA256_DIGEST_SIZE + 16)
+#define MAX_PRIVATE_SIZE (sizeof(TPMT_SENSITIVE) + SHA256_DIGEST_SIZE + 16)
 
 typedef struct __packed {
     UINT16 size;
@@ -661,6 +663,30 @@ typedef struct __packed {
     TPM2B_NAME name;
     TPMI_RH_HIERARCHY hierarchy;
 } OBJECT;
+
+/*
+ * Authorization structures for TPM_ST_SESSIONS commands.
+ *
+ * TPMS_AUTH_COMMAND – Authorization area in command (after parameters).
+ * TPMS_AUTH_RESPONSE – Authorization area in response (after parameters).
+ *
+ * Reference: TPM 2.0 Part 1, Tables 75-76 (Authorization)
+ */
+typedef struct __packed {
+    UINT32 sessionHandle;   /* TPM_RS_PW for password sessions */
+    TPM2B_DIGEST nonce;     /* Empty for password auth */
+    BYTE sessionAttributes; /* Session attribute bits */
+    TPM2B_AUTH hmac;        /* Password or HMAC */
+} TPMS_AUTH_COMMAND;
+
+typedef struct __packed {
+    TPM2B_DIGEST nonce;     /* Empty for password auth */
+    BYTE sessionAttributes; /* Session attribute bits */
+    TPM2B_AUTH hmac;        /* Empty for password auth */
+} TPMS_AUTH_RESPONSE;
+
+/* Password authorization pseudo-handle */
+#define TPM_RS_PW 0x40000009
 
 /* Subsection #4.2: Useful Additions */
 
@@ -848,8 +874,8 @@ typedef struct __packed {
 
 typedef struct __packed {
     TPMI_DH_OBJECT parentHandle;
-    TPM2B_PRIVATE  inPrivate;
-    TPM2B_PUBLIC   inPublic;
+    TPM2B_PRIVATE inPrivate;
+    TPM2B_PUBLIC inPublic;
 } Load_In;
 
 typedef struct __packed {
