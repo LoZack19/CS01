@@ -271,9 +271,9 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
                     .responseCode = rc
                 };
 
-                MARSHAL(&rsp, &s->outfifo);
+                MARSHAL(&s->outfifo, &rsp);
                 if (rc == TPM_RC_SUCCESS) {
-                    MARSHAL(&create_primary_out, &s->outfifo);
+                    MARSHAL(&s->outfifo, &create_primary_out);
                     MarshalAuthResponse(&s->outfifo);
                 }
             } else {

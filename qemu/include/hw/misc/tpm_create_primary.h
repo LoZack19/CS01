@@ -192,7 +192,7 @@ struct Fifo8;
  *
  * Returns TPM_RC_SUCCESS if valid, error otherwise.
  */
-TPM_RC ParseAuthArea(struct Fifo8 *fifo, TPMS_AUTH_COMMAND *authCmd);
+TPM_RC ParseAuthArea(Fifo8 *fifo, TPMS_AUTH_COMMAND *authCmd);
 
 /*
  * MarshalAuthResponse – Marshal authorization response area to output FIFO.
@@ -201,6 +201,6 @@ TPM_RC ParseAuthArea(struct Fifo8 *fifo, TPMS_AUTH_COMMAND *authCmd);
  * after the response parameters. Currently sends empty nonce and HMAC
  * for password sessions.
  */
-void MarshalAuthResponse(struct Fifo8 *fifo);
+void MarshalAuthResponse(Fifo8 *fifo);
 
 #endif /* HW_MISC_TPM_CREATE_PRIMARY_H */

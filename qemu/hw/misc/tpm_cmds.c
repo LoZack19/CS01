@@ -569,9 +569,15 @@ TPM_RC TPM2_Create(Create_In *in, Create_Out *out) {
                                                    marshalBuf);
     }
 
-    /* Wrap the sensitive area into the private blob. */
-    SensitiveToPrivate(&newObject->sensitive, &newObject->name, parentObject,
-                       newObject->publicArea.nameAlg, &out->outPrivate);
+    /* Wrap the sensitive area into the private blob.
+     * Use a local to avoid passing a potentially unaligned pointer
+     * from the packed Create_Out struct. */
+    {
+        TPM2B_PRIVATE tmpPrivate;
+        SensitiveToPrivate(&newObject->sensitive, &newObject->name, parentObject,
+                           newObject->publicArea.nameAlg, &tmpPrivate);
+        out->outPrivate = tmpPrivate;
+    }
 
     /* Fill in creation data. */
     FillInCreationData(in->parentHandle, publicArea->nameAlg, &in->creationPCR,
