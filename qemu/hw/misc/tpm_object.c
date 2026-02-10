@@ -23,8 +23,8 @@
  * Module-level object slot table
  * ----------------------------------------------------------------------- */
 
-static OBJECT  s_objects[MAX_LOADED_OBJECTS];
-static BOOL    s_objectSlotUsed[MAX_LOADED_OBJECTS];
+static OBJECT s_objects[MAX_LOADED_OBJECTS];
+static BOOL s_objectSlotUsed[MAX_LOADED_OBJECTS];
 
 /*
  * FindEmptyObjectSlot – Locate a free object slot and return a pointer
@@ -32,8 +32,7 @@ static BOOL    s_objectSlotUsed[MAX_LOADED_OBJECTS];
  *
  * Reference: ms-tpm-20-ref Object.c FindEmptyObjectSlot()
  */
-OBJECT *FindEmptyObjectSlot(TPM_HANDLE *handle)
-{
+OBJECT *FindEmptyObjectSlot(TPM_HANDLE *handle) {
     for (int i = 0; i < MAX_LOADED_OBJECTS; i++) {
         if (!s_objectSlotUsed[i]) {
             s_objectSlotUsed[i] = TRUE;
@@ -55,8 +54,7 @@ OBJECT *FindEmptyObjectSlot(TPM_HANDLE *handle)
  *
  * Reference: ms-tpm-20-ref Object.c HandleToObject()
  */
-OBJECT *HandleToObject(TPMI_DH_OBJECT handle)
-{
+OBJECT *HandleToObject(TPMI_DH_OBJECT handle) {
     UINT32 index;
 
     /* Permanent handles have no associated OBJECT. */
@@ -79,8 +77,7 @@ OBJECT *HandleToObject(TPMI_DH_OBJECT handle)
  *
  * Reference: ms-tpm-20-ref Object_spt.c ObjectIsParent()
  */
-BOOL ObjectIsParent(OBJECT *parentObject)
-{
+BOOL ObjectIsParent(OBJECT *parentObject) {
     if (parentObject == NULL) {
         return FALSE;
     }
@@ -93,8 +90,7 @@ BOOL ObjectIsParent(OBJECT *parentObject)
  *
  * Reference: ms-tpm-20-ref Object.c ObjectSetLoadedAttributes()
  */
-void ObjectSetLoadedAttributes(OBJECT *object, TPM_HANDLE parentHandle)
-{
+void ObjectSetLoadedAttributes(OBJECT *object, TPM_HANDLE parentHandle) {
     TPMA_OBJECT *attrs;
 
     if (object == NULL) {
@@ -127,8 +123,7 @@ void ObjectSetLoadedAttributes(OBJECT *object, TPM_HANDLE parentHandle)
  * Reference: ms-tpm-20-ref Object_spt.c CreateChecks()
  */
 TPM_RC CreateChecks(OBJECT *parentObject, TPM_HANDLE parentHandle,
-                    TPMT_PUBLIC *publicArea, uint32_t sensitiveDataSize)
-{
+                    TPMT_PUBLIC *publicArea, uint32_t sensitiveDataSize) {
     TPMA_OBJECT attrs;
     (void)parentObject;
     (void)parentHandle;
@@ -166,8 +161,7 @@ TPM_RC CreateChecks(OBJECT *parentObject, TPM_HANDLE parentHandle,
  *
  * Reference: ms-tpm-20-ref Object_spt.c AdjustAuthSize()
  */
-BOOL AdjustAuthSize(TPM2B_AUTH *auth, TPMI_ALG_HASH nameAlg)
-{
+BOOL AdjustAuthSize(TPM2B_AUTH *auth, TPMI_ALG_HASH nameAlg) {
     UINT16 digestSize;
 
     if (auth == NULL) {
@@ -211,9 +205,7 @@ BOOL AdjustAuthSize(TPM2B_AUTH *auth, TPMI_ALG_HASH nameAlg)
  *
  * Reference: ms-tpm-20-ref Object.c PublicMarshalAndComputeName()
  */
-TPM2B *PublicMarshalAndComputeName(TPMT_PUBLIC *publicArea,
-                                   TPM2B_NAME *name)
-{
+TPM2B *PublicMarshalAndComputeName(TPMT_PUBLIC *publicArea, TPM2B_NAME *name) {
     BYTE marshalBuf[sizeof(TPMT_PUBLIC)];
     UINT16 marshaledSize;
 
@@ -240,6 +232,14 @@ TPM2B *PublicMarshalAndComputeName(TPMT_PUBLIC *publicArea,
     SHA256_Calculate(marshalBuf, marshaledSize, &name->buffer[2]);
     name->size = 2 + SHA256_DIGEST_SIZE;
 
+    qemu_log_mask(LOG_GUEST_ERROR,
+                  "PublicMarshalAndComputeName: marshaledSize=%u "
+                  "name[0..9]=%02X%02X %02X%02X%02X%02X%02X%02X%02X%02X\n",
+                  marshaledSize, name->buffer[0], name->buffer[1],
+                  name->buffer[2], name->buffer[3], name->buffer[4],
+                  name->buffer[5], name->buffer[6], name->buffer[7],
+                  name->buffer[8], name->buffer[9]);
+
     return (TPM2B *)name;
 }
 
@@ -261,8 +261,7 @@ void FillInCreationData(TPM_HANDLE parentHandle, TPMI_ALG_HASH nameAlg,
                         TPML_PCR_SELECTION *creationPCR,
                         TPM2B_DATA *outsideInfo,
                         TPM2B_CREATION_DATA *outCreation,
-                        TPM2B_DIGEST *creationHash)
-{
+                        TPM2B_DIGEST *creationHash) {
     BYTE creationBuffer[sizeof(TPMT_PUBLIC)]; /* scratch */
     UINT16 creationSize = 0;
 
@@ -305,6 +304,15 @@ void FillInCreationData(TPM_HANDLE parentHandle, TPMI_ALG_HASH nameAlg,
         creationHash->size = SHA256_DIGEST_SIZE;
         break;
     }
+
+    qemu_log_mask(LOG_GUEST_ERROR,
+                  "FillInCreationData: size=%u hash[0..7]="
+                  "%02X%02X%02X%02X%02X%02X%02X%02X\n",
+                  creationSize, creationHash->buffer[0],
+                  creationHash->buffer[1], creationHash->buffer[2],
+                  creationHash->buffer[3], creationHash->buffer[4],
+                  creationHash->buffer[5], creationHash->buffer[6],
+                  creationHash->buffer[7]);
 }
 
 /*
@@ -321,11 +329,9 @@ void FillInCreationData(TPM_HANDLE parentHandle, TPMI_ALG_HASH nameAlg,
  *
  * Reference: ms-tpm-20-ref CryptUtil.c CryptCreateObject()
  */
-TPM_RC CryptCreateObject(OBJECT *object,
-                          TPMS_SENSITIVE_CREATE *sensitiveCreate,
-                          RAND_STATE *rand)
-{
-    TPMT_PUBLIC    *publicArea;
+TPM_RC CryptCreateObject(OBJECT *object, TPMS_SENSITIVE_CREATE *sensitiveCreate,
+                         RAND_STATE *rand) {
+    TPMT_PUBLIC *publicArea;
     TPMT_SENSITIVE *sensitive;
 
     if (object == NULL) {
@@ -333,7 +339,7 @@ TPM_RC CryptCreateObject(OBJECT *object,
     }
 
     publicArea = &object->publicArea;
-    sensitive  = &object->sensitive;
+    sensitive = &object->sensitive;
 
     /* 1. Set the sensitive type to match the public area. */
     sensitive->sensitiveType = publicArea->type;
@@ -352,12 +358,12 @@ TPM_RC CryptCreateObject(OBJECT *object,
 
     /* 4. Generate key material according to the algorithm type. */
     switch (publicArea->type) {
-    case TPM_ALG_RSA:
-    {
+    case TPM_ALG_RSA: {
         UINT16 keyBytes;
 
         keyBytes = publicArea->parameters.rsaDetail.keyBits / 8;
-        if (keyBytes == 0 || keyBytes > sizeof(sensitive->sensitive.rsa.buffer)) {
+        if (keyBytes == 0 ||
+            keyBytes > sizeof(sensitive->sensitive.rsa.buffer)) {
             keyBytes = 256; /* default 2048-bit RSA */
         }
 
@@ -378,8 +384,7 @@ TPM_RC CryptCreateObject(OBJECT *object,
         publicArea->unique.rsa.size = SHA256_DIGEST_SIZE;
         break;
     }
-    default:
-    {
+    default: {
         /* For other algorithm types (SYMCIPHER, KEYEDHASH …) generate
          * a random secret key. */
         UINT16 keySize = 32; /* default 256-bit key */

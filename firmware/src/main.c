@@ -17,19 +17,19 @@
 #define TPM_DEBUG 1
 
 #if TPM_DEBUG
-#define DBG_PRINT(msg)                                                         \
-    do {                                                                       \
-        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)(msg),             \
-                                strlen(msg), portMAX_DELAY);                   \
+#define DBG_PRINT(msg)                                             \
+    do {                                                           \
+        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)(msg), \
+                                strlen(msg), portMAX_DELAY);       \
     } while (0)
 
-#define DBG_PRINTF(fmt, ...)                                                   \
-    do {                                                                       \
-        char _dbg_buf[128];                                                    \
-        int _dbg_len =                                                         \
-            snprintf(_dbg_buf, sizeof(_dbg_buf), fmt, ##__VA_ARGS__);          \
-        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)_dbg_buf,          \
-                                _dbg_len, portMAX_DELAY);                      \
+#define DBG_PRINTF(fmt, ...)                                          \
+    do {                                                              \
+        char _dbg_buf[128];                                           \
+        int _dbg_len =                                                \
+            snprintf(_dbg_buf, sizeof(_dbg_buf), fmt, ##__VA_ARGS__); \
+        Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE, (uint8_t *)_dbg_buf, \
+                                _dbg_len, portMAX_DELAY);             \
     } while (0)
 #else
 #define DBG_PRINT(msg)       ((void)0)
@@ -39,12 +39,12 @@
 // MMIO Register Definitions
 #define TPM_BASE 0x40000000
 
-#define TPM_ACCESS                                                             \
+#define TPM_ACCESS \
     (*(volatile uint8_t *)(TPM_BASE + 0x0000)) // Used to request and check
                                                // access to the TPM
 #define TPM_STS (*(volatile uint32_t *)(TPM_BASE + 0x0018)) // only 3 bytes used
-#define TPM_DATA_FIFO                                                          \
-    (*(volatile uint8_t *)(TPM_BASE +                                          \
+#define TPM_DATA_FIFO                 \
+    (*(volatile uint8_t *)(TPM_BASE + \
                            0x0024)) // The FIFO register for sending commands
                                     // and reading responses.
 
@@ -260,12 +260,41 @@ static void tpm_drain_bytes(size_t size) {
 }
 
 /* ===========================================================================
+ * Diagnostic helpers (only print on mismatch, max 2-3 lines each)
+ * ===========================================================================
+ */
+
+static void diag_hex_cmp(const char *label, const uint8_t *exp,
+                         const uint8_t *act, size_t len) {
+    int d = -1;
+    for (size_t i = 0; i < len; i++) {
+        if (exp[i] != act[i]) {
+            d = i;
+            break;
+        }
+    }
+    if (d < 0)
+        return;
+    size_t s = (d >= 4) ? d - 4 : 0;
+    size_t e = (d + 12 < (int)len) ? d + 12 : len;
+    DBG_PRINTF("[DIAG] %s: 1st diff @%d  exp:", label, d);
+    for (size_t i = s; i < e; i++)
+        DBG_PRINTF(" %02X", exp[i]);
+    DBG_PRINTF("\n");
+    DBG_PRINTF("[DIAG] %*s  act:", (int)(22 + strlen(label)), "");
+    for (size_t i = s; i < e; i++)
+        DBG_PRINTF(" %02X", act[i]);
+    DBG_PRINTF("\n");
+}
+
+/* ===========================================================================
  * TPM_ST_SESSIONS Helper Functions
- * =========================================================================== */
+ * ===========================================================================
+ */
 
 /* Authorization area sizes using the wire-format structs */
-#define AUTH_CMD_AREA_SIZE  sizeof(TPMS_AUTH_COMMAND_AREA)
-#define AUTH_RSP_AREA_SIZE  sizeof(TPMS_AUTH_RESPONSE_AREA)
+#define AUTH_CMD_AREA_SIZE sizeof(TPMS_AUTH_COMMAND_AREA)
+#define AUTH_RSP_AREA_SIZE sizeof(TPMS_AUTH_RESPONSE_AREA)
 
 /**
  * @brief Send empty password authorization area using __packed struct.
@@ -276,8 +305,7 @@ static void tpm_send_auth_area(void) {
         .auth = {
             .sessionHandle = TPM_RS_PW,
             /* nonce, sessionAttributes, hmac: zero-init */
-        }
-    };
+        }};
     tpm_send(&area, sizeof(area));
 }
 
@@ -290,98 +318,98 @@ static void skip_auth_response_area(void) {
 }
 
 #ifndef TPM2_InOut
-#define TPM2_InOut(F)                                                          \
-    TPM_RC TPM2_##F(F##_In *in, F##_Out *out) {                                \
-        tpm_rsp_header_t rsp;                                                  \
-                                                                               \
-        tpm_cmd_header_t cmd = {.tag = TPM_ST_NO_SESSIONS,                     \
-                                .commandSize = sizeof(cmd) + sizeof(*in),      \
-                                .commandCode = TPM_CC_##F};                    \
-                                                                               \
-        DBG_PRINTF("[DBG] TPM2_" #F                                            \
-                   ": Sending cmd (tag=0x%04X, size=%lu, code=0x%08lX)\n",     \
-                   cmd.tag, (unsigned long)cmd.commandSize,                    \
-                   (unsigned long)cmd.commandCode);                            \
-                                                                               \
-        tpm_command_ready();                                                   \
-        tpm_send(&cmd, sizeof(cmd));                                           \
-        tpm_send(in, sizeof(*in));                                             \
-                                                                               \
-        tpm_go();                                                              \
-                                                                               \
-        tpm_receive(&rsp, sizeof(rsp));                                        \
-        DBG_PRINTF("[DBG] TPM2_" #F                                            \
-                   ": Received rsp (tag=0x%04X, size=%lu, rc=0x%08lX)\n",      \
-                   rsp.tag, (unsigned long)rsp.responseSize,                   \
-                   (unsigned long)rsp.responseCode);                           \
-                                                                               \
-        size_t remaining = 0;                                                  \
-        if (rsp.responseSize >= sizeof(rsp) && rsp.responseSize <= 4096) {     \
-            remaining = (size_t)rsp.responseSize - sizeof(rsp);                \
-        }                                                                      \
-        DBG_PRINTF("[DBG] TPM2_" #F ": remaining=%lu bytes\n",                 \
-                   (unsigned long)remaining);                                  \
-                                                                               \
-        if (out != NULL) {                                                     \
-            memset(out, 0, sizeof(*out));                                      \
-        }                                                                      \
-                                                                               \
-        if (rsp.responseCode != TPM_RC_SUCCESS) {                              \
-            DBG_PRINTF("[DBG] TPM2_" #F                                        \
-                       ": Error response, draining %lu bytes\n",               \
-                       (unsigned long)remaining);                              \
-            tpm_drain_bytes(remaining);                                        \
-            return rsp.responseCode;                                           \
-        }                                                                      \
-                                                                               \
-        if (out != NULL) {                                                     \
-            size_t to_read = min_size(remaining, sizeof(*out));                \
-            DBG_PRINTF("[DBG] TPM2_" #F                                        \
-                       ": Reading %lu bytes to out (out size=%lu)\n",          \
-                       (unsigned long)to_read, (unsigned long)sizeof(*out));   \
-            tpm_receive(out, to_read);                                         \
-            tpm_drain_bytes(remaining - to_read);                              \
-        } else {                                                               \
-            tpm_drain_bytes(remaining);                                        \
-        }                                                                      \
-                                                                               \
-        return rsp.responseCode;                                               \
+#define TPM2_InOut(F)                                                        \
+    TPM_RC TPM2_##F(F##_In *in, F##_Out *out) {                              \
+        tpm_rsp_header_t rsp;                                                \
+                                                                             \
+        tpm_cmd_header_t cmd = {.tag = TPM_ST_NO_SESSIONS,                   \
+                                .commandSize = sizeof(cmd) + sizeof(*in),    \
+                                .commandCode = TPM_CC_##F};                  \
+                                                                             \
+        DBG_PRINTF("[DBG] TPM2_" #F                                          \
+                   ": Sending cmd (tag=0x%04X, size=%lu, code=0x%08lX)\n",   \
+                   cmd.tag, (unsigned long)cmd.commandSize,                  \
+                   (unsigned long)cmd.commandCode);                          \
+                                                                             \
+        tpm_command_ready();                                                 \
+        tpm_send(&cmd, sizeof(cmd));                                         \
+        tpm_send(in, sizeof(*in));                                           \
+                                                                             \
+        tpm_go();                                                            \
+                                                                             \
+        tpm_receive(&rsp, sizeof(rsp));                                      \
+        DBG_PRINTF("[DBG] TPM2_" #F                                          \
+                   ": Received rsp (tag=0x%04X, size=%lu, rc=0x%08lX)\n",    \
+                   rsp.tag, (unsigned long)rsp.responseSize,                 \
+                   (unsigned long)rsp.responseCode);                         \
+                                                                             \
+        size_t remaining = 0;                                                \
+        if (rsp.responseSize >= sizeof(rsp) && rsp.responseSize <= 4096) {   \
+            remaining = (size_t)rsp.responseSize - sizeof(rsp);              \
+        }                                                                    \
+        DBG_PRINTF("[DBG] TPM2_" #F ": remaining=%lu bytes\n",               \
+                   (unsigned long)remaining);                                \
+                                                                             \
+        if (out != NULL) {                                                   \
+            memset(out, 0, sizeof(*out));                                    \
+        }                                                                    \
+                                                                             \
+        if (rsp.responseCode != TPM_RC_SUCCESS) {                            \
+            DBG_PRINTF("[DBG] TPM2_" #F                                      \
+                       ": Error response, draining %lu bytes\n",             \
+                       (unsigned long)remaining);                            \
+            tpm_drain_bytes(remaining);                                      \
+            return rsp.responseCode;                                         \
+        }                                                                    \
+                                                                             \
+        if (out != NULL) {                                                   \
+            size_t to_read = min_size(remaining, sizeof(*out));              \
+            DBG_PRINTF("[DBG] TPM2_" #F                                      \
+                       ": Reading %lu bytes to out (out size=%lu)\n",        \
+                       (unsigned long)to_read, (unsigned long)sizeof(*out)); \
+            tpm_receive(out, to_read);                                       \
+            tpm_drain_bytes(remaining - to_read);                            \
+        } else {                                                             \
+            tpm_drain_bytes(remaining);                                      \
+        }                                                                    \
+                                                                             \
+        return rsp.responseCode;                                             \
     }
 #endif
 
 #ifndef TPM2_In
-#define TPM2_In(F)                                                             \
-    TPM_RC TPM2_##F(F##_In *in) {                                              \
-        tpm_rsp_header_t rsp;                                                  \
-                                                                               \
-        tpm_cmd_header_t cmd = {.tag = TPM_ST_NO_SESSIONS,                     \
-                                .commandSize = sizeof(cmd) + sizeof(*in),      \
-                                .commandCode = TPM_CC_##F};                    \
-                                                                               \
-        DBG_PRINTF("[DBG] TPM2_" #F                                            \
-                   ": Sending cmd (tag=0x%04X, size=%lu, code=0x%08lX)\n",     \
-                   cmd.tag, (unsigned long)cmd.commandSize,                    \
-                   (unsigned long)cmd.commandCode);                            \
-                                                                               \
-        tpm_command_ready();                                                   \
-        tpm_send(&cmd, sizeof(cmd));                                           \
-        tpm_send(in, sizeof(*in));                                             \
-                                                                               \
-        tpm_go();                                                              \
-                                                                               \
-        tpm_receive(&rsp, sizeof(rsp));                                        \
-        DBG_PRINTF("[DBG] TPM2_" #F                                            \
-                   ": Received rsp (tag=0x%04X, size=%lu, rc=0x%08lX)\n",      \
-                   rsp.tag, (unsigned long)rsp.responseSize,                   \
-                   (unsigned long)rsp.responseCode);                           \
-                                                                               \
-        size_t remaining = 0;                                                  \
-        if (rsp.responseSize >= sizeof(rsp) && rsp.responseSize <= 4096) {     \
-            remaining = (size_t)rsp.responseSize - sizeof(rsp);                \
-        }                                                                      \
-        tpm_drain_bytes(remaining);                                            \
-                                                                               \
-        return rsp.responseCode;                                               \
+#define TPM2_In(F)                                                         \
+    TPM_RC TPM2_##F(F##_In *in) {                                          \
+        tpm_rsp_header_t rsp;                                              \
+                                                                           \
+        tpm_cmd_header_t cmd = {.tag = TPM_ST_NO_SESSIONS,                 \
+                                .commandSize = sizeof(cmd) + sizeof(*in),  \
+                                .commandCode = TPM_CC_##F};                \
+                                                                           \
+        DBG_PRINTF("[DBG] TPM2_" #F                                        \
+                   ": Sending cmd (tag=0x%04X, size=%lu, code=0x%08lX)\n", \
+                   cmd.tag, (unsigned long)cmd.commandSize,                \
+                   (unsigned long)cmd.commandCode);                        \
+                                                                           \
+        tpm_command_ready();                                               \
+        tpm_send(&cmd, sizeof(cmd));                                       \
+        tpm_send(in, sizeof(*in));                                         \
+                                                                           \
+        tpm_go();                                                          \
+                                                                           \
+        tpm_receive(&rsp, sizeof(rsp));                                    \
+        DBG_PRINTF("[DBG] TPM2_" #F                                        \
+                   ": Received rsp (tag=0x%04X, size=%lu, rc=0x%08lX)\n",  \
+                   rsp.tag, (unsigned long)rsp.responseSize,               \
+                   (unsigned long)rsp.responseCode);                       \
+                                                                           \
+        size_t remaining = 0;                                              \
+        if (rsp.responseSize >= sizeof(rsp) && rsp.responseSize <= 4096) { \
+            remaining = (size_t)rsp.responseSize - sizeof(rsp);            \
+        }                                                                  \
+        tpm_drain_bytes(remaining);                                        \
+                                                                           \
+        return rsp.responseCode;                                           \
     }
 #endif
 
@@ -565,8 +593,8 @@ void TPM2_Sign_smoke_test(void) {
            "!= TPM_RC_COMMAND_SIZE", string_from_TPM_RC(res));
 
     if (res == TPM_RC_SUCCESS) {
-        assert(out.signature.signature.signatureSize > 0, "TPM2_Sign signature size",
-               "> 0", "0");
+        assert(out.signature.signature.signatureSize > 0,
+               "TPM2_Sign signature size", "> 0", "0");
     }
 }
 #endif
@@ -699,21 +727,20 @@ void TPM2_RSA_EncryptDecrypt_smoke_test(void) {
 /* Shared state for key management tests */
 #ifdef TPM_TEST_ENABLE_CREATEPRIMARY
 static CreatePrimary_Out
-    g_create_primary_out;          /* Output from TPM2_CreatePrimary */
+    g_create_primary_out; /* Output from TPM2_CreatePrimary */
 #endif
 
 #ifdef TPM_TEST_ENABLE_CREATE
-static Create_Out g_create_out;    /* Output from TPM2_Create */
+static Create_Out g_create_out; /* Output from TPM2_Create */
 #endif
 
 #ifdef TPM_TEST_ENABLE_LOAD
-static Load_Out g_load_out;        /* Output from TPM2_Load */
+static Load_Out g_load_out; /* Output from TPM2_Load */
 #endif
 
 static TPM_HANDLE g_parent_handle; /* Parent key handle (primary) */
 static bool g_key_created = false; /* Flag: key was created successfully */
 static bool g_key_loaded = false;  /* Flag: key was loaded successfully */
-
 
 /**
  * @brief Test TPM2_CreatePrimary command
@@ -817,8 +844,10 @@ void TPM2_CreatePrimary_test(void) {
 
     // 3. Prepend NameAlg (00 0B) to get the final "Name"
     uint8_t expected_name[34];
-    expected_name[0] = (uint8_t)(g_create_primary_out.outPublic.publicArea.nameAlg >> 8);
-    expected_name[1] = (uint8_t)(g_create_primary_out.outPublic.publicArea.nameAlg & 0xFF);
+    expected_name[0] =
+        (uint8_t)(g_create_primary_out.outPublic.publicArea.nameAlg >> 8);
+    expected_name[1] =
+        (uint8_t)(g_create_primary_out.outPublic.publicArea.nameAlg & 0xFF);
     memcpy(&expected_name[2], digest, 32);
 
     // 4. Compare with TPM returned Name
@@ -828,6 +857,14 @@ void TPM2_CreatePrimary_test(void) {
         snprintf(act_s, sizeof(act_s), "%u", g_create_primary_out.name.size);
         assert(g_create_primary_out.name.size == sizeof(expected_name),
                "TPM2_CreatePrimary Name size mismatch", exp_s, act_s);
+    }
+    if (memcmp(g_create_primary_out.name.buffer, expected_name,
+               sizeof(expected_name)) != 0) {
+        diag_hex_cmp("CreatePrimary Name", expected_name,
+                     g_create_primary_out.name.buffer, 34);
+        DBG_PRINTF("[DIAG]   sizeof(TPMT_PUBLIC)=%zu, nameAlg=0x%04X\n",
+                   sizeof(TPMT_PUBLIC),
+                   g_create_primary_out.outPublic.publicArea.nameAlg);
     }
     assert(memcmp(g_create_primary_out.name.buffer, expected_name,
                   sizeof(expected_name)) == 0,
@@ -857,11 +894,19 @@ void TPM2_CreatePrimary_test(void) {
     {
         char exp_s[8], act_s[8];
         snprintf(exp_s, sizeof(exp_s), "32");
-        snprintf(act_s, sizeof(act_s), "%u", g_create_primary_out.creationHash.size);
+        snprintf(act_s, sizeof(act_s), "%u",
+                 g_create_primary_out.creationHash.size);
         assert(g_create_primary_out.creationHash.size == 32,
                "TPM2_CreatePrimary creationHash size mismatch", exp_s, act_s);
     }
 
+    if (memcmp(g_create_primary_out.creationHash.buffer,
+               calculated_creation_hash, 32) != 0) {
+        diag_hex_cmp("CreatePrimary creationHash", calculated_creation_hash,
+                     g_create_primary_out.creationHash.buffer, 32);
+        DBG_PRINTF("[DIAG]   creationData.size=%u\n",
+                   g_create_primary_out.creationData.size);
+    }
     assert(memcmp(g_create_primary_out.creationHash.buffer,
                   calculated_creation_hash, 32) == 0,
            "TPM2_CreatePrimary creationHash mismatch", NULL, NULL);
@@ -912,9 +957,7 @@ void TPM2_CreatePrimary_with_sessions_test(void) {
      * ---------------------------------------------------------------- */
 
     TPM2B_SENSITIVE_CREATE inSensitive = {
-        .size = 0,
-        .sensitive = {.userAuth = {.size = 0},
-                      .data = {.size = 0}}};
+        .size = 0, .sensitive = {.userAuth = {.size = 0}, .data = {.size = 0}}};
 
     TPM2B_PUBLIC inPublic = {
         .size = 0,
@@ -952,20 +995,20 @@ void TPM2_CreatePrimary_with_sessions_test(void) {
      * 2. Send Command with TPM_ST_SESSIONS
      * ---------------------------------------------------------------- */
 
-    tpm_cmd_header_t cmd = {
-        .tag = TPM_ST_SESSIONS,
-        .commandSize = sizeof(cmd) + sizeof(in) + AUTH_CMD_AREA_SIZE,
-        .commandCode = TPM_CC_CreatePrimary
-    };
+    tpm_cmd_header_t cmd = {.tag = TPM_ST_SESSIONS,
+                            .commandSize =
+                                sizeof(cmd) + sizeof(in) + AUTH_CMD_AREA_SIZE,
+                            .commandCode = TPM_CC_CreatePrimary};
 
-    DBG_PRINTF("[DBG] TPM2_CreatePrimary_sessions: Sending cmd (tag=0x%04X, size=%lu, code=0x%08lX)\n",
+    DBG_PRINTF("[DBG] TPM2_CreatePrimary_sessions: Sending cmd (tag=0x%04X, "
+               "size=%lu, code=0x%08lX)\n",
                cmd.tag, (unsigned long)cmd.commandSize,
                (unsigned long)cmd.commandCode);
 
     tpm_command_ready();
     tpm_send(&cmd, sizeof(cmd));
     tpm_send(&in, sizeof(in));
-    tpm_send_auth_area();  /* Send password session area */
+    tpm_send_auth_area(); /* Send password session area */
     tpm_go();
 
     /* ----------------------------------------------------------------
@@ -975,7 +1018,8 @@ void TPM2_CreatePrimary_with_sessions_test(void) {
     tpm_rsp_header_t rsp;
     tpm_receive(&rsp, sizeof(rsp));
 
-    DBG_PRINTF("[DBG] TPM2_CreatePrimary_sessions: Received rsp (tag=0x%04X, size=%lu, rc=0x%08lX)\n",
+    DBG_PRINTF("[DBG] TPM2_CreatePrimary_sessions: Received rsp (tag=0x%04X, "
+               "size=%lu, rc=0x%08lX)\n",
                rsp.tag, (unsigned long)rsp.responseSize,
                (unsigned long)rsp.responseCode);
 
@@ -992,7 +1036,8 @@ void TPM2_CreatePrimary_with_sessions_test(void) {
     if (rsp.responseCode != TPM_RC_SUCCESS) {
         /* Drain remaining bytes and return */
         size_t remaining = (rsp.responseSize > sizeof(rsp)) ?
-                          (size_t)rsp.responseSize - sizeof(rsp) : 0;
+                               (size_t)rsp.responseSize - sizeof(rsp) :
+                               0;
         tpm_drain_bytes(remaining);
         return;
     }
@@ -1003,8 +1048,7 @@ void TPM2_CreatePrimary_with_sessions_test(void) {
         snprintf(exp_str, sizeof(exp_str), "0x%04X", TPM_ST_SESSIONS);
         snprintf(act_str, sizeof(act_str), "0x%04X", rsp.tag);
         assert(rsp.tag == TPM_ST_SESSIONS,
-               "Expected TPM_ST_SESSIONS response tag",
-               exp_str, act_str);
+               "Expected TPM_ST_SESSIONS response tag", exp_str, act_str);
     }
 
     /* Skip auth response area */
@@ -1014,8 +1058,11 @@ void TPM2_CreatePrimary_with_sessions_test(void) {
     tpm_receive(&out, sizeof(out));
 
     /* Drain any remaining bytes */
-    size_t remaining = (rsp.responseSize > sizeof(rsp) + AUTH_RSP_AREA_SIZE + sizeof(out)) ?
-                      (size_t)rsp.responseSize - sizeof(rsp) - AUTH_RSP_AREA_SIZE - sizeof(out) : 0;
+    size_t remaining =
+        (rsp.responseSize > sizeof(rsp) + AUTH_RSP_AREA_SIZE + sizeof(out)) ?
+            (size_t)rsp.responseSize - sizeof(rsp) - AUTH_RSP_AREA_SIZE -
+                sizeof(out) :
+            0;
     tpm_drain_bytes(remaining);
 
     /* ----------------------------------------------------------------
@@ -1034,8 +1081,7 @@ void TPM2_CreatePrimary_with_sessions_test(void) {
     }
 
     /* ASSERT: Name is present */
-    assert(out.name.size > 0,
-           "TPM2_CreatePrimary_sessions: name is empty",
+    assert(out.name.size > 0, "TPM2_CreatePrimary_sessions: name is empty",
            "> 0", "0");
 
     DBG_PRINTF("[TEST] TPM2_CreatePrimary with TPM_ST_SESSIONS: SUCCESS\n");
@@ -1103,12 +1149,12 @@ void TPM2_Create_test(void) {
     /* No inner symmetric protection (signing key, not storage key) */
     in.inPublic.publicArea.parameters.rsaDetail.symmetric.algorithm =
         TPM_ALG_NULL;
-    in.inPublic.publicArea.parameters.rsaDetail.scheme.scheme =
-        TPM_ALG_RSASSA;
-    in.inPublic.publicArea.parameters.rsaDetail.scheme.details.anySig
-        .hashAlg = TPM_ALG_SHA256;
+    in.inPublic.publicArea.parameters.rsaDetail.scheme.scheme = TPM_ALG_RSASSA;
+    in.inPublic.publicArea.parameters.rsaDetail.scheme.details.anySig.hashAlg =
+        TPM_ALG_SHA256;
     in.inPublic.publicArea.parameters.rsaDetail.keyBits = 2048;
-    in.inPublic.publicArea.parameters.rsaDetail.exponent = 0; /* default 65537 */
+    in.inPublic.publicArea.parameters.rsaDetail.exponent =
+        0; /* default 65537 */
 
     in.inPublic.publicArea.unique.rsa.size = 0; /* TPM generates */
 
@@ -1150,13 +1196,18 @@ void TPM2_Create_test(void) {
 
         assert(g_create_out.creationHash.size == 32,
                "TPM2_Create: creationHash size != 32\n", "32", "other");
+        if (memcmp(g_create_out.creationHash.buffer, calc_hash, 32) != 0) {
+            diag_hex_cmp("Create creationHash", calc_hash,
+                         g_create_out.creationHash.buffer, 32);
+            DBG_PRINTF("[DIAG]   creationData.size=%u\n",
+                       g_create_out.creationData.size);
+        }
         assert(memcmp(g_create_out.creationHash.buffer, calc_hash, 32) == 0,
                "TPM2_Create: creationHash mismatch\n", NULL, NULL);
 
         /* ---- creationTicket tag ---- */
         assert(g_create_out.creationTicket.tag == TPM_ST_CREATION,
-               "TPM2_Create: ticket tag invalid\n", "TPM_ST_CREATION",
-               "OTHER");
+               "TPM2_Create: ticket tag invalid\n", "TPM_ST_CREATION", "OTHER");
 
         DBG_PRINTF(
             "[TEST] TPM2_Create: SUCCESS (private=%u, public=%u bytes)\n",
@@ -1213,8 +1264,8 @@ void TPM2_Load_test(void) {
     memcpy(&in.inPublic, &g_create_out.outPublic, sizeof(in.inPublic));
 
     DBG_PRINTF("[TEST] TPM2_Load: parent=0x%08lX, private=%u, public=%u\n",
-               (unsigned long)in.parentHandle,
-               in.inPrivate.size, in.inPublic.size);
+               (unsigned long)in.parentHandle, in.inPrivate.size,
+               in.inPublic.size);
 
     /* ---- Execute command ---- */
     res = TPM2_Load(&in, &g_load_out);
@@ -1246,8 +1297,7 @@ void TPM2_Load_test(void) {
         char exp_str[16], act_str[16];
         snprintf(exp_str, sizeof(exp_str), "0x80");
         snprintf(act_str, sizeof(act_str), "0x%02X", ht);
-        assert(ht == 0x80,
-               "TPM2_Load: handle not in transient range\n",
+        assert(ht == 0x80, "TPM2_Load: handle not in transient range\n",
                exp_str, act_str);
     }
 
@@ -1268,8 +1318,7 @@ void TPM2_Load_test(void) {
     /* ================================================================
      * ASSERT 3: name.size > 0
      * ================================================================ */
-    assert(g_load_out.name.size > 0,
-           "TPM2_Load: name is empty\n", "> 0", "0");
+    assert(g_load_out.name.size > 0, "TPM2_Load: name is empty\n", "> 0", "0");
 
     /* ================================================================
      * ASSERT 4: Name == nameAlg || Hash(TPMT_PUBLIC)
@@ -1301,13 +1350,19 @@ void TPM2_Load_test(void) {
         /* Compare sizes */
         {
             char exp_s[8], act_s[8];
-            snprintf(exp_s, sizeof(exp_s), "%u", (unsigned)sizeof(expected_name));
+            snprintf(exp_s, sizeof(exp_s), "%u",
+                     (unsigned)sizeof(expected_name));
             snprintf(act_s, sizeof(act_s), "%u", g_load_out.name.size);
             assert(g_load_out.name.size == sizeof(expected_name),
                    "TPM2_Load: Name size mismatch\n", exp_s, act_s);
         }
 
         /* Compare content */
+        if (memcmp(g_load_out.name.buffer, expected_name,
+                   sizeof(expected_name)) != 0) {
+            diag_hex_cmp("Load Name", expected_name, g_load_out.name.buffer,
+                         34);
+        }
         assert(memcmp(g_load_out.name.buffer, expected_name,
                       sizeof(expected_name)) == 0,
                "TPM2_Load: Name content mismatch\n", NULL, NULL);
@@ -1320,8 +1375,7 @@ void TPM2_Load_test(void) {
            "TPM2_Load: loaded key type != RSA\n", "TPM_ALG_RSA", "OTHER");
 
     DBG_PRINTF("[TEST] TPM2_Load: SUCCESS (handle=0x%08lX, name_size=%u)\n",
-               (unsigned long)g_load_out.objectHandle,
-               g_load_out.name.size);
+               (unsigned long)g_load_out.objectHandle, g_load_out.name.size);
 }
 #endif
 
@@ -1372,8 +1426,8 @@ void TPM2_ReadPublic_test(void) {
 
     if (res == TPM_RC_SUCCESS) {
         /* Verify public area is present */
-        assert(out.outPublic.size > 0,
-               "TPM2_ReadPublic: outPublic is empty\n", "> 0", "0");
+        assert(out.outPublic.size > 0, "TPM2_ReadPublic: outPublic is empty\n",
+               "> 0", "0");
 
         /* Verify name is present */
         assert(out.name.size > 0, "TPM2_ReadPublic: name is empty\n", "> 0",
@@ -1397,8 +1451,7 @@ void TPM2_ReadPublic_test(void) {
 
         DBG_PRINTF("[TEST] TPM2_ReadPublic: SUCCESS (public=%u, name=%u, "
                    "qname=%u bytes)\n",
-                   out.outPublic.size, out.name.size,
-                   out.qualifiedName.size);
+                   out.outPublic.size, out.name.size, out.qualifiedName.size);
     } else {
         DBG_PRINTF("[TEST] TPM2_ReadPublic: FAILED with rc=0x%08lX (%s)\n",
                    (unsigned long)res, string_from_TPM_RC(res));
