@@ -688,6 +688,20 @@ typedef struct __packed {
 /* Password authorization pseudo-handle */
 #define TPM_RS_PW 0x40000009
 
+/*
+ * Wire-format auth areas (authSize prefix + content).
+ * Used with MARSHAL/UNMARSHAL — no manual byte encoding needed.
+ */
+typedef struct __packed {
+    UINT32 authSize;            /* sizeof(TPMS_AUTH_COMMAND) */
+    TPMS_AUTH_COMMAND auth;
+} TPMS_AUTH_COMMAND_AREA;
+
+typedef struct __packed {
+    UINT32 authSize;            /* sizeof(TPMS_AUTH_RESPONSE) */
+    TPMS_AUTH_RESPONSE auth;
+} TPMS_AUTH_RESPONSE_AREA;
+
 /* Subsection #4.2: Useful Additions */
 
 // Command Header

@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "hw/misc/tpm2_spec_protocol.h"
 
 /* Public cryptographic helper APIs used by TPM command handlers */
 
@@ -25,12 +26,12 @@ uint8_t CryptVerifySignatureRSA_PSS_SHA256(const uint8_t *data, uint16_t dataSiz
                                            const uint8_t *publicKey, uint16_t keySize);
 
 /* AES helpers (ECB/CBC/CFB/OFB/CTR) and simple wrappers */
-void CryptEncrypt(const uint8_t *data, uint16_t dataSize,
-                  const uint8_t *key, uint16_t keySize,
-                  uint8_t *encrypted);
-void CryptDecrypt(const uint8_t *encrypted, uint16_t dataSize,
-                  const uint8_t *key, uint16_t keySize,
-                  uint8_t *decrypted);
+TPM_RC CryptEncrypt(const uint8_t *data, uint16_t dataSize,
+                    const uint8_t *key, uint16_t keySize,
+                    uint8_t *encrypted);
+TPM_RC CryptDecrypt(const uint8_t *encrypted, uint16_t dataSize,
+                    const uint8_t *key, uint16_t keySize,
+                    uint8_t *decrypted);
 
 /* AES mode wrappers without padding (lengths must be multiples per mode rules) */
 void TPM_AES_ECB_Encrypt(const uint8_t *in, size_t dataSize,

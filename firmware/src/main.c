@@ -263,70 +263,30 @@ static void tpm_drain_bytes(size_t size) {
  * TPM_ST_SESSIONS Helper Functions
  * =========================================================================== */
 
-/* Authorization area size for password auth with empty password */
-#define AUTH_AREA_SIZE (4 + 4 + 2 + 1 + 2)  /* authSize + sessionHandle + nonce + attrs + hmac */
+/* Authorization area sizes using the wire-format structs */
+#define AUTH_CMD_AREA_SIZE  sizeof(TPMS_AUTH_COMMAND_AREA)
+#define AUTH_RSP_AREA_SIZE  sizeof(TPMS_AUTH_RESPONSE_AREA)
 
 /**
- * @brief Send empty password authorization area
- *
- * Format: authSize (4) || sessionHandle (4) || nonce (2+0) ||
- *         sessionAttributes (1) || hmac (2+0)
+ * @brief Send empty password authorization area using __packed struct.
  */
 static void tpm_send_auth_area(void) {
-    uint32_t authSize = 4 + 2 + 1 + 2;  /* sessionHandle + nonce + attrs + hmac */
-    uint32_t sessionHandle = TPM_RS_PW; /* 0x40000009 - Password authorization */
-    uint16_t nonceSize = 0;             /* Empty nonce */
-    uint8_t attrs = 0;                  /* No special attributes */
-    uint16_t hmacSize = 0;              /* Empty HMAC (empty password) */
-
-    /* Send in big-endian format */
-    uint8_t buf[4];
-
-    /* authSize */
-    buf[0] = (uint8_t)(authSize >> 24);
-    buf[1] = (uint8_t)(authSize >> 16);
-    buf[2] = (uint8_t)(authSize >> 8);
-    buf[3] = (uint8_t)(authSize);
-    tpm_send(buf, 4);
-
-    /* sessionHandle */
-    buf[0] = (uint8_t)(sessionHandle >> 24);
-    buf[1] = (uint8_t)(sessionHandle >> 16);
-    buf[2] = (uint8_t)(sessionHandle >> 8);
-    buf[3] = (uint8_t)(sessionHandle);
-    tpm_send(buf, 4);
-
-    /* nonce size */
-    buf[0] = (uint8_t)(nonceSize >> 8);
-    buf[1] = (uint8_t)(nonceSize);
-    tpm_send(buf, 2);
-
-    /* sessionAttributes */
-    tpm_send(&attrs, 1);
-
-    /* hmac size */
-    buf[0] = (uint8_t)(hmacSize >> 8);
-    buf[1] = (uint8_t)(hmacSize);
-    tpm_send(buf, 2);
+    TPMS_AUTH_COMMAND_AREA area = {
+        .authSize = sizeof(TPMS_AUTH_COMMAND),
+        .auth = {
+            .sessionHandle = TPM_RS_PW,
+            /* nonce, sessionAttributes, hmac: zero-init */
+        }
+    };
+    tpm_send(&area, sizeof(area));
 }
 
 /**
- * @brief Skip authorization response area in TPM_ST_SESSIONS responses
- *
- * Format: authSize (4) || nonce (2+N) || sessionAttributes (1) || hmac (2+N)
+ * @brief Skip authorization response area in TPM_ST_SESSIONS responses.
  */
 static void skip_auth_response_area(void) {
-    uint8_t buf[4];
-    tpm_receive(buf, 4);
-
-    /* Read authSize (big-endian) */
-    uint32_t authSize = ((uint32_t)buf[0] << 24) |
-                        ((uint32_t)buf[1] << 16) |
-                        ((uint32_t)buf[2] << 8) |
-                        (uint32_t)buf[3];
-
-    /* Drain the auth response area */
-    tpm_drain_bytes(authSize);
+    TPMS_AUTH_RESPONSE_AREA area;
+    tpm_receive(&area, sizeof(area));
 }
 
 #ifndef TPM2_InOut
@@ -994,7 +954,7 @@ void TPM2_CreatePrimary_with_sessions_test(void) {
 
     tpm_cmd_header_t cmd = {
         .tag = TPM_ST_SESSIONS,
-        .commandSize = sizeof(cmd) + sizeof(in) + AUTH_AREA_SIZE,
+        .commandSize = sizeof(cmd) + sizeof(in) + AUTH_CMD_AREA_SIZE,
         .commandCode = TPM_CC_CreatePrimary
     };
 
@@ -1054,8 +1014,8 @@ void TPM2_CreatePrimary_with_sessions_test(void) {
     tpm_receive(&out, sizeof(out));
 
     /* Drain any remaining bytes */
-    size_t remaining = (rsp.responseSize > sizeof(rsp) + AUTH_AREA_SIZE + sizeof(out)) ?
-                      (size_t)rsp.responseSize - sizeof(rsp) - AUTH_AREA_SIZE - sizeof(out) : 0;
+    size_t remaining = (rsp.responseSize > sizeof(rsp) + AUTH_RSP_AREA_SIZE + sizeof(out)) ?
+                      (size_t)rsp.responseSize - sizeof(rsp) - AUTH_RSP_AREA_SIZE - sizeof(out) : 0;
     tpm_drain_bytes(remaining);
 
     /* ----------------------------------------------------------------

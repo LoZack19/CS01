@@ -7,98 +7,51 @@
  * sessionHandle is TPM_RS_PW (password authorization), but skip HMAC
  * validation.
  *
+ * Uses the standard MARSHAL/UNMARSHAL macros on __packed wire-format
+ * structs (TPMS_AUTH_COMMAND_AREA / TPMS_AUTH_RESPONSE_AREA).
+ *
  * Reference: TPM 2.0 Part 1, Section 19 (Authorization)
  */
 
 #include "hw/misc/s32k358_tpm.h"
 #include "hw/misc/tpm2_spec_protocol.h"
 #include "qemu/fifo8.h"
-#include <string.h>
 
 /*
  * ParseAuthArea – Parse authorization area from command FIFO.
  *
- * Format: authSize (4) || sessionHandle (4) || nonce (2+N) ||
- *         sessionAttributes (1) || hmac (2+N)
+ * Unmarshals a TPMS_AUTH_COMMAND_AREA (authSize + TPMS_AUTH_COMMAND)
+ * and validates the session handle.
  *
- * This simplified implementation:
- *   - Verifies sessionHandle == TPM_RS_PW (password authorization)
- *   - Accepts empty passwords without HMAC validation
- *   - Returns TPM_RC_SUCCESS if valid, error otherwise
- *
- * Reference: TPM 2.0 Part 1, Table 75 (TPMS_AUTH_COMMAND)
+ * Returns TPM_RC_SUCCESS if valid, error otherwise.
  */
 TPM_RC ParseAuthArea(Fifo8 *fifo, TPMS_AUTH_COMMAND *authCmd)
 {
-    UINT32 authSize;
+    TPMS_AUTH_COMMAND_AREA area;
 
     if (authCmd == NULL || fifo == NULL) {
         return TPM_RC_FAILURE;
     }
 
-    /* Check minimum size for authSize field. */
-    if (fifo8_num_used(fifo) < 4) {
+    if (fifo8_num_used(fifo) < sizeof(TPMS_AUTH_COMMAND_AREA)) {
         return TPM_RC_COMMAND_SIZE;
     }
 
-    /* Read authSize (big-endian). */
-    authSize = ((UINT32)fifo8_pop(fifo) << 24) |
-               ((UINT32)fifo8_pop(fifo) << 16) |
-               ((UINT32)fifo8_pop(fifo) << 8) |
-               (UINT32)fifo8_pop(fifo);
+    UNMARSHAL(&area, fifo);
 
-    /* Verify we have enough data for the auth area. */
-    if (fifo8_num_used(fifo) < authSize) {
-        return TPM_RC_COMMAND_SIZE;
+    /* Only password sessions supported. */
+    if (area.auth.sessionHandle != TPM_RS_PW) {
+        return TPM_RC_HANDLE;
     }
 
-    /* Read sessionHandle (big-endian). */
-    authCmd->sessionHandle = ((UINT32)fifo8_pop(fifo) << 24) |
-                             ((UINT32)fifo8_pop(fifo) << 16) |
-                             ((UINT32)fifo8_pop(fifo) << 8) |
-                             (UINT32)fifo8_pop(fifo);
-
-    /* Verify it's a password session (only type we support). */
-    if (authCmd->sessionHandle != TPM_RS_PW) {
-        return TPM_RC_HANDLE; /* Only password sessions supported. */
-    }
-
-    /* Read nonce (size + buffer). */
-    authCmd->nonce.size = ((UINT16)fifo8_pop(fifo) << 8) |
-                          (UINT16)fifo8_pop(fifo);
-
-    for (UINT16 i = 0; i < authCmd->nonce.size &&
-                        i < sizeof(authCmd->nonce.buffer); i++) {
-        authCmd->nonce.buffer[i] = fifo8_pop(fifo);
-    }
-
-    /* Read sessionAttributes. */
-    authCmd->sessionAttributes = fifo8_pop(fifo);
-
-    /* Read HMAC/password (size + buffer). */
-    authCmd->hmac.size = ((UINT16)fifo8_pop(fifo) << 8) |
-                         (UINT16)fifo8_pop(fifo);
-
-    for (UINT16 i = 0; i < authCmd->hmac.size &&
-                        i < sizeof(authCmd->hmac.buffer); i++) {
-        authCmd->hmac.buffer[i] = fifo8_pop(fifo);
-    }
-
-    /*
-     * For educational TPM: accept empty password without validation.
-     * A full implementation would compute and verify HMAC here.
-     */
+    *authCmd = area.auth;
     return TPM_RC_SUCCESS;
 }
 
 /*
  * MarshalAuthResponse – Marshal authorization response area to output FIFO.
  *
- * Format: authSize (4) || nonce (2+0) || sessionAttributes (1) || hmac (2+0)
- *
- * For password sessions with empty passwords, we send empty nonce and HMAC.
- *
- * Reference: TPM 2.0 Part 1, Table 76 (TPMS_AUTH_RESPONSE)
+ * Builds a TPMS_AUTH_RESPONSE_AREA with empty nonce/HMAC and marshals it.
  */
 void MarshalAuthResponse(Fifo8 *fifo)
 {
@@ -106,23 +59,9 @@ void MarshalAuthResponse(Fifo8 *fifo)
         return;
     }
 
-    /* Empty auth response for password sessions. */
-    UINT32 authSize = 2 + 1 + 2; /* nonce (2) + attrs (1) + hmac (2) */
-
-    /* authSize (big-endian). */
-    fifo8_push(fifo, (BYTE)(authSize >> 24));
-    fifo8_push(fifo, (BYTE)(authSize >> 16));
-    fifo8_push(fifo, (BYTE)(authSize >> 8));
-    fifo8_push(fifo, (BYTE)(authSize));
-
-    /* nonce (empty - size = 0). */
-    fifo8_push(fifo, 0);
-    fifo8_push(fifo, 0);
-
-    /* sessionAttributes. */
-    fifo8_push(fifo, 0);
-
-    /* hmac (empty - size = 0). */
-    fifo8_push(fifo, 0);
-    fifo8_push(fifo, 0);
+    TPMS_AUTH_RESPONSE_AREA area = {
+        .authSize = sizeof(TPMS_AUTH_RESPONSE),
+        .auth     = { /* nonce, sessionAttributes, hmac: zero-init */ }
+    };
+    MARSHAL(fifo, &area);
 }

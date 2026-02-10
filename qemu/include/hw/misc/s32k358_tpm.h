@@ -42,6 +42,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(S32k358TPMState, S32K358_TPM)
 #define S32K358_TPM_NV_MEM_FIRST_VALID_ADDR 0x04
 
 // Response functions
+void tpm_finalize_response(S32k358TPMState *s);
 void tpm_send_response(S32k358TPMState *s, TPM_RC rc, const void *data,
                        size_t size);
 

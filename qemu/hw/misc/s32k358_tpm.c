@@ -262,20 +262,30 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
 
             /* Send response */
             if (hasAuth) {
-                /* Response with auth area */
-                UINT32 authRespSize = 4 + 2 + 1 + 2; /* authSize + nonce + attrs + hmac */
-
                 tpm_rsp_header_t rsp = {
                     .tag = TPM_ST_SESSIONS,
-                    .responseSize = sizeof(rsp) + sizeof(create_primary_out) + authRespSize,
                     .responseCode = rc
                 };
 
-                MARSHAL(&s->outfifo, &rsp);
                 if (rc == TPM_RC_SUCCESS) {
-                    MARSHAL(&s->outfifo, &create_primary_out);
-                    MarshalAuthResponse(&s->outfifo);
+                    rsp.responseSize = sizeof(rsp)
+                                     + sizeof(TPMS_AUTH_RESPONSE_AREA)
+                                     + sizeof(create_primary_out);
+                } else {
+                    rsp.responseSize = sizeof(rsp)
+                                     + sizeof(TPMS_AUTH_RESPONSE_AREA);
                 }
+
+                MARSHAL(&s->outfifo, &rsp);
+                MarshalAuthResponse(&s->outfifo);              /* auth first */
+                if (rc == TPM_RC_SUCCESS) {
+                    MARSHAL(&s->outfifo, &create_primary_out); /* output second */
+                }
+
+                qemu_log_mask(LOG_GUEST_ERROR,
+                              "(INFO) TPM: Command completed, rc=0x%X, "
+                              "response size=%u\n", rc, rsp.responseSize);
+                tpm_finalize_response(s);
             } else {
                 /* Standard TPM_ST_NO_SESSIONS response (backward compatible) */
                 tpm_send_response(s, rc, &create_primary_out, sizeof(create_primary_out));

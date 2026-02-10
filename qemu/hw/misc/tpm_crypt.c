@@ -487,23 +487,25 @@ static void AES_CTR_Process(const BYTE *input, size_t dataSize, const BYTE *key,
     memcpy(ivOut, counter, 16);
 }
 
-void CryptEncrypt(const BYTE *data, UINT16 dataSize, const BYTE *key, UINT16 keySize, BYTE *encrypted) {
-    if (keySize != 16 && keySize != 24 && keySize != 32) { qemu_log_mask(LOG_GUEST_ERROR, "CryptEncrypt: Invalid AES key size %u\n", keySize); return; }
+TPM_RC CryptEncrypt(const BYTE *data, UINT16 dataSize, const BYTE *key, UINT16 keySize, BYTE *encrypted) {
+    if (keySize != 16 && keySize != 24 && keySize != 32) { qemu_log_mask(LOG_GUEST_ERROR, "CryptEncrypt: Invalid AES key size %u\n", keySize); return TPM_RC_VALUE; }
     UINT16 numRounds = (keySize == 16) ? 10 : (keySize == 24) ? 12 : 14;
     BYTE roundKeys[240]; AES_KeyExpansion(key, keySize, roundKeys);
     BYTE paddedData[TPM_MAX_MAX_BUFFER_SIZE + 16];
     UINT16 paddedSize = PKCS7_Pad(data, dataSize, paddedData);
     for (UINT16 i = 0; i < paddedSize; i += 16) { AES_EncryptBlock(&paddedData[i], roundKeys, numRounds, &encrypted[i]); }
+    return TPM_RC_SUCCESS;
 }
 
-void CryptDecrypt(const BYTE *encrypted, UINT16 dataSize, const BYTE *key, UINT16 keySize, BYTE *decrypted) {
-    if (keySize != 16 && keySize != 24 && keySize != 32) { qemu_log_mask(LOG_GUEST_ERROR, "CryptDecrypt: Invalid AES key size %u\n", keySize); return; }
-    if (dataSize % 16 != 0) { qemu_log_mask(LOG_GUEST_ERROR, "CryptDecrypt: Invalid data size %u (must be multiple of 16)\n", dataSize); return; }
+TPM_RC CryptDecrypt(const BYTE *encrypted, UINT16 dataSize, const BYTE *key, UINT16 keySize, BYTE *decrypted) {
+    if (keySize != 16 && keySize != 24 && keySize != 32) { qemu_log_mask(LOG_GUEST_ERROR, "CryptDecrypt: Invalid AES key size %u\n", keySize); return TPM_RC_VALUE; }
+    if (dataSize % 16 != 0) { qemu_log_mask(LOG_GUEST_ERROR, "CryptDecrypt: Invalid data size %u (must be multiple of 16)\n", dataSize); return TPM_RC_VALUE; }
     UINT16 numRounds = (keySize == 16) ? 10 : (keySize == 24) ? 12 : 14;
     BYTE roundKeys[240]; AES_KeyExpansion(key, keySize, roundKeys);
     for (UINT16 i = 0; i < dataSize; i += 16) { AES_DecryptBlock(&encrypted[i], roundKeys, numRounds, &decrypted[i]); }
     UINT16 unpaddedSize = PKCS7_Unpad(decrypted, dataSize, decrypted);
-    if (unpaddedSize == 0) { qemu_log_mask(LOG_GUEST_ERROR, "CryptDecrypt: Invalid PKCS#7 padding\n"); return; }
+    if (unpaddedSize == 0) { qemu_log_mask(LOG_GUEST_ERROR, "CryptDecrypt: Invalid PKCS#7 padding\n"); return TPM_RC_VALUE; }
+    return TPM_RC_SUCCESS;
 }
 
 /* Minimal PKCS#7 helpers (block=16) */
