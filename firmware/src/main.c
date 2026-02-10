@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include "tpm2_spec_protocol.h"
 #include "tpm_tests_config.h"
+#include "tpm_marshal.h"
 
 #define LPUART_INSTANCE (3U) // Usare LPUART3
 
@@ -257,34 +258,6 @@ static void tpm_drain_bytes(size_t size) {
         tpm_receive(sink, chunk);
         size -= chunk;
     }
-}
-
-/* ===========================================================================
- * Diagnostic helpers (only print on mismatch, max 2-3 lines each)
- * ===========================================================================
- */
-
-static void diag_hex_cmp(const char *label, const uint8_t *exp,
-                         const uint8_t *act, size_t len) {
-    int d = -1;
-    for (size_t i = 0; i < len; i++) {
-        if (exp[i] != act[i]) {
-            d = i;
-            break;
-        }
-    }
-    if (d < 0)
-        return;
-    size_t s = (d >= 4) ? d - 4 : 0;
-    size_t e = (d + 12 < (int)len) ? d + 12 : len;
-    DBG_PRINTF("[DIAG] %s: 1st diff @%d  exp:", label, d);
-    for (size_t i = s; i < e; i++)
-        DBG_PRINTF(" %02X", exp[i]);
-    DBG_PRINTF("\n");
-    DBG_PRINTF("[DIAG] %*s  act:", (int)(22 + strlen(label)), "");
-    for (size_t i = s; i < e; i++)
-        DBG_PRINTF(" %02X", act[i]);
-    DBG_PRINTF("\n");
 }
 
 /* ===========================================================================
@@ -828,17 +801,17 @@ void TPM2_CreatePrimary_test(void) {
     // ASSERT Name should match the expected value for the given template
     // ----------------------------------------------------------------
 
-    // The TPM QEMU computes Name = nameAlg_BE(2) || SHA256(raw struct bytes
-    // of TPMT_PUBLIC). It uses a simplified "marshaling" that is just a
-    // memcpy of the struct, so we must do the same on the firmware side.
+    // Name = nameAlg_BE(2) || SHA256(marshaled TPMT_PUBLIC)
 
-    // 1. Hash the raw bytes of the TPMT_PUBLIC struct
+    // 1. Marshal the public area into canonical big-endian form
+    uint8_t marshal_buf[sizeof(TPMT_PUBLIC)];
+    uint16_t marshal_len = TPMT_PUBLIC_Marshal(
+        &g_create_primary_out.outPublic.publicArea, marshal_buf);
+
+    // 2. Hash the marshaled bytes
     SHA256_CTX ctx;
     SHA256_Init(&ctx);
-    SHA256_Update(&ctx, (uint8_t *)&g_create_primary_out.outPublic.publicArea,
-                  sizeof(TPMT_PUBLIC));
-
-    // 2. Finalize
+    SHA256_Update(&ctx, marshal_buf, marshal_len);
     uint8_t digest[32];
     SHA256_Final(digest, &ctx);
 
@@ -857,14 +830,6 @@ void TPM2_CreatePrimary_test(void) {
         snprintf(act_s, sizeof(act_s), "%u", g_create_primary_out.name.size);
         assert(g_create_primary_out.name.size == sizeof(expected_name),
                "TPM2_CreatePrimary Name size mismatch", exp_s, act_s);
-    }
-    if (memcmp(g_create_primary_out.name.buffer, expected_name,
-               sizeof(expected_name)) != 0) {
-        diag_hex_cmp("CreatePrimary Name", expected_name,
-                     g_create_primary_out.name.buffer, 34);
-        DBG_PRINTF("[DIAG]   sizeof(TPMT_PUBLIC)=%zu, nameAlg=0x%04X\n",
-                   sizeof(TPMT_PUBLIC),
-                   g_create_primary_out.outPublic.publicArea.nameAlg);
     }
     assert(memcmp(g_create_primary_out.name.buffer, expected_name,
                   sizeof(expected_name)) == 0,
@@ -900,13 +865,6 @@ void TPM2_CreatePrimary_test(void) {
                "TPM2_CreatePrimary creationHash size mismatch", exp_s, act_s);
     }
 
-    if (memcmp(g_create_primary_out.creationHash.buffer,
-               calculated_creation_hash, 32) != 0) {
-        diag_hex_cmp("CreatePrimary creationHash", calculated_creation_hash,
-                     g_create_primary_out.creationHash.buffer, 32);
-        DBG_PRINTF("[DIAG]   creationData.size=%u\n",
-                   g_create_primary_out.creationData.size);
-    }
     assert(memcmp(g_create_primary_out.creationHash.buffer,
                   calculated_creation_hash, 32) == 0,
            "TPM2_CreatePrimary creationHash mismatch", NULL, NULL);
@@ -1196,12 +1154,6 @@ void TPM2_Create_test(void) {
 
         assert(g_create_out.creationHash.size == 32,
                "TPM2_Create: creationHash size != 32\n", "32", "other");
-        if (memcmp(g_create_out.creationHash.buffer, calc_hash, 32) != 0) {
-            diag_hex_cmp("Create creationHash", calc_hash,
-                         g_create_out.creationHash.buffer, 32);
-            DBG_PRINTF("[DIAG]   creationData.size=%u\n",
-                       g_create_out.creationData.size);
-        }
         assert(memcmp(g_create_out.creationHash.buffer, calc_hash, 32) == 0,
                "TPM2_Create: creationHash mismatch\n", NULL, NULL);
 
@@ -1326,17 +1278,18 @@ void TPM2_Load_test(void) {
      * The Name of a loaded object is computed as:
      *   Name = nameAlg (2 bytes, big-endian) || Hash_nameAlg(publicArea)
      *
-     * The TPM QEMU uses a simplified "marshaling" that hashes the raw
-     * struct bytes of TPMT_PUBLIC (memcpy, no endian conversion).
+     * QEMU uses proper big-endian marshaling of TPMT_PUBLIC.
      * We must do the same on the firmware side.
      * ================================================================ */
     {
         TPMT_PUBLIC *pub = &g_create_out.outPublic.publicArea;
 
-        /* Hash the raw struct bytes of TPMT_PUBLIC */
+        /* Marshal then hash */
+        uint8_t load_marshal_buf[sizeof(TPMT_PUBLIC)];
+        uint16_t load_marshal_len = TPMT_PUBLIC_Marshal(pub, load_marshal_buf);
         SHA256_CTX ctx;
         SHA256_Init(&ctx);
-        SHA256_Update(&ctx, (uint8_t *)pub, sizeof(TPMT_PUBLIC));
+        SHA256_Update(&ctx, load_marshal_buf, load_marshal_len);
 
         uint8_t load_digest[32];
         SHA256_Final(load_digest, &ctx);
@@ -1358,11 +1311,6 @@ void TPM2_Load_test(void) {
         }
 
         /* Compare content */
-        if (memcmp(g_load_out.name.buffer, expected_name,
-                   sizeof(expected_name)) != 0) {
-            diag_hex_cmp("Load Name", expected_name, g_load_out.name.buffer,
-                         34);
-        }
         assert(memcmp(g_load_out.name.buffer, expected_name,
                       sizeof(expected_name)) == 0,
                "TPM2_Load: Name content mismatch\n", NULL, NULL);

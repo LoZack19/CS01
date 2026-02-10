@@ -232,14 +232,6 @@ TPM2B *PublicMarshalAndComputeName(TPMT_PUBLIC *publicArea, TPM2B_NAME *name) {
     SHA256_Calculate(marshalBuf, marshaledSize, &name->buffer[2]);
     name->size = 2 + SHA256_DIGEST_SIZE;
 
-    qemu_log_mask(LOG_GUEST_ERROR,
-                  "PublicMarshalAndComputeName: marshaledSize=%u "
-                  "name[0..9]=%02X%02X %02X%02X%02X%02X%02X%02X%02X%02X\n",
-                  marshaledSize, name->buffer[0], name->buffer[1],
-                  name->buffer[2], name->buffer[3], name->buffer[4],
-                  name->buffer[5], name->buffer[6], name->buffer[7],
-                  name->buffer[8], name->buffer[9]);
-
     return (TPM2B *)name;
 }
 
@@ -304,15 +296,6 @@ void FillInCreationData(TPM_HANDLE parentHandle, TPMI_ALG_HASH nameAlg,
         creationHash->size = SHA256_DIGEST_SIZE;
         break;
     }
-
-    qemu_log_mask(LOG_GUEST_ERROR,
-                  "FillInCreationData: size=%u hash[0..7]="
-                  "%02X%02X%02X%02X%02X%02X%02X%02X\n",
-                  creationSize, creationHash->buffer[0],
-                  creationHash->buffer[1], creationHash->buffer[2],
-                  creationHash->buffer[3], creationHash->buffer[4],
-                  creationHash->buffer[5], creationHash->buffer[6],
-                  creationHash->buffer[7]);
 }
 
 /*
