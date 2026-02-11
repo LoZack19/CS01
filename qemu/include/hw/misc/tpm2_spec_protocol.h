@@ -22,8 +22,21 @@
 #define TPM_MAX_IV_SIZE         16   /* TPM2B_IV uses AES block length */
 #define TPM_MAX_MAX_BUFFER_SIZE 1024 /* Implementation-defined max buffer */
 #define RSA_PRIVATE_SIZE        256  /* Supports up to RSA-2048 keys */
-#define DRBG_SEED_SIZE_BYTES    256
-#define DRBG_SEED_SIZE_WORDS    (DRBG_SEED_SIZE_BYTES / sizeof(uint64_t))
+#define MAX_PRIVATE_SIZE        (sizeof(TPMT_SENSITIVE) + SHA256_DIGEST_SIZE + 16)
+/* DRBG (Deterministic Random Bit Generator) */
+#define DRBG_SEED_SIZE_BYTES      256
+#define DRBG_SEED_SIZE_WORDS      (DRBG_SEED_SIZE_BYTES / sizeof(uint64_t))
+#define AES_MAX_KEY_SIZE_BITS     256
+#define AES_MAX_BLOCK_SIZE        16
+#define DRBG_KEY_SIZE_BITS        AES_MAX_KEY_SIZE_BITS
+#define DRBG_IV_SIZE_BITS         (AES_MAX_BLOCK_SIZE * 8)
+#define RADIX_BITS                64
+#define RADIX_BYTES               (RADIX_BITS / 8)
+#define BITS_TO_CRYPT_WORDS(bits) (((bits) + RADIX_BITS - 1) / RADIX_BITS)
+#define DRBG_KEY_SIZE_WORDS       BITS_TO_CRYPT_WORDS(DRBG_KEY_SIZE_BITS)
+#define DRBG_KEY_SIZE_BYTES       (DRBG_KEY_SIZE_WORDS * RADIX_BYTES)
+#define DRBG_IV_SIZE_WORDS        BITS_TO_CRYPT_WORDS(DRBG_IV_SIZE_BITS)
+#define DRBG_IV_SIZE_BYTES        (DRBG_IV_SIZE_WORDS * RADIX_BYTES)
 /* Key Lifecycle Management */
 #define MAX_SYM_DATA     128
 #define LABEL_MAX_BUFFER 32
@@ -91,6 +104,12 @@
 #define RC_NV_DefineSpace_publicInfo (TPM_RC_P + TPM_RC_2)
 #define RC_CreatePrimary_inPublic    (TPM_RC_P + TPM_RC_1)
 #define RC_CreatePrimary_inSensitive (TPM_RC_P + TPM_RC_2)
+#define RC_Create_parentHandle       (TPM_RC_H + TPM_RC_1)
+#define RC_Create_inSensitive        (TPM_RC_P + TPM_RC_1)
+#define RC_Create_inPublic           (TPM_RC_P + TPM_RC_2)
+#define RC_Load_parentHandle         (TPM_RC_H + TPM_RC_1)
+#define RC_Load_inPrivate            (TPM_RC_P + TPM_RC_1)
+#define RC_Load_inPublic             (TPM_RC_P + TPM_RC_2)
 
 // TPM_ST
 #define TPM_ST_NO_SESSIONS 0x8001
@@ -116,6 +135,9 @@
 #define HR_NV_INDEX                 (TPM_HT_NV_INDEX << HR_SHIFT)
 #define NV_INDEX_FIRST              (HR_NV_INDEX + 0)
 #define NV_INDEX_LAST               (NV_INDEX_FIRST + 0x00FFFFFF)
+
+// Authorization
+#define TPM_RS_PW 0x40000009 /* Password authorization pseudo-handle */
 
 // TPM_CC
 #define TPM_CC_GetRandom 0x0000017B
@@ -251,13 +273,7 @@ typedef TPM_KEY_BITS TPMI_RSA_KEY_BITS;
 
 /* Section #4: Complex Types */
 
-/** Defines the end-of-list marker for NV. The list terminator is a UINT32 of
- * zero, followed by the current value of s_maxCounter which is a 64-bit value.
- * The structure is defined as an array of 3 UINT32 values so that there is no
- * padding between the  UINT32 list end marker and the UINT64 maxCounter */
-typedef UINT32 NV_LIST_TERMINATOR[3];
-
-/* Subsection #4.1: Structured Types */
+/* Subsection #4.1: Hash and Digest Types */
 
 typedef union __packed {
     BYTE sha256[SHA256_DIGEST_SIZE];
@@ -275,14 +291,14 @@ typedef struct __packed {
 } TPM2B_DATA;
 
 typedef struct __packed {
-    UINT16 signatureSize;
-    BYTE signature[TPM_MAX_SIGNATURE_SIZE]; // Max signature size (supports
-                                            // RSA-2048 signatures)
+    UINT16 size;
+    BYTE buffer[TPM_MAX_SIGNATURE_SIZE]; // Max signature size (supports
+                                         // RSA-2048 signatures)
 } TPM2B_SIGNATURE;
 
 typedef struct __packed {
-    UINT16 keySize;
-    BYTE key[TPM_MAX_KEY_SIZE]; // Max key size
+    UINT16 size;
+    BYTE buffer[TPM_MAX_KEY_SIZE]; // Max key size
 } TPM2B_KEY;
 
 typedef struct {
@@ -301,6 +317,13 @@ typedef struct __packed {
 } TPM2B_DIGEST;
 
 typedef TPM2B_DIGEST TPM2B_AUTH;
+
+typedef struct __packed {
+    UINT16 size;
+    BYTE buffer[sizeof(TPMU_NAME)];
+} TPM2B_NAME;
+
+/* Subsection #4.2: Signature and Ticket Types */
 
 typedef struct __packed {
     TPMI_ALG_SIG_SCHEME scheme;
@@ -322,6 +345,8 @@ typedef struct __packed {
     TPM2B_SIGNATURE signature;
 } TPMT_SIGNATURE;
 
+/* Subsection #4.3: Symmetric Encryption Types */
+
 typedef struct __packed {
     TPMI_ALG_SYM_OBJECT algorithm; // TPM_ALG_* algorithm (AES, SM4, etc.)
     TPMU_SYM_KEY_BITS keyBits;     // Key size in bits (per algorithm)
@@ -329,15 +354,17 @@ typedef struct __packed {
 } TPMT_SYM_DEF_OBJECT;
 
 typedef struct __packed {
-    UINT16 ivSize;
-    BYTE iv[TPM_MAX_IV_SIZE]; // Max IV size for AES
+    UINT16 size;
+    BYTE buffer[TPM_MAX_IV_SIZE]; // Max IV size for AES
 } TPM2B_IV;
 
 typedef struct __packed {
-    UINT16 bufferSize;
+    UINT16 size;
     BYTE buffer[TPM_MAX_MAX_BUFFER_SIZE]; // Larger buffer for symmetric
                                           // operations
 } TPM2B_MAX_BUFFER;
+
+/* Subsection #4.4: Asymmetric (RSA) Types */
 
 typedef struct __packed {
     UINT16 size;
@@ -346,18 +373,34 @@ typedef struct __packed {
 
 typedef struct __packed {
     UINT16 size;
+    BYTE buffer[RSA_PRIVATE_SIZE];
+} TPM2B_PRIVATE_KEY_RSA;
+
+/* Subsection #4.5: PCR Types */
+
+typedef struct __packed {
+    TPMI_ALG_HASH hash;
+    UINT8 sizeofSelect; /* lower bound PCR_SELECT_MIN */
+    BYTE pcrSelect[PCR_SELECT_MAX];
+} TPMS_PCR_SELECTION;
+
+typedef struct __packed {
+    UINT32 count;
+    TPMS_PCR_SELECTION pcrSelections[HASH_COUNT];
+} TPML_PCR_SELECTION;
+
+/* Subsection #4.6: NV Memory Types */
+
+/** Defines the end-of-list marker for NV. The list terminator is a UINT32 of
+ * zero, followed by the current value of s_maxCounter which is a 64-bit value.
+ * The structure is defined as an array of 3 UINT32 values so that there is no
+ * padding between the  UINT32 list end marker and the UINT64 maxCounter */
+typedef UINT32 NV_LIST_TERMINATOR[3];
+
+typedef struct __packed {
+    UINT16 size;
     BYTE buffer[MAX_NV_BUFFER_SIZE];
 } TPM2B_MAX_NV_BUFFER;
-
-typedef struct __packed {
-    UINT16 size;
-    BYTE buffer[sizeof(TPMU_NAME)];
-} TPM2B_NAME;
-
-typedef struct __packed {
-    UINT16 size;
-    BYTE buffer[TPM_MAX_MAX_BUFFER_SIZE];
-} TPM2B_CREATION_DATA;
 
 typedef struct __packed {
     UINT32 PPWRITE : 1;
@@ -429,6 +472,13 @@ typedef struct __packed {
     UINT32 size;
     TPM_HANDLE handle;
 } NV_ENTRY_HEADER;
+
+/* Subsection #4.7: Key and Object Types */
+
+typedef struct __packed {
+    UINT16 size;
+    BYTE buffer[TPM_MAX_MAX_BUFFER_SIZE];
+} TPM2B_CREATION_DATA;
 
 typedef struct __packed {
     UINT16 size;
@@ -520,39 +570,107 @@ typedef struct __packed {
 } TPM2B_PUBLIC;
 
 typedef struct __packed {
-    TPMI_ALG_HASH hash;
-    UINT8 sizeofSelect; /* lower bound PCR_SELECT_MIN */
-    BYTE pcrSelect[PCR_SELECT_MAX];
-} TPMS_PCR_SELECTION;
+    uint16_t size;
+    uint8_t buffer[64];
+} TPM2B_SEED;
 
 typedef struct __packed {
-    UINT32 count;
-    TPMS_PCR_SELECTION pcrSelections[HASH_COUNT];
-} TPML_PCR_SELECTION;
+    unsigned publicOnly : 1;
+    unsigned epsHierarchy : 1;
+    unsigned ppsHierarchy : 1;
+    unsigned spsHierarchy : 1;
+    unsigned evict : 1;
+    unsigned primary : 1;
+    unsigned temporary : 1;
+    unsigned stClear : 1;
+    unsigned hmacSeq : 1;
+    unsigned hashSeq : 1;
+    unsigned eventSeq : 1;
+    unsigned ticketSafe : 1;
+    unsigned firstBlock : 1;
+    unsigned isParent : 1;
+    unsigned not_used_14 : 1;
+    unsigned occupied : 1;
+    unsigned derivation : 1;
+    unsigned external : 1;
+} OBJECT_ATTRIBUTES;
 
-/* DRBG (Deterministic Random Bit Generator) Definitions */
-// AES-based DRBG configuration
-#define AES_MAX_KEY_SIZE_BITS 256
-#define AES_MAX_BLOCK_SIZE    16
+typedef union __packed {
+    TPM2B_PRIVATE_KEY_RSA rsa;
+    // TPM2B_ECC_PARAMETER ecc;
+    // TPM2B_SENSITIVE_DATA bits;
+    // TPM2B_SYM_KEY sym;
+    // TPM2B_PRIVATE_VENDOR_SPECIFIC any;
+} TPMU_SENSITIVE_COMPOSITE;
 
-#define DRBG_KEY_SIZE_BITS AES_MAX_KEY_SIZE_BITS
-#define DRBG_IV_SIZE_BITS  (AES_MAX_BLOCK_SIZE * 8)
+typedef struct __packed {
+    TPMI_ALG_PUBLIC sensitiveType;
+    TPM2B_AUTH authValue;
+    TPM2B_DIGEST seedValue;
+    TPMU_SENSITIVE_COMPOSITE sensitive;
+} TPMT_SENSITIVE;
 
-#define RADIX_BITS  64
-#define RADIX_BYTES (RADIX_BITS / 8)
+typedef struct __packed {
+    UINT16 size;
+    BYTE buffer[sizeof(TPMT_SENSITIVE) + SHA256_DIGEST_SIZE + 16];
+} _TPM2B_PRIVATE_BUFFER;
 
-#define BITS_TO_CRYPT_WORDS(bits) (((bits) + RADIX_BITS - 1) / RADIX_BITS)
+typedef union {
+    _TPM2B_PRIVATE_BUFFER b;
+    struct {
+        UINT16 size;
+        BYTE buffer[sizeof(TPMT_SENSITIVE) + SHA256_DIGEST_SIZE + 16];
+    };
+} TPM2B_PRIVATE;
 
-#define DRBG_KEY_SIZE_WORDS BITS_TO_CRYPT_WORDS(DRBG_KEY_SIZE_BITS)
-#define DRBG_KEY_SIZE_BYTES (DRBG_KEY_SIZE_WORDS * RADIX_BYTES)
+typedef struct __packed {
+    OBJECT_ATTRIBUTES attributes;
+    TPMT_PUBLIC publicArea;
+    TPMT_SENSITIVE sensitive;
+    TPM2B_NAME qualifiedName;
+    TPMI_DH_OBJECT evictHandle;
+    TPM2B_NAME name;
+    TPMI_RH_HIERARCHY hierarchy;
+} OBJECT;
 
-#define DRBG_IV_SIZE_WORDS BITS_TO_CRYPT_WORDS(DRBG_IV_SIZE_BITS)
-#define DRBG_IV_SIZE_BYTES (DRBG_IV_SIZE_WORDS * RADIX_BYTES)
+/* Subsection #4.8: Authorization Types */
 
-/* Note: DRBG_SEED_SIZE_* are already defined at the top of this file (lines
- * 25-26) with fixed values (256 bytes). The computed values would be KEY+IV
- * (~48 bytes), but the fixed 256-byte value is used for the DRBG_SEED buffer
- * size. */
+/*
+ * Authorization structures for TPM_ST_SESSIONS commands.
+ *
+ * TPMS_AUTH_COMMAND – Authorization area in command (after parameters).
+ * TPMS_AUTH_RESPONSE – Authorization area in response (after parameters).
+ *
+ * Reference: TPM 2.0 Part 1, Tables 75-76 (Authorization)
+ */
+typedef struct __packed {
+    UINT32 sessionHandle;   /* TPM_RS_PW for password sessions */
+    TPM2B_DIGEST nonce;     /* Empty for password auth */
+    BYTE sessionAttributes; /* Session attribute bits */
+    TPM2B_AUTH hmac;        /* Password or HMAC */
+} TPMS_AUTH_COMMAND;
+
+typedef struct __packed {
+    TPM2B_DIGEST nonce;     /* Empty for password auth */
+    BYTE sessionAttributes; /* Session attribute bits */
+    TPM2B_AUTH hmac;        /* Empty for password auth */
+} TPMS_AUTH_RESPONSE;
+
+/*
+ * Wire-format auth areas (authSize prefix + content).
+ * Used with MARSHAL/UNMARSHAL — no manual byte encoding needed.
+ */
+typedef struct __packed {
+    UINT32 authSize; /* sizeof(TPMS_AUTH_COMMAND) */
+    TPMS_AUTH_COMMAND auth;
+} TPMS_AUTH_COMMAND_AREA;
+
+typedef struct __packed {
+    UINT32 authSize; /* sizeof(TPMS_AUTH_RESPONSE) */
+    TPMS_AUTH_RESPONSE auth;
+} TPMS_AUTH_RESPONSE_AREA;
+
+/* Subsection #4.9: DRBG (Random Number Generator) Types */
 
 typedef union {
     BYTE bytes[DRBG_KEY_SIZE_BYTES];
@@ -578,131 +696,7 @@ typedef struct __packed {
 
 typedef DRBG_STATE RAND_STATE;
 
-typedef struct __packed {
-    uint16_t size;
-    uint8_t buffer[64];
-} _TPM2B_SEED_BUFFER;
-
-typedef union {
-    _TPM2B_SEED_BUFFER b;
-    struct {
-        uint16_t size;
-        uint8_t buffer[64];
-    };
-} TPM2B_SEED;
-
-typedef struct __packed {
-    unsigned publicOnly : 1;
-    unsigned epsHierarchy : 1;
-    unsigned ppsHierarchy : 1;
-    unsigned spsHierarchy : 1;
-    unsigned evict : 1;
-    unsigned primary : 1;
-    unsigned temporary : 1;
-    unsigned stClear : 1;
-    unsigned hmacSeq : 1;
-    unsigned hashSeq : 1;
-    unsigned eventSeq : 1;
-    unsigned ticketSafe : 1;
-    unsigned firstBlock : 1;
-    unsigned isParent : 1;
-    unsigned not_used_14 : 1;
-    unsigned occupied : 1;
-    unsigned derivation : 1;
-    unsigned external : 1;
-} OBJECT_ATTRIBUTES;
-
-typedef struct __packed {
-    UINT16 size;
-    BYTE buffer[RSA_PRIVATE_SIZE];
-} TPM2B_PRIVATE_KEY_RSA;
-
-typedef union __packed {
-    TPM2B_PRIVATE_KEY_RSA rsa;
-    // TPM2B_ECC_PARAMETER ecc;
-    // TPM2B_SENSITIVE_DATA bits;
-    // TPM2B_SYM_KEY sym;
-    // TPM2B_PRIVATE_VENDOR_SPECIFIC any;
-} TPMU_SENSITIVE_COMPOSITE;
-
-typedef struct __packed {
-    TPMI_ALG_PUBLIC sensitiveType;
-    TPM2B_AUTH authValue;
-    TPM2B_DIGEST seedValue;
-    TPMU_SENSITIVE_COMPOSITE sensitive;
-} TPMT_SENSITIVE;
-
-/*
- * TPM2B_PRIVATE – Encrypted private area blob.
- *
- * The maximum size is implementation-defined.  We use a buffer large
- * enough to hold a marshaled TPMT_SENSITIVE plus integrity + IV
- * overhead (simplified model: just the raw TPMT_SENSITIVE bytes).
- */
-#define MAX_PRIVATE_SIZE (sizeof(TPMT_SENSITIVE) + SHA256_DIGEST_SIZE + 16)
-
-typedef struct __packed {
-    UINT16 size;
-    BYTE buffer[sizeof(TPMT_SENSITIVE) + SHA256_DIGEST_SIZE + 16];
-} _TPM2B_PRIVATE_BUFFER;
-
-typedef union {
-    _TPM2B_PRIVATE_BUFFER b;
-    struct {
-        UINT16 size;
-        BYTE buffer[sizeof(TPMT_SENSITIVE) + SHA256_DIGEST_SIZE + 16];
-    };
-} TPM2B_PRIVATE;
-
-typedef struct __packed {
-    OBJECT_ATTRIBUTES attributes;
-    TPMT_PUBLIC publicArea;
-    TPMT_SENSITIVE sensitive;
-    TPM2B_NAME qualifiedName;
-    TPMI_DH_OBJECT evictHandle;
-    TPM2B_NAME name;
-    TPMI_RH_HIERARCHY hierarchy;
-} OBJECT;
-
-/*
- * Authorization structures for TPM_ST_SESSIONS commands.
- *
- * TPMS_AUTH_COMMAND – Authorization area in command (after parameters).
- * TPMS_AUTH_RESPONSE – Authorization area in response (after parameters).
- *
- * Reference: TPM 2.0 Part 1, Tables 75-76 (Authorization)
- */
-typedef struct __packed {
-    UINT32 sessionHandle;   /* TPM_RS_PW for password sessions */
-    TPM2B_DIGEST nonce;     /* Empty for password auth */
-    BYTE sessionAttributes; /* Session attribute bits */
-    TPM2B_AUTH hmac;        /* Password or HMAC */
-} TPMS_AUTH_COMMAND;
-
-typedef struct __packed {
-    TPM2B_DIGEST nonce;     /* Empty for password auth */
-    BYTE sessionAttributes; /* Session attribute bits */
-    TPM2B_AUTH hmac;        /* Empty for password auth */
-} TPMS_AUTH_RESPONSE;
-
-/* Password authorization pseudo-handle */
-#define TPM_RS_PW 0x40000009
-
-/*
- * Wire-format auth areas (authSize prefix + content).
- * Used with MARSHAL/UNMARSHAL — no manual byte encoding needed.
- */
-typedef struct __packed {
-    UINT32 authSize;            /* sizeof(TPMS_AUTH_COMMAND) */
-    TPMS_AUTH_COMMAND auth;
-} TPMS_AUTH_COMMAND_AREA;
-
-typedef struct __packed {
-    UINT32 authSize;            /* sizeof(TPMS_AUTH_RESPONSE) */
-    TPMS_AUTH_RESPONSE auth;
-} TPMS_AUTH_RESPONSE_AREA;
-
-/* Subsection #4.2: Useful Additions */
+/* Subsection #4.10: Command and Response Headers */
 
 // Command Header
 typedef struct __packed {
@@ -718,6 +712,8 @@ typedef struct __packed {
     TPM_RC responseCode;
 } tpm_rsp_header_t;
 
+/* Subsection #4.11: TPM State Data */
+
 typedef struct __packed {
     /* Hierarchy Control */
     BOOL shEnable;
@@ -732,7 +728,9 @@ typedef struct __packed {
     /* ACT (empty) */
 } state_clear_data;
 
-/* Section #5: IO Structs */
+/* Section #5: Command IO Structures */
+
+/* Subsection #5.1: Random Number Generation Commands */
 
 // GetRandom
 typedef struct __packed {
@@ -742,6 +740,8 @@ typedef struct __packed {
 typedef struct __packed {
     TPM2B_DIGEST randomBytes;
 } GetRandom_Out;
+
+/* Subsection #5.2: NV Memory Commands */
 
 // NV_DefineSpace
 typedef struct __packed {
@@ -769,6 +769,8 @@ typedef struct __packed {
 typedef struct __packed {
     TPM2B_MAX_NV_BUFFER data;
 } NV_Read_Out;
+
+/* Subsection #5.3: Cryptographic Commands */
 
 // Sign
 typedef struct __packed {
@@ -839,6 +841,8 @@ typedef struct __packed {
     TPM2B_PUBLIC_KEY_RSA decrypted;
 } RSA_Decrypt_Out;
 
+/* Subsection #5.4: Key Lifecycle Management Commands */
+
 // CreatePrimary
 
 typedef struct __packed {
@@ -860,10 +864,6 @@ typedef struct __packed {
 
 // Create (TPM2_Create – creates an object under a parent but does NOT load it)
 
-#define RC_Create_parentHandle (TPM_RC_H + TPM_RC_1)
-#define RC_Create_inSensitive  (TPM_RC_P + TPM_RC_1)
-#define RC_Create_inPublic     (TPM_RC_P + TPM_RC_2)
-
 typedef struct __packed {
     TPMI_DH_OBJECT parentHandle;
     TPM2B_SENSITIVE_CREATE inSensitive;
@@ -881,10 +881,6 @@ typedef struct __packed {
 } Create_Out;
 
 // Load (TPM2_Load – loads a key created by TPM2_Create)
-
-#define RC_Load_parentHandle (TPM_RC_H + TPM_RC_1)
-#define RC_Load_inPrivate    (TPM_RC_P + TPM_RC_1)
-#define RC_Load_inPublic     (TPM_RC_P + TPM_RC_2)
 
 typedef struct __packed {
     TPMI_DH_OBJECT parentHandle;

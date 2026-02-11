@@ -79,6 +79,9 @@ Design and implement a generic TPM simulation in Qemu with a focus on practical 
     - [ ] `TPM2_ObjectChangeAuth`
 3. Solve `[MANSOUR]` warnings in `/include/hw/misc/tpm2_spec_protocol.h`
 
+- [X] Solve `[MANSOUR]` warnings in `/include/hw/misc/tpm2_spec_protocol.h`
+    - Kept refactor (section coherence) but restored struct/union layouts required by the C code (`TPM2B_DATA.data`, `TPM2B_SENSITIVE_DATA.t/.b`, `TPM2B_PRIVATE.b`).
+
 - [ ] Giovanni & Mateus: 1
 - [ ] Tommaso: 2
 - [ ] Mansour: 3
