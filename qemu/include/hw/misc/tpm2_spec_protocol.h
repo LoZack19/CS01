@@ -150,12 +150,13 @@
 #define TPM_CC_VerifySignature 0x00000177
 #define TPM_CC_Hash            0x0000017D
 #define TPM_CC_EncryptDecrypt2 0x00000143
-#define TPM_CC_RSA_Encrypt     0x00000173
-#define TPM_CC_RSA_Decrypt     0x00000174
+#define TPM_CC_RSA_Encrypt     0x00000174
+#define TPM_CC_RSA_Decrypt     0x00000159
 // TPM Key Life Cycle Management
 #define TPM_CC_CreatePrimary 0x00000131
 #define TPM_CC_Create        0x00000153
 #define TPM_CC_Load          0x00000157
+#define TPM_CC_ReadPublic    0x00000173
 
 // TPMI_ALG_HASH
 #define TPM_ALG_RSA      0x0001
@@ -893,6 +894,18 @@ typedef struct __packed {
     TPM2B_NAME name;
 } Load_Out;
 
+// ReadPublic (TPM2_ReadPublic – reads the public area of a loaded object)
+
+typedef struct __packed {
+    TPMI_DH_OBJECT objectHandle;
+} ReadPublic_In;
+
+typedef struct __packed {
+    TPM2B_PUBLIC outPublic;
+    TPM2B_NAME name;
+    TPM2B_NAME qualifiedName;
+} ReadPublic_Out;
+
 /* Section #6: Function Prototypes */
 
 /* Subsection #6.1: Marshalling and Unmarshalling functions */
@@ -931,6 +944,7 @@ TPM_RC TPM2_RSA_Decrypt(RSA_Decrypt_In *in, RSA_Decrypt_Out *out);
 TPM_RC TPM2_CreatePrimary(CreatePrimary_In *in, CreatePrimary_Out *out);
 TPM_RC TPM2_Create(Create_In *in, Create_Out *out);
 TPM_RC TPM2_Load(Load_In *in, Load_Out *out);
+TPM_RC TPM2_ReadPublic(ReadPublic_In *in, ReadPublic_Out *out);
 /* NV Memory */
 TPM_RC TPM2_NV_DefineSpace(NV_DefineSpace_In *in);
 TPM_RC TPM2_NV_Write(NV_Write_In *in);
