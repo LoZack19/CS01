@@ -112,6 +112,12 @@ const char *string_from_TPM_RC(TPM_RC rc) {
         return "TPM_RC_SIGNATURE";
     case TPM_RC_KEY:
         return "TPM_RC_KEY";
+    case TPM_RC_KEY_SIZE:
+        return "TPM_RC_KEY_SIZE";
+    case TPM_RC_BINDING:
+        return "TPM_RC_BINDING";
+    case TPM_RC_SEQUENCE:
+        return "TPM_RC_SEQUENCE";
 
     default:
         return "UNKNOWN_RC";
@@ -1325,6 +1331,139 @@ void TPM2_Load_test(void) {
     DBG_PRINTF("[TEST] TPM2_Load: SUCCESS (handle=0x%08lX, name_size=%u)\n",
                (unsigned long)g_load_out.objectHandle, g_load_out.name.size);
 }
+
+/**
+ * @brief Negative tests for TPM2_Load
+ *
+ * PURPOSE: Verify that the TPM correctly rejects malformed Load inputs.
+ *          Each sub-test copies valid Create output, corrupts one field,
+ *          and asserts that TPM2_Load returns an appropriate error.
+ *
+ * PREREQUISITE: TPM2_Load_test must have passed (g_key_loaded == true)
+ *
+ * Properties verified:
+ *   1B - Binding Validation (public/private mismatch)
+ *   1A - Attribute Consistency (sign+encrypt both CLEAR)
+ *   1A - Key Size Consistency (keyBits mismatch)
+ *   1D - Zero-Length Private Area
+ */
+void TPM2_Load_negative_tests(void) {
+    TPM_RC res;
+
+    DBG_PRINT("\n[TEST] TPM2_Load negative tests\n");
+
+    if (!g_key_loaded) {
+        DBG_PRINT("[TEST] TPM2_Load negative: SKIPPED (Load not ready)\n");
+        return;
+    }
+
+    /* ================================================================
+     * 1B: Binding Validation — modify nameAlg in public area
+     *
+     * The inPrivate was encrypted for the original public template.
+     * Changing nameAlg in inPublic creates a public/private mismatch.
+     * Expected: non-success (typically TPM_RC_BINDING)
+     * ================================================================ */
+    {
+        Load_In bad_in = {0};
+        Load_Out bad_out = {0};
+        bad_in.parentHandle = g_parent_handle;
+        memcpy(&bad_in.inPrivate, &g_create_out.outPrivate,
+               sizeof(bad_in.inPrivate));
+        memcpy(&bad_in.inPublic, &g_create_out.outPublic,
+               sizeof(bad_in.inPublic));
+
+        /* Corrupt: change nameAlg from SHA256 to SHA1 */
+        bad_in.inPublic.publicArea.nameAlg = TPM_ALG_SHA1;
+
+        res = TPM2_Load(&bad_in, &bad_out);
+        assert(res != TPM_RC_SUCCESS,
+               "TPM2_Load negative (binding): should have failed\n",
+               "!= TPM_RC_SUCCESS", string_from_TPM_RC(res));
+        DBG_PRINTF("[TEST] TPM2_Load negative (binding): rc=0x%08lX (%s)\n",
+                   (unsigned long)res, string_from_TPM_RC(res));
+    }
+
+    /* ================================================================
+     * 1A: Attribute Consistency — clear both sign and decrypt
+     *
+     * For a non-keyedHash object, at least one of sign_encrypt or
+     * decrypt must be SET. Clearing both should yield TPM_RC_ATTRIBUTES.
+     * ================================================================ */
+    {
+        Load_In bad_in = {0};
+        Load_Out bad_out = {0};
+        bad_in.parentHandle = g_parent_handle;
+        memcpy(&bad_in.inPrivate, &g_create_out.outPrivate,
+               sizeof(bad_in.inPrivate));
+        memcpy(&bad_in.inPublic, &g_create_out.outPublic,
+               sizeof(bad_in.inPublic));
+
+        /* Corrupt: clear both sign_encrypt and decrypt */
+        bad_in.inPublic.publicArea.objectAttributes.sign_encrypt = 0;
+        bad_in.inPublic.publicArea.objectAttributes.decrypt = 0;
+
+        res = TPM2_Load(&bad_in, &bad_out);
+        assert(res != TPM_RC_SUCCESS,
+               "TPM2_Load negative (attributes): should have failed\n",
+               "!= TPM_RC_SUCCESS", string_from_TPM_RC(res));
+        DBG_PRINTF("[TEST] TPM2_Load negative (attributes): rc=0x%08lX (%s)\n",
+                   (unsigned long)res, string_from_TPM_RC(res));
+    }
+
+    /* ================================================================
+     * 1A: Key Size Consistency — change keyBits to wrong value
+     *
+     * The private portion was created for 2048-bit RSA. Claiming
+     * 1024-bit in the public area should be rejected.
+     * ================================================================ */
+    {
+        Load_In bad_in = {0};
+        Load_Out bad_out = {0};
+        bad_in.parentHandle = g_parent_handle;
+        memcpy(&bad_in.inPrivate, &g_create_out.outPrivate,
+               sizeof(bad_in.inPrivate));
+        memcpy(&bad_in.inPublic, &g_create_out.outPublic,
+               sizeof(bad_in.inPublic));
+
+        /* Corrupt: change keyBits from 2048 to 1024 */
+        bad_in.inPublic.publicArea.parameters.rsaDetail.keyBits = 1024;
+
+        res = TPM2_Load(&bad_in, &bad_out);
+        assert(res != TPM_RC_SUCCESS,
+               "TPM2_Load negative (key size): should have failed\n",
+               "!= TPM_RC_SUCCESS", string_from_TPM_RC(res));
+        DBG_PRINTF("[TEST] TPM2_Load negative (key size): rc=0x%08lX (%s)\n",
+                   (unsigned long)res, string_from_TPM_RC(res));
+    }
+
+    /* ================================================================
+     * 1D: Zero-Length Private Area
+     *
+     * A Load with an empty private area should always fail.
+     * ================================================================ */
+    {
+        Load_In bad_in = {0};
+        Load_Out bad_out = {0};
+        bad_in.parentHandle = g_parent_handle;
+        memcpy(&bad_in.inPublic, &g_create_out.outPublic,
+               sizeof(bad_in.inPublic));
+
+        /* Corrupt: zero-length private */
+        bad_in.inPrivate.size = 0;
+        memset(bad_in.inPrivate.buffer, 0, sizeof(bad_in.inPrivate.buffer));
+
+        res = TPM2_Load(&bad_in, &bad_out);
+        assert(res != TPM_RC_SUCCESS,
+               "TPM2_Load negative (zero private): should have failed\n",
+               "!= TPM_RC_SUCCESS", string_from_TPM_RC(res));
+        DBG_PRINTF(
+            "[TEST] TPM2_Load negative (zero private): rc=0x%08lX (%s)\n",
+            (unsigned long)res, string_from_TPM_RC(res));
+    }
+
+    DBG_PRINT("[TEST] TPM2_Load negative tests: DONE\n");
+}
 #endif
 
 /**
@@ -1395,6 +1534,66 @@ void TPM2_ReadPublic_test(void) {
                           out.name.size) == 0,
                    "TPM2_ReadPublic: name content mismatch with Load output\n",
                    NULL, NULL);
+        }
+
+        /* ================================================================
+         * Property 2A: Public Area Match
+         *
+         * outPublic from ReadPublic must match the public area that was
+         * originally created (g_create_out.outPublic). We marshal both
+         * TPMT_PUBLIC structures to canonical form and compare bytes.
+         * ================================================================ */
+        {
+            uint8_t rp_marshal[sizeof(TPMT_PUBLIC)];
+            uint8_t cr_marshal[sizeof(TPMT_PUBLIC)];
+            uint16_t rp_len = TPMT_PUBLIC_Marshal(
+                &out.outPublic.publicArea, rp_marshal);
+            uint16_t cr_len = TPMT_PUBLIC_Marshal(
+                &g_create_out.outPublic.publicArea, cr_marshal);
+
+            char exp_s[8], act_s[8];
+            snprintf(exp_s, sizeof(exp_s), "%u", cr_len);
+            snprintf(act_s, sizeof(act_s), "%u", rp_len);
+            assert(rp_len == cr_len,
+                   "TPM2_ReadPublic: public area marshaled size mismatch\n",
+                   exp_s, act_s);
+
+            if (rp_len == cr_len) {
+                assert(memcmp(rp_marshal, cr_marshal, rp_len) == 0,
+                       "TPM2_ReadPublic: public area content mismatch "
+                       "with Create output\n",
+                       NULL, NULL);
+            }
+        }
+
+        /* ================================================================
+         * Property 2D: Qualified Name Verification
+         *
+         * The qualified name must start with nameAlg (2 bytes, BE) and
+         * be at least nameAlg_size + hash_size bytes long.
+         * For SHA-256: >= 2 + 32 = 34 bytes.
+         * ================================================================ */
+        {
+            char exp_s[8], act_s[8];
+            snprintf(exp_s, sizeof(exp_s), ">= 34");
+            snprintf(act_s, sizeof(act_s), "%u", out.qualifiedName.size);
+            assert(out.qualifiedName.size >= 34,
+                   "TPM2_ReadPublic: qualifiedName too short for SHA-256\n",
+                   exp_s, act_s);
+
+            /* First 2 bytes should be nameAlg in big-endian */
+            uint8_t expected_alg_hi = (uint8_t)(TPM_ALG_SHA256 >> 8);
+            uint8_t expected_alg_lo = (uint8_t)(TPM_ALG_SHA256 & 0xFF);
+            char exp_alg[8], act_alg[8];
+            snprintf(exp_alg, sizeof(exp_alg), "0x%02X%02X",
+                     expected_alg_hi, expected_alg_lo);
+            snprintf(act_alg, sizeof(act_alg), "0x%02X%02X",
+                     out.qualifiedName.buffer[0],
+                     out.qualifiedName.buffer[1]);
+            assert(out.qualifiedName.buffer[0] == expected_alg_hi &&
+                       out.qualifiedName.buffer[1] == expected_alg_lo,
+                   "TPM2_ReadPublic: qualifiedName nameAlg mismatch\n",
+                   exp_alg, act_alg);
         }
 
         DBG_PRINTF("[TEST] TPM2_ReadPublic: SUCCESS (public=%u, name=%u, "
@@ -1543,6 +1742,7 @@ void TPM2_KeyManagement_test_suite(void) {
 
 #if defined(TPM_TEST_ENABLE_LOAD) && defined(TPM_TEST_ENABLE_CREATE)
     TPM2_Load_test();
+    TPM2_Load_negative_tests();
 #elif defined(TPM_TEST_ENABLE_LOAD)
     DBG_PRINT("[TEST] TPM2_Load: SKIPPED (Create not enabled)\n");
 #endif

@@ -87,6 +87,7 @@
 #define TPM_RCS_VALUE           (TPM_RC)(RC_FMT1 + 0x004)
 #define TPM_RC_HIERARCHY        (TPM_RC)(RC_FMT1 + 0x005)
 #define TPM_RCS_HIERARCHY       (TPM_RC)(RC_FMT1 + 0x005)
+#define TPM_RC_KEY_SIZE         (TPM_RC)(RC_FMT1 + 0x007)
 #define TPM_RC_MODE             (TPM_RC)(RC_FMT1 + 0x009)
 #define TPM_RC_TYPE             (TPM_RC)(RC_FMT1 + 0x00A)
 #define TPM_RCS_TYPE            (TPM_RC)(RC_FMT1 + 0x00A)
@@ -97,6 +98,7 @@
 #define TPM_RC_KEY              (TPM_RC)(RC_FMT1 + 0x01C)
 #define TPM_RC_BINDING          (TPM_RC)(RC_FMT1 + 0x022)
 #define TPM_RCS_BINDING         (TPM_RC)(RC_FMT1 + 0x022)
+#define TPM_RC_SEQUENCE         (TPM_RC)(RC_FMT1 + 0x023)
 
 // TPM_RC Modifiers
 #define RC_NV_DefineSpace_authHandle (TPM_RC_H + TPM_RC_1)
