@@ -402,41 +402,40 @@ TPM2_InOut(NV_Read);
 #endif
 
 #ifdef TPM_TEST_ENABLE_SIGN
-TPM2_InOut(Sign);
+TPM2_InOut(Sign)
 #endif
 
 #ifdef TPM_TEST_ENABLE_VERIFY_SIGNATURE
-TPM2_InOut(VerifySignature);
+    TPM2_InOut(VerifySignature)
 #endif
 
 #ifdef TPM_TEST_ENABLE_HASH
-TPM2_InOut(Hash);
+        TPM2_InOut(Hash)
 #endif
 
 #ifdef TPM_TEST_ENABLE_ENCRYPT_DECRYPT2
-TPM2_InOut(EncryptDecrypt2);
+            TPM2_InOut(EncryptDecrypt2)
 #endif
 
 #ifdef TPM_TEST_ENABLE_RSA_ENCRYPT_DECRYPT
-TPM2_InOut(RSA_Encrypt);
-TPM2_InOut(RSA_Decrypt);
+                TPM2_InOut(RSA_Encrypt) TPM2_InOut(RSA_Decrypt)
 #endif
 
 /* Key Management Commands */
 #ifdef TPM_TEST_ENABLE_CREATEPRIMARY
-TPM2_InOut(CreatePrimary);
+                    TPM2_InOut(CreatePrimary)
 #endif
 
 #ifdef TPM_TEST_ENABLE_CREATE
-TPM2_InOut(Create);
+                        TPM2_InOut(Create)
 #endif
 
 #ifdef TPM_TEST_ENABLE_LOAD
-TPM2_InOut(Load);
+                            TPM2_InOut(Load)
 #endif
 
 #ifdef TPM_TEST_ENABLE_READPUBLIC
-TPM2_InOut(ReadPublic);
+                                TPM2_InOut(ReadPublic);
 #endif
 
 #ifdef TPM_TEST_ENABLE_OBJECTCHANGEAUTH
@@ -534,7 +533,7 @@ void TPM2_NV_WriteRead_test(void) {
 void TPM2_Hash_smoke_test(void) {
     Hash_In in = {0};
     Hash_Out out = {0};
-    in.data.bufferSize = 4;
+    in.data.size = 4;
     in.data.buffer[0] = 'A';
     in.data.buffer[1] = 'B';
     in.data.buffer[2] = 'C';
@@ -572,8 +571,8 @@ void TPM2_Sign_smoke_test(void) {
            "!= TPM_RC_COMMAND_SIZE", string_from_TPM_RC(res));
 
     if (res == TPM_RC_SUCCESS) {
-        assert(out.signature.signature.signatureSize > 0,
-               "TPM2_Sign signature size", "> 0", "0");
+        assert(out.signature.signature.size > 0, "TPM2_Sign signature size",
+               "> 0", "0");
     }
 }
 #endif
@@ -591,9 +590,9 @@ void TPM2_VerifySignature_smoke_test(void) {
     in.digest.buffer[2] = 'C';
     in.digest.buffer[3] = 'D';
 
-    in.signature.signature.signatureSize = TPM_MAX_SIGNATURE_SIZE;
+    in.signature.signature.size = TPM_MAX_SIGNATURE_SIZE;
     for (int i = 0; i < TPM_MAX_SIGNATURE_SIZE; i++) {
-        in.signature.signature.signature[i] = (uint8_t)(0xA5u ^ (uint8_t)i);
+        in.signature.signature.buffer[i] = (uint8_t)(0xA5u ^ (uint8_t)i);
     }
 
     TPM_RC res = TPM2_VerifySignature(&in, &out);
@@ -618,12 +617,12 @@ void TPM2_EncryptDecrypt2_smoke_test(void) {
     in.mode = TPM_ALG_CBC;
     // Key bits/Alg determined by key handle
 
-    in.ivIn.ivSize = 16;
+    in.ivIn.size = 16;
     for (int i = 0; i < 16; i++) {
-        in.ivIn.iv[i] = (uint8_t)i;
+        in.ivIn.buffer[i] = (uint8_t)i;
     }
 
-    in.inData.bufferSize = 16;
+    in.inData.size = 16;
     for (int i = 0; i < 16; i++) {
         in.inData.buffer[i] = (uint8_t)('A' + i);
     }
@@ -638,10 +637,10 @@ void TPM2_EncryptDecrypt2_smoke_test(void) {
         char expected_size_str[12];
         char actual_size_str[12];
         snprintf(expected_size_str, sizeof(expected_size_str), "%u",
-                 in.inData.bufferSize);
+                 in.inData.size);
         snprintf(actual_size_str, sizeof(actual_size_str), "%u",
-                 out.outData.bufferSize);
-        assert(out.outData.bufferSize == in.inData.bufferSize,
+                 out.outData.size);
+        assert(out.outData.size == in.inData.size,
                "EncryptDecrypt2 size mismatch", expected_size_str,
                actual_size_str);
     }
@@ -1048,7 +1047,7 @@ void TPM2_CreatePrimary_with_sessions_test(void) {
     assert(out.name.size > 0, "TPM2_CreatePrimary_sessions: name is empty",
            "> 0", "0");
 
-    DBG_PRINTF("[TEST] TPM2_CreatePrimary with TPM_ST_SESSIONS: SUCCESS\n");
+    DBG_PRINT("[TEST] TPM2_CreatePrimary with TPM_ST_SESSIONS: SUCCESS\n");
     DBG_PRINTF("  Object handle: 0x%08lX\n", (unsigned long)out.objectHandle);
     DBG_PRINTF("  Name size: %u\n", out.name.size);
 }
@@ -1546,8 +1545,8 @@ void TPM2_ReadPublic_test(void) {
         {
             uint8_t rp_marshal[sizeof(TPMT_PUBLIC)];
             uint8_t cr_marshal[sizeof(TPMT_PUBLIC)];
-            uint16_t rp_len = TPMT_PUBLIC_Marshal(
-                &out.outPublic.publicArea, rp_marshal);
+            uint16_t rp_len =
+                TPMT_PUBLIC_Marshal(&out.outPublic.publicArea, rp_marshal);
             uint16_t cr_len = TPMT_PUBLIC_Marshal(
                 &g_create_out.outPublic.publicArea, cr_marshal);
 
@@ -1585,15 +1584,14 @@ void TPM2_ReadPublic_test(void) {
             uint8_t expected_alg_hi = (uint8_t)(TPM_ALG_SHA256 >> 8);
             uint8_t expected_alg_lo = (uint8_t)(TPM_ALG_SHA256 & 0xFF);
             char exp_alg[8], act_alg[8];
-            snprintf(exp_alg, sizeof(exp_alg), "0x%02X%02X",
-                     expected_alg_hi, expected_alg_lo);
+            snprintf(exp_alg, sizeof(exp_alg), "0x%02X%02X", expected_alg_hi,
+                     expected_alg_lo);
             snprintf(act_alg, sizeof(act_alg), "0x%02X%02X",
-                     out.qualifiedName.buffer[0],
-                     out.qualifiedName.buffer[1]);
+                     out.qualifiedName.buffer[0], out.qualifiedName.buffer[1]);
             assert(out.qualifiedName.buffer[0] == expected_alg_hi &&
                        out.qualifiedName.buffer[1] == expected_alg_lo,
-                   "TPM2_ReadPublic: qualifiedName nameAlg mismatch\n",
-                   exp_alg, act_alg);
+                   "TPM2_ReadPublic: qualifiedName nameAlg mismatch\n", exp_alg,
+                   act_alg);
         }
 
         DBG_PRINTF("[TEST] TPM2_ReadPublic: SUCCESS (public=%u, name=%u, "

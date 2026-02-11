@@ -1,6 +1,7 @@
 /*
  * NOTE: This header is the source for the generated copy at
- * firmware/include/tpm2_spec_protocol.h. Keep changes in sync.
+ * firmware/include/tpm2_spec_protocol.h. The firmware copy is generated
+ * during the build; edit this file in qemu/include/hw/misc instead.
  */
 #ifndef TPM2_SPEC_PROTOCOL_H
 #define TPM2_SPEC_PROTOCOL_H
