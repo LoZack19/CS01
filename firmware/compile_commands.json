@@ -1,0 +1,22 @@
+[
+  {
+    "directory": "/home/giovanni/github/CS01/firmware",
+    "file": "src/main.c",
+    "arguments": ["clang", "-xc", "-std=gnu11", "-Iinclude", "-Ifakeinclude", "-I../qemu/include/hw/misc", "-fsyntax-only", "src/main.c"]
+  },
+  {
+    "directory": "/home/giovanni/github/CS01/firmware",
+    "file": "src/sha256.c",
+    "arguments": ["clang", "-xc", "-std=gnu11", "-Iinclude", "-Ifakeinclude", "-fsyntax-only", "src/sha256.c"]
+  },
+  {
+    "directory": "/home/giovanni/github/CS01/firmware",
+    "file": "src/fifo8.c",
+    "arguments": ["clang", "-xc", "-std=gnu11", "-Iinclude", "-Ifakeinclude", "-fsyntax-only", "src/fifo8.c"]
+  },
+  {
+    "directory": "/home/giovanni/github/CS01/firmware",
+    "file": "src/tpm_marshal.c",
+    "arguments": ["clang", "-xc", "-std=gnu11", "-Iinclude", "-Ifakeinclude", "-I../qemu/include/hw/misc", "-fsyntax-only", "src/tpm_marshal.c"]
+  }
+]

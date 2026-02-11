@@ -9,6 +9,11 @@
 
 QEMU_DIR ?= ../qemu
 
+# Fake/stub headers for NXP SDK and FreeRTOS (used when building outside the
+# real SDK).  Place this directory *after* include/ so that project-local
+# headers take precedence.
+CFLAGS += -Iinclude -Ifakeinclude
+
 QEMU_TPM2_HDR := $(QEMU_DIR)/include/hw/misc/tpm2_spec_protocol.h
 FIRMWARE_TPM2_HDR := include/tpm2_spec_protocol.h
 
