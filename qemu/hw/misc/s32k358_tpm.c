@@ -330,6 +330,26 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
 
             return;
 
+        case TPM_CC_ReadPublic:
+        {
+            ReadPublic_In read_public_in;
+            ReadPublic_Out read_public_out;
+            memset(&read_public_out, 0, sizeof(read_public_out));
+
+            if (cmd_header.commandSize != sizeof(tpm_cmd_header_t) + sizeof(read_public_in)) {
+                tpm_send_error_response(s, TPM_RC_COMMAND_SIZE);
+                return;
+            }
+
+            UNMARSHAL(&read_public_in, &s->infifo);
+
+            rc = TPM2_ReadPublic(&read_public_in, &read_public_out);
+
+            tpm_send_response(s, rc, &read_public_out, sizeof(read_public_out));
+
+            return;
+        }
+
         default: /* unimplemented command */
             qemu_log_mask(LOG_GUEST_ERROR, "(ERROR) TPM: Unimplemented command\n");
             tpm_send_error_response(s, TPM_RC_COMMAND_CODE);

@@ -69,6 +69,13 @@ OBJECT *HandleToObject(TPMI_DH_OBJECT handle) {
     if (!s_objectSlotUsed[index] || !s_objects[index].attributes.occupied) {
         return NULL;
     }
+    /* Additional validation: object must have a valid Name.
+     * This prevents returning objects that were allocated but never
+     * fully initialized (e.g., slots from aborted operations or
+     * when FlushContext is not yet implemented). */
+    if (s_objects[index].name.size == 0) {
+        return NULL;
+    }
     return &s_objects[index];
 }
 
