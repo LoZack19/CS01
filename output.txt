@@ -47,19 +47,19 @@ TPM2_EncryptDecrypt2: Success, output size 16
 [DBG] TPM2_EncryptDecrypt2: Received rsp (tag=0x8001, size=1054, rc=0x00000000)
 [DBG] TPM2_EncryptDecrypt2: remaining=1044 bytes
 [DBG] TPM2_EncryptDecrypt2: Reading 1044 bytes to out (out size=1044)
-[DBG] TPM2_RSA_Encrypt: Sending cmd (tag=0x8001, size=272, code=0x00000173)
+[DBG] TPM2_RSA_Encrypt: Sending cmd (tag=0x8001, size=272, code=0x00000174)
 (INFO) TPM: Transitioned from READY to RECV
 (INFO) TPM: tpmGo received, state=3, fifo_used=272
-(INFO) TPM: Processing command 0x00000173 (size=272, fifo=262)
+(INFO) TPM: Processing command 0x00000174 (size=272, fifo=262)
 TPM2_RSA_Encrypt: RSA encryption with handle 0x80000000
 (INFO) TPM: Command completed, rc=0x0, response size=268
 [DBG] TPM2_RSA_Encrypt: Received rsp (tag=0x8001, size=268, rc=0x00000000)
 [DBG] TPM2_RSA_Encrypt: remaining=258 bytes
 [DBG] TPM2_RSA_Encrypt: Reading 258 bytes to out (out size=258)
-[DBG] TPM2_RSA_Decrypt: Sending cmd (tag=0x8001, size=272, code=0x00000174)
+[DBG] TPM2_RSA_Decrypt: Sending cmd (tag=0x8001, size=272, code=0x00000159)
 (INFO) TPM: Transitioned from READY to RECV
 (INFO) TPM: tpmGo received, state=3, fifo_used=272
-(INFO) TPM: Processing command 0x00000174 (size=272, fifo=262)
+(INFO) TPM: Processing command 0x00000159 (size=272, fifo=262)
 TPM2_RSA_Decrypt: RSA decryption with handle 0x80000000
 CryptDecrypt: Invalid data size 4 (must be multiple of 16)
 (INFO) TPM: Command completed, rc=0x84, response size=10
@@ -74,32 +74,18 @@ CryptDecrypt: Invalid data size 4 (must be multiple of 16)
 (INFO) TPM: Transitioned from READY to RECV
 (INFO) TPM: tpmGo received, state=3, fifo_used=926
 (INFO) TPM: Processing command 0x00000131 (size=926, fifo=916)
-PublicMarshalAndComputeName: marshaledSize=26 name[0..9]=000B 726DFD8203D5ECDE
-PublicMarshalAndComputeName: marshaledSize=58 name[0..9]=000B 8566E79883069136
-FillInCreationData: size=4 hash[0..7]=16A3D3B482BB4803
 (INFO) TPM: Command completed, rc=0x0, response size=1604
 [DBG] TPM2_CreatePrimary: Received rsp (tag=0x8001, size=1604, rc=0x00000000)
 [DBG] TPM2_CreatePrimary: remaining=1594 bytes
 [DBG] TPM2_CreatePrimary: Reading 1594 bytes to out (out size=1594)
-[DIAG] CreatePrimary Name: 1st diff @2  exp: 00 0B C1 5F B6 07 AC D3 3C 02 53 7E 58 C7
-[DIAG]                                           act: 00 0B 85 66 E7 98 83 06 91 36 35 6F 2D 42
-[DIAG]   sizeof(TPMT_PUBLIC)=zu, nameAlg=0x01C4
-TPM2_CreatePrimary Name mismatch
 [DBG] CreatePrimary: creationData.size = 4
 [DBG] CreatePrimary: creationHash.size = 32
-[DIAG] CreatePrimary creationHash: 1st diff @0  exp: 33 38 BD 1F 80 E8 D0 19 CC 5F 1C 20
-[DIAG]                                                   act: 16 A3 D3 B4 82 BB 48 03 94 DF AC 70
-[DIAG]   creationData.size=4
-TPM2_CreatePrimary creationHash mismatch
 
 === TPM2_CreatePrimary with TPM_ST_SESSIONS Test ===
 [DBG] TPM2_CreatePrimary_sessions: Sending cmd (tag=0x8002, size=1003, code=0x00000131)
 (INFO) TPM: Transitioned from READY to RECV
 (INFO) TPM: tpmGo received, state=3, fifo_used=1003
 (INFO) TPM: Processing command 0x00000131 (size=1003, fifo=993)
-PublicMarshalAndComputeName: marshaledSize=26 name[0..9]=000B 726DFD8203D5ECDE
-PublicMarshalAndComputeName: marshaledSize=58 name[0..9]=000B 8566E79883069136
-FillInCreationData: size=4 hash[0..7]=16A3D3B482BB4803
 (INFO) TPM: Command completed, rc=0x0, response size=1677
 [DBG] TPM2_CreatePrimary_sessions: Received rsp (tag=0x8002, size=1677, rc=0x00000000)
 [TEST] TPM2_CreatePrimary with TPM_ST_SESSIONS: SUCCESS
@@ -111,17 +97,10 @@ FillInCreationData: size=4 hash[0..7]=16A3D3B482BB4803
 (INFO) TPM: Transitioned from READY to RECV
 (INFO) TPM: tpmGo received, state=3, fifo_used=926
 (INFO) TPM: Processing command 0x00000153 (size=926, fifo=916)
-PublicMarshalAndComputeName: marshaledSize=56 name[0..9]=000B 23DA514A3CCD569E
-FillInCreationData: size=4 hash[0..7]=50C8BA3A6170F0A2
 (INFO) TPM: Command completed, rc=0x0, response size=1942
 [DBG] TPM2_Create: Received rsp (tag=0x8001, size=1942, rc=0x00000000)
 [DBG] TPM2_Create: remaining=1932 bytes
 [DBG] TPM2_Create: Reading 1932 bytes to out (out size=1932)
-[DIAG] Create creationHash: 1st diff @0  exp: D2 B8 2A 03 28 0A 3B 35 03 C5 1F 86
-[DIAG]                                            act: 50 C8 BA 3A 61 70 F0 A2 FB 67 36 EC
-[DIAG]   creationData.size=4
-TPM2_Create: creationHash mismatch
-
 [TEST] TPM2_Create: SUCCESS (private=328, public=56 bytes)
 [TEST] TPM2_Load: Loading created key into TPM
 [TEST] TPM2_Load: parent=0x80000000, private=328, public=56
@@ -129,23 +108,61 @@ TPM2_Create: creationHash mismatch
 (INFO) TPM: Transitioned from READY to RECV
 (INFO) TPM: tpmGo received, state=3, fifo_used=846
 (INFO) TPM: Processing command 0x00000157 (size=846, fifo=836)
-PublicMarshalAndComputeName: marshaledSize=56 name[0..9]=000B 23DA514A3CCD569E
-PublicMarshalAndComputeName: marshaledSize=56 name[0..9]=000B 23DA514A3CCD569E
 (INFO) TPM: Command completed, rc=0x0, response size=50
 [DBG] TPM2_Load: Received rsp (tag=0x8001, size=50, rc=0x00000000)
 [DBG] TPM2_Load: remaining=40 bytes
 [DBG] TPM2_Load: Reading 40 bytes to out (out size=40)
-[DIAG] Load Name: 1st diff @2  exp: 00 0B 1C AB 6C 6F D5 F5 64 B8 E3 DB DA 66
-[DIAG]                                  act: 00 0B 23 DA 51 4A 3C CD 56 9E 27 49 F8 68
-TPM2_Load: Name content mismatch
-
 [TEST] TPM2_Load: SUCCESS (handle=0x80000003, name_size=34)
+
+[TEST] TPM2_Load negative tests
+[DBG] TPM2_Load: Sending cmd (tag=0x8001, size=846, code=0x00000157)
+(INFO) TPM: Transitioned from READY to RECV
+(INFO) TPM: tpmGo received, state=3, fifo_used=846
+(INFO) TPM: Processing command 0x00000157 (size=846, fifo=836)
+(INFO) TPM: Command completed, rc=0x0, response size=50
+[DBG] TPM2_Load: Received rsp (tag=0x8001, size=50, rc=0x00000000)
+[DBG] TPM2_Load: remaining=40 bytes
+[DBG] TPM2_Load: Reading 40 bytes to out (out size=40)
+TPM2_Load negative (binding): should have failed
+Expected: != TPM_RC_SUCCESS, got: TPM_RC_SUCCESS
+[TEST] TPM2_Load negative (binding): rc=0x00000000 (TPM_RC_SUCCESS)
+[DBG] TPM2_Load: Sending cmd (tag=0x8001, size=846, code=0x00000157)
+(INFO) TPM: Transitioned from READY to RECV
+(INFO) TPM: tpmGo received, state=3, fifo_used=846
+(INFO) TPM: Processing command 0x00000157 (size=846, fifo=836)
+(INFO) TPM: Command completed, rc=0x0, response size=50
+[DBG] TPM2_Load: Received rsp (tag=0x8001, size=50, rc=0x00000000)
+[DBG] TPM2_Load: remaining=40 bytes
+[DBG] TPM2_Load: Reading 40 bytes to out (out size=40)
+TPM2_Load negative (attributes): should have failed
+Expected: != TPM_RC_SUCCESS, got: TPM_RC_SUCCESS
+[TEST] TPM2_Load negative (attributes): rc=0x00000000 (TPM_RC_SUCCESS)
+[DBG] TPM2_Load: Sending cmd (tag=0x8001, size=846, code=0x00000157)
+(INFO) TPM: Transitioned from READY to RECV
+(INFO) TPM: tpmGo received, state=3, fifo_used=846
+(INFO) TPM: Processing command 0x00000157 (size=846, fifo=836)
+(INFO) TPM: Command completed, rc=0x0, response size=50
+[DBG] TPM2_Load: Received rsp (tag=0x8001, size=50, rc=0x00000000)
+[DBG] TPM2_Load: remaining=40 bytes
+[DBG] TPM2_Load: Reading 40 bytes to out (out size=40)
+TPM2_Load negative (key size): should have failed
+Expected: != TPM_RC_SUCCESS, got: TPM_RC_SUCCESS
+[TEST] TPM2_Load negative (key size): rc=0x00000000 (TPM_RC_SUCCESS)
+[DBG] TPM2_Load: Sending cmd (tag=0x8001, size=846, code=0x00000157)
+(INFO) TPM: Transitioned from READY to RECV
+(INFO) TPM: tpmGo received, state=3, fifo_used=846
+(INFO) TPM: Processing command 0x00000157 (size=846, fifo=836)
+(INFO) TPM: Command completed, rc=0x1D5, response size=10
+[DBG] TPM2_Load: Received rsp (tag=0x8001, size=10, rc=0x000001D5)
+[DBG] TPM2_Load: remaining=0 bytes
+[DBG] TPM2_Load: Error response, draining 0 bytes
+[TEST] TPM2_Load negative (zero private): rc=0x000001D5 (UNKNOWN_RC)
+[TEST] TPM2_Load negative tests: DONE
 ==================================================
 [SUITE] Key Management Tests Complete
 ==================================================
 
 Assert Report
-Total asserts: 43
-Failed asserts: 4
+Total asserts: 47
+Failed asserts: 3
 Some tests failed!
-QEMU: Terminated

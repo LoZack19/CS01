@@ -14,6 +14,7 @@
  */
 
 #include "hw/misc/s32k358_tpm.h"
+#include "hw/misc/tpm_create_primary.h"
 #include "hw/misc/tpm2_spec_protocol.h"
 #include "qemu/fifo8.h"
 
@@ -25,8 +26,7 @@
  *
  * Returns TPM_RC_SUCCESS if valid, error otherwise.
  */
-TPM_RC ParseAuthArea(Fifo8 *fifo, TPMS_AUTH_COMMAND *authCmd)
-{
+TPM_RC ParseAuthArea(Fifo8 *fifo, TPMS_AUTH_COMMAND *authCmd) {
     TPMS_AUTH_COMMAND_AREA area;
 
     if (authCmd == NULL || fifo == NULL) {
@@ -53,15 +53,13 @@ TPM_RC ParseAuthArea(Fifo8 *fifo, TPMS_AUTH_COMMAND *authCmd)
  *
  * Builds a TPMS_AUTH_RESPONSE_AREA with empty nonce/HMAC and marshals it.
  */
-void MarshalAuthResponse(Fifo8 *fifo)
-{
+void MarshalAuthResponse(Fifo8 *fifo) {
     if (fifo == NULL) {
         return;
     }
 
     TPMS_AUTH_RESPONSE_AREA area = {
         .authSize = sizeof(TPMS_AUTH_RESPONSE),
-        .auth     = { /* nonce, sessionAttributes, hmac: zero-init */ }
-    };
+        .auth = {/* nonce, sessionAttributes, hmac: zero-init */}};
     MARSHAL(fifo, &area);
 }
