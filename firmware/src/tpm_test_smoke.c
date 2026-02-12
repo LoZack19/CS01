@@ -1,15 +1,15 @@
 /*
- * tpm_test_smoke.c — Standalone command smoke tests (no shared state).
+ * tpm_test_smoke.c - Standalone command smoke tests (no shared state).
  *
  * Contains:
- *   - GROUP A: Transport & framing negative tests  (verification §1)
+ *   - GROUP A: Transport & framing negative tests  (verification S.1)
  *   - NV DefineSpace / WriteRead tests
  *   - Hash smoke test
  *   - Sign smoke test
  *   - VerifySignature smoke test
  *   - EncryptDecrypt2 smoke test
  *   - RSA Encrypt/Decrypt smoke test
- *   - GROUP G: Error handling tests  (verification §9)
+ *   - GROUP G: Error handling tests  (verification S.9)
  */
 
 #include "tpm_platform.h"
@@ -19,14 +19,14 @@
 #include "tpm_tests_config.h"
 
 /* ===========================================================================
- * GROUP A: Transport & Framing Negative Tests  (verification §1)
+ * GROUP A: Transport & Framing Negative Tests  (verification S.1)
  * ===========================================================================
  */
 #ifdef TPM_TEST_ENABLE_TRANSPORT_NEGATIVE
 void TPM2_Transport_negative_tests(void) {
     DBG_PRINT("\n[TEST] Transport & framing negative tests\n");
 
-    /* A1 — Invalid tag → TPM_RC_BAD_TAG */
+    /* A1 - Invalid tag -> TPM_RC_BAD_TAG */
     {
         GetRandom_In payload = {.bytesRequested = 4};
         tpm_rsp_header_t rsp = tpm_send_raw_command(0xFFFF, TPM_CC_GetRandom,
@@ -37,7 +37,7 @@ void TPM2_Transport_negative_tests(void) {
                string_from_TPM_RC(rsp.responseCode));
     }
 
-    /* A2 — Unknown command code → TPM_RC_COMMAND_CODE */
+    /* A2 - Unknown command code -> TPM_RC_COMMAND_CODE */
     {
         uint8_t dummy = 0;
         tpm_rsp_header_t rsp = tpm_send_raw_command(
@@ -48,7 +48,7 @@ void TPM2_Transport_negative_tests(void) {
                string_from_TPM_RC(rsp.responseCode));
     }
 
-    /* A3 — Short commandSize → TPM_RC_COMMAND_SIZE
+    /* A3 - Short commandSize -> TPM_RC_COMMAND_SIZE
      * Declare commandSize = header-only (no payload), but actually
      * send a Hash_In payload.  QEMU checks declared vs expected. */
     {
@@ -349,7 +349,7 @@ void TPM2_RSA_EncryptDecrypt_smoke_test(void) {
 #endif
 
 /* ===========================================================================
- * GROUP G: Error Handling Tests  (verification §9)
+ * GROUP G: Error Handling Tests  (verification S.9)
  * ===========================================================================
  */
 
@@ -357,7 +357,7 @@ void TPM2_RSA_EncryptDecrypt_smoke_test(void) {
 void TPM2_Error_handling_tests(void) {
     DBG_PRINT("\n[TEST] Error handling tests\n");
 
-    /* G1 — TPM_RC_HANDLE for invalid handles: Load with bad parent */
+    /* G1 - TPM_RC_HANDLE for invalid handles: Load with bad parent */
 #ifdef TPM_TEST_ENABLE_LOAD
     {
         Load_In bad_in = {0};
@@ -375,14 +375,14 @@ void TPM2_Error_handling_tests(void) {
     }
 #endif
 
-    /* G2 — TPM_RC_VALUE / TPM_RC_HASH for empty data:
-     *       Hash with data.size = 0 → expect error */
+    /* G2 - TPM_RC_VALUE / TPM_RC_HASH for empty data:
+     *       Hash with data.size = 0 -> expect error */
 #ifdef TPM_TEST_ENABLE_HASH
     {
         Hash_In in = {0};
         Hash_Out out = {0};
         in.hashAlg = TPM_ALG_SHA256;
-        in.data.size = 0; /* empty → should be rejected */
+        in.data.size = 0; /* empty -> should be rejected */
 
         TPM_RC res = TPM2_Hash(&in, &out);
         assert(res != TPM_RC_SUCCESS,

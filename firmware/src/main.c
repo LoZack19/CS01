@@ -1,5 +1,5 @@
 /*
- * main.c — Entry point and top-level test orchestration.
+ * main.c - Entry point and top-level test orchestration.
  *
  * All test logic lives in:
  *   - tpm_test_smoke.c   (standalone command smoke tests)
@@ -47,7 +47,7 @@ void TPM2_RSA_EncryptDecrypt_smoke_test(void);
 void TPM2_KeyManagement_test_suite(void);
 
 /* ================================================================
- * tpm_test — top-level test orchestrator
+ * tpm_test - top-level test orchestrator
  * ================================================================ */
 void tpm_test(void) {
     tpm_wait_access();
@@ -55,7 +55,7 @@ void tpm_test(void) {
                             (uint8_t *)"[INFO] TPM access granted\n", 26,
                             portMAX_DELAY);
 
-    /* GROUP A — Transport & framing negative tests (§1) */
+    /* GROUP A - Transport & framing negative tests (S.1) */
 #ifdef TPM_TEST_ENABLE_TRANSPORT_NEGATIVE
     TPM2_Transport_negative_tests();
 #endif
@@ -78,7 +78,7 @@ void tpm_test(void) {
     DBG_PRINT("[TEST] TPM2_Hash: SKIPPED (not enabled)\n");
 #endif
 
-    /* GROUP G — Error handling tests (§9) */
+    /* GROUP G - Error handling tests (S.9) */
 #ifdef TPM_TEST_ENABLE_ERROR_HANDLING
     TPM2_Error_handling_tests();
 #endif
@@ -112,7 +112,7 @@ void tpm_test(void) {
 }
 
 /* ================================================================
- * main — hardware init, run tests, report results
+ * main - hardware init, run tests, report results
  * ================================================================ */
 int main(void) {
     IntCtrl_Ip_Init(&IntCtrlConfig_0);

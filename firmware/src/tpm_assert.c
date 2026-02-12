@@ -1,5 +1,5 @@
 /*
- * tpm_assert.c — Test assertion framework implementation.
+ * tpm_assert.c - Test assertion framework implementation.
  */
 
 #include "tpm_platform.h"

@@ -1,5 +1,5 @@
 /*
- * tpm_driver.c — Low-level TPM FIFO interface and command dispatch.
+ * tpm_driver.c - Low-level TPM FIFO interface and command dispatch.
  */
 
 #include "tpm_platform.h"
@@ -99,7 +99,7 @@ void tpm_drain_bytes(size_t size) {
 }
 
 /* ===========================================================================
- * Raw command helpers — used by transport / framing / error negative tests.
+ * Raw command helpers - used by transport / framing / error negative tests.
  * ===========================================================================
  */
 

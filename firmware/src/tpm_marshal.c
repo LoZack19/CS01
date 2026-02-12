@@ -1,5 +1,5 @@
 /*
- * tpm_marshal.c – Firmware-side TPM marshaling functions.
+ * tpm_marshal.c - Firmware-side TPM marshaling functions.
  *
  * Ported from qemu/hw/misc/tpm_marshal_tpm.c to produce byte-identical
  * output for Name computation.
