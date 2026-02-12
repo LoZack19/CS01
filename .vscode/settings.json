@@ -91,5 +91,7 @@
   "[cpp]": {
     "editor.defaultFormatter": "ms-vscode.cpptools",
     "editor.formatOnSave": true
-  }
+  },
+  "python.defaultInterpreterPath": "/usr/bin/python3",
+  "black-formatter.interpreter": ["/usr/bin/python3"]
 }

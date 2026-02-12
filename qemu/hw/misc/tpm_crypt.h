@@ -25,6 +25,12 @@ uint8_t CryptVerifySignatureRSA_PSS_SHA256(const uint8_t *data, uint16_t dataSiz
                                            const uint8_t *signature, uint16_t sigSize,
                                            const uint8_t *publicKey, uint16_t keySize);
 
+/* Simplified RSA encryption/decryption (XOR-based simulation) */
+TPM_RC CryptRSAEncrypt(const uint8_t *data, uint16_t dataSize,
+                        const uint8_t *key, uint16_t keySize, uint8_t *out);
+TPM_RC CryptRSADecrypt(const uint8_t *data, uint16_t dataSize,
+                        const uint8_t *key, uint16_t keySize, uint8_t *out);
+
 /* AES helpers (ECB/CBC/CFB/OFB/CTR) and simple wrappers */
 TPM_RC CryptEncrypt(const uint8_t *data, uint16_t dataSize,
                     const uint8_t *key, uint16_t keySize,

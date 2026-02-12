@@ -533,6 +533,7 @@ void TPM2_NV_WriteRead_test(void) {
 void TPM2_Hash_smoke_test(void) {
     Hash_In in = {0};
     Hash_Out out = {0};
+    in.hashAlg = TPM_ALG_SHA256;
     in.data.size = 4;
     in.data.buffer[0] = 'A';
     in.data.buffer[1] = 'B';
@@ -557,6 +558,8 @@ void TPM2_Sign_smoke_test(void) {
     Sign_Out out = {0};
 
     in.keyHandle = 0x80000000;
+    in.inScheme.scheme = TPM_ALG_NULL;
+    in.inScheme.hashAlg = TPM_ALG_NULL;
 
     in.digest.size = 4;
     in.digest.buffer[0] = 'A';

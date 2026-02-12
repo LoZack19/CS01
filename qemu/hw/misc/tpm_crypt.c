@@ -508,6 +508,26 @@ TPM_RC CryptDecrypt(const BYTE *encrypted, UINT16 dataSize, const BYTE *key, UIN
     return TPM_RC_SUCCESS;
 }
 
+/* Simplified RSA encryption/decryption using the XOR-based simulation.
+ * RSA_Private_Encrypt is self-inverse, so the same function serves both. */
+TPM_RC CryptRSAEncrypt(const BYTE *data, UINT16 dataSize,
+                        const BYTE *key, UINT16 keySize, BYTE *out) {
+    if (data == NULL || out == NULL || dataSize == 0) {
+        return TPM_RC_VALUE;
+    }
+    RSA_Private_Encrypt(data, dataSize, key, keySize, out);
+    return TPM_RC_SUCCESS;
+}
+
+TPM_RC CryptRSADecrypt(const BYTE *data, UINT16 dataSize,
+                        const BYTE *key, UINT16 keySize, BYTE *out) {
+    if (data == NULL || out == NULL || dataSize == 0) {
+        return TPM_RC_VALUE;
+    }
+    RSA_Private_Encrypt(data, dataSize, key, keySize, out);
+    return TPM_RC_SUCCESS;
+}
+
 /* Minimal PKCS#7 helpers (block=16) */
 UINT16 PKCS7_Pad(const BYTE *data, UINT16 dataSize, BYTE *out) {
     memcpy(out, data, dataSize);

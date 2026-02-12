@@ -388,9 +388,9 @@ TPM_RC TPM2_RSA_Encrypt(RSA_Encrypt_In *in, RSA_Encrypt_Out *out) {
         return TPM_RC_VALUE;
     }
 
-    TPM_RC crypt_rc = CryptEncrypt(in->message.buffer, in->message.size,
-                                   DEFAULT_RSA_KEY, DEFAULT_RSA_KEY_SIZE,
-                                   out->encrypted.buffer);
+    TPM_RC crypt_rc = CryptRSAEncrypt(in->message.buffer, in->message.size,
+                                      DEFAULT_RSA_KEY, DEFAULT_RSA_KEY_SIZE,
+                                      out->encrypted.buffer);
     if (crypt_rc != TPM_RC_SUCCESS) return crypt_rc;
     out->encrypted.size = in->message.size;
 
@@ -406,9 +406,9 @@ TPM_RC TPM2_RSA_Decrypt(RSA_Decrypt_In *in, RSA_Decrypt_Out *out) {
         return TPM_RC_VALUE;
     }
 
-    TPM_RC crypt_rc = CryptDecrypt(in->encrypted.buffer, in->encrypted.size,
-                                   DEFAULT_RSA_KEY, DEFAULT_RSA_KEY_SIZE,
-                                   out->decrypted.buffer);
+    TPM_RC crypt_rc = CryptRSADecrypt(in->encrypted.buffer, in->encrypted.size,
+                                      DEFAULT_RSA_KEY, DEFAULT_RSA_KEY_SIZE,
+                                      out->decrypted.buffer);
     if (crypt_rc != TPM_RC_SUCCESS) return crypt_rc;
     out->decrypted.size = in->encrypted.size;
 
