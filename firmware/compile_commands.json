@@ -18,5 +18,25 @@
     "directory": "/home/giovanni/github/CS01/firmware",
     "file": "src/tpm_marshal.c",
     "arguments": ["clang", "-xc", "-std=gnu11", "-Iinclude", "-Ifakeinclude", "-I../qemu/include/hw/misc", "-fsyntax-only", "src/tpm_marshal.c"]
+  },
+  {
+    "directory": "/home/giovanni/github/CS01/firmware",
+    "file": "src/tpm_assert.c",
+    "arguments": ["clang", "-xc", "-std=gnu11", "-Iinclude", "-Ifakeinclude", "-I../qemu/include/hw/misc", "-fsyntax-only", "src/tpm_assert.c"]
+  },
+  {
+    "directory": "/home/giovanni/github/CS01/firmware",
+    "file": "src/tpm_driver.c",
+    "arguments": ["clang", "-xc", "-std=gnu11", "-Iinclude", "-Ifakeinclude", "-I../qemu/include/hw/misc", "-fsyntax-only", "src/tpm_driver.c"]
+  },
+  {
+    "directory": "/home/giovanni/github/CS01/firmware",
+    "file": "src/tpm_test_smoke.c",
+    "arguments": ["clang", "-xc", "-std=gnu11", "-Iinclude", "-Ifakeinclude", "-I../qemu/include/hw/misc", "-fsyntax-only", "src/tpm_test_smoke.c"]
+  },
+  {
+    "directory": "/home/giovanni/github/CS01/firmware",
+    "file": "src/tpm_test_keymgmt.c",
+    "arguments": ["clang", "-xc", "-std=gnu11", "-Iinclude", "-Ifakeinclude", "-I../qemu/include/hw/misc", "-fsyntax-only", "src/tpm_test_keymgmt.c"]
   }
 ]
