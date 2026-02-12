@@ -267,6 +267,79 @@ static void tpm_drain_bytes(size_t size) {
 }
 
 /* ===========================================================================
+ * Raw command helper — sends an arbitrary header + payload and returns
+ * the response header.  Used by transport / framing / error negative tests.
+ * ===========================================================================
+ */
+#if defined(TPM_TEST_ENABLE_TRANSPORT_NEGATIVE) || \
+    defined(TPM_TEST_ENABLE_ERROR_HANDLING)
+static tpm_rsp_header_t tpm_send_raw_command(uint16_t tag,
+                                             uint32_t commandCode,
+                                             const void *payload,
+                                             size_t payload_size) {
+    tpm_cmd_header_t cmd = {
+        .tag = tag,
+        .commandSize = (uint32_t)(sizeof(cmd) + payload_size),
+        .commandCode = commandCode,
+    };
+
+    tpm_command_ready();
+    tpm_send(&cmd, sizeof(cmd));
+    if (payload != NULL && payload_size > 0) {
+        tpm_send(payload, payload_size);
+    }
+    tpm_go();
+
+    tpm_rsp_header_t rsp;
+    tpm_receive(&rsp, sizeof(rsp));
+
+    /* Drain any remaining response bytes */
+    size_t remaining = 0;
+    if (rsp.responseSize >= sizeof(rsp) && rsp.responseSize <= 4096) {
+        remaining = (size_t)rsp.responseSize - sizeof(rsp);
+    }
+    tpm_drain_bytes(remaining);
+
+    return rsp;
+}
+
+/**
+ * @brief Send a raw command with a deliberately wrong commandSize field.
+ * The actual payload sent matches payload_size, but the header's
+ * commandSize is set to the caller-provided value.
+ */
+static tpm_rsp_header_t tpm_send_raw_command_bad_size(uint16_t tag,
+                                                      uint32_t commandCode,
+                                                      uint32_t declared_size,
+                                                      const void *payload,
+                                                      size_t payload_size) {
+    tpm_cmd_header_t cmd = {
+        .tag = tag,
+        .commandSize = declared_size,
+        .commandCode = commandCode,
+    };
+
+    tpm_command_ready();
+    tpm_send(&cmd, sizeof(cmd));
+    if (payload != NULL && payload_size > 0) {
+        tpm_send(payload, payload_size);
+    }
+    tpm_go();
+
+    tpm_rsp_header_t rsp;
+    tpm_receive(&rsp, sizeof(rsp));
+
+    size_t remaining = 0;
+    if (rsp.responseSize >= sizeof(rsp) && rsp.responseSize <= 4096) {
+        remaining = (size_t)rsp.responseSize - sizeof(rsp);
+    }
+    tpm_drain_bytes(remaining);
+
+    return rsp;
+}
+#endif /* TPM_TEST_ENABLE_TRANSPORT_NEGATIVE || ERROR_HANDLING */
+
+/* ===========================================================================
  * TPM_ST_SESSIONS Helper Functions
  * ===========================================================================
  */
@@ -442,6 +515,62 @@ TPM2_InOut(Sign)
 TPM2_InOut(ObjectChangeAuth);
 #endif
 // TPM Tests
+
+/* ===========================================================================
+ * GROUP A: Transport & Framing Negative Tests  (verification §1)
+ * ===========================================================================
+ */
+#ifdef TPM_TEST_ENABLE_TRANSPORT_NEGATIVE
+void TPM2_Transport_negative_tests(void) {
+    DBG_PRINT("\n[TEST] Transport & framing negative tests\n");
+
+    /* A1 — Invalid tag → TPM_RC_BAD_TAG */
+    {
+        GetRandom_In payload = {.bytesRequested = 4};
+        tpm_rsp_header_t rsp =
+            tpm_send_raw_command(0xFFFF, TPM_CC_GetRandom, &payload,
+                                 sizeof(payload));
+        assert(rsp.responseCode == TPM_RC_BAD_TAG,
+               "Transport A1: invalid tag should return TPM_RC_BAD_TAG\n",
+               string_from_TPM_RC(TPM_RC_BAD_TAG),
+               string_from_TPM_RC(rsp.responseCode));
+    }
+
+    /* A2 — Unknown command code → TPM_RC_COMMAND_CODE */
+    {
+        uint8_t dummy = 0;
+        tpm_rsp_header_t rsp =
+            tpm_send_raw_command(TPM_ST_NO_SESSIONS, 0xDEADBEEF, &dummy,
+                                 sizeof(dummy));
+        assert(rsp.responseCode == TPM_RC_COMMAND_CODE,
+               "Transport A2: unknown CC should return TPM_RC_COMMAND_CODE\n",
+               string_from_TPM_RC(TPM_RC_COMMAND_CODE),
+               string_from_TPM_RC(rsp.responseCode));
+    }
+
+    /* A3 — Short commandSize → TPM_RC_COMMAND_SIZE
+     * Declare commandSize = header-only (no payload), but actually
+     * send a Hash_In payload.  QEMU checks declared vs expected. */
+    {
+        Hash_In payload = {0};
+        payload.hashAlg = TPM_ALG_SHA256;
+        payload.data.size = 4;
+        payload.data.buffer[0] = 'X';
+
+        tpm_rsp_header_t rsp = tpm_send_raw_command_bad_size(
+            TPM_ST_NO_SESSIONS, TPM_CC_Hash,
+            (uint32_t)sizeof(tpm_cmd_header_t) + 1, /* too small */
+            &payload, sizeof(payload));
+        assert(rsp.responseCode == TPM_RC_COMMAND_SIZE,
+               "Transport A3: short commandSize should return "
+               "TPM_RC_COMMAND_SIZE\n",
+               string_from_TPM_RC(TPM_RC_COMMAND_SIZE),
+               string_from_TPM_RC(rsp.responseCode));
+    }
+
+    DBG_PRINT("[TEST] Transport negative tests: DONE\n");
+}
+#endif
 
 #ifdef TPM_TEST_ENABLE_NV_DEFINE
 void TPM2_NV_DefineSpace_test(void) {
@@ -1702,6 +1831,473 @@ void TPM2_ObjectChangeAuth_test(void) {
 }
 #endif
 
+/* ===========================================================================
+ * GROUP B: CreatePrimary Template Match  (verification §3)
+ * ===========================================================================
+ */
+#if defined(TPM_TEST_ENABLE_CREATEPRIMARY_TEMPLATE_MATCH) && \
+    defined(TPM_TEST_ENABLE_CREATEPRIMARY)
+void TPM2_CreatePrimary_template_match_test(void) {
+    DBG_PRINT("\n[TEST] CreatePrimary template match verification\n");
+
+    TPMT_PUBLIC *pub = &g_create_primary_out.outPublic.publicArea;
+
+    /* type == RSA */
+    assert(pub->type == TPM_ALG_RSA,
+           "Template match: type != TPM_ALG_RSA\n", "TPM_ALG_RSA", "OTHER");
+
+    /* nameAlg == SHA-256 */
+    {
+        char exp[8], act[8];
+        snprintf(exp, sizeof(exp), "0x%04X", TPM_ALG_SHA256);
+        snprintf(act, sizeof(act), "0x%04X", pub->nameAlg);
+        assert(pub->nameAlg == TPM_ALG_SHA256,
+               "Template match: nameAlg != SHA256\n", exp, act);
+    }
+
+    /* objectAttributes */
+    assert(pub->objectAttributes.restricted == 1,
+           "Template match: restricted != 1\n", "1", "0");
+    assert(pub->objectAttributes.decrypt == 1,
+           "Template match: decrypt != 1\n", "1", "0");
+    assert(pub->objectAttributes.fixedTPM == 1,
+           "Template match: fixedTPM != 1\n", "1", "0");
+    assert(pub->objectAttributes.fixedParent == 1,
+           "Template match: fixedParent != 1\n", "1", "0");
+    assert(pub->objectAttributes.sensitiveDataOrigin == 1,
+           "Template match: sensitiveDataOrigin != 1\n", "1", "0");
+    assert(pub->objectAttributes.userWithAuth == 1,
+           "Template match: userWithAuth != 1\n", "1", "0");
+
+    /* RSA key bits == 2048 */
+    {
+        char exp[8], act[8];
+        snprintf(exp, sizeof(exp), "2048");
+        snprintf(act, sizeof(act), "%u", pub->parameters.rsaDetail.keyBits);
+        assert(pub->parameters.rsaDetail.keyBits == 2048,
+               "Template match: keyBits != 2048\n", exp, act);
+    }
+
+    /* symmetric algorithm == AES */
+    assert(pub->parameters.rsaDetail.symmetric.algorithm == TPM_ALG_AES,
+           "Template match: symmetric != AES\n", "TPM_ALG_AES", "OTHER");
+
+    DBG_PRINT("[TEST] CreatePrimary template match: DONE\n");
+}
+#endif
+
+/* ===========================================================================
+ * GROUP C: Create Negative Tests  (verification §4)
+ * ===========================================================================
+ */
+#if defined(TPM_TEST_ENABLE_CREATE_NEGATIVE) && \
+    defined(TPM_TEST_ENABLE_CREATEPRIMARY)
+void TPM2_Create_negative_tests(void) {
+    TPM_RC res;
+
+    DBG_PRINT("\n[TEST] Create negative tests\n");
+
+    /* C1 — Invalid parent handle */
+    {
+        Create_In bad_in = {0};
+        Create_Out bad_out = {0};
+        bad_in.parentHandle = 0xDEADBEEF;
+        bad_in.inPublic.publicArea.type = TPM_ALG_RSA;
+        bad_in.inPublic.publicArea.nameAlg = TPM_ALG_SHA256;
+        bad_in.inPublic.publicArea.objectAttributes.sign_encrypt = 1;
+        bad_in.inPublic.publicArea.objectAttributes.sensitiveDataOrigin = 1;
+        bad_in.inPublic.publicArea.objectAttributes.userWithAuth = 1;
+        bad_in.inPublic.publicArea.parameters.rsaDetail.keyBits = 2048;
+        bad_in.inPublic.publicArea.parameters.rsaDetail.scheme.scheme =
+            TPM_ALG_NULL;
+
+        res = TPM2_Create(&bad_in, &bad_out);
+        assert(res != TPM_RC_SUCCESS,
+               "Create C1: invalid parentHandle should fail\n",
+               "!= TPM_RC_SUCCESS", string_from_TPM_RC(res));
+        DBG_PRINTF("[TEST] Create C1 (bad parent): rc=0x%08lX (%s)\n",
+                   (unsigned long)res, string_from_TPM_RC(res));
+    }
+
+    /* C2 — nameAlg = TPM_ALG_NULL → should return error (TPM_RC_HASH) */
+    {
+        Create_In bad_in = {0};
+        Create_Out bad_out = {0};
+        bad_in.parentHandle = g_create_primary_out.objectHandle;
+        bad_in.inPublic.publicArea.type = TPM_ALG_RSA;
+        bad_in.inPublic.publicArea.nameAlg = TPM_ALG_NULL;
+        bad_in.inPublic.publicArea.objectAttributes.sign_encrypt = 1;
+        bad_in.inPublic.publicArea.objectAttributes.sensitiveDataOrigin = 1;
+        bad_in.inPublic.publicArea.objectAttributes.userWithAuth = 1;
+        bad_in.inPublic.publicArea.parameters.rsaDetail.keyBits = 2048;
+
+        res = TPM2_Create(&bad_in, &bad_out);
+        assert(res != TPM_RC_SUCCESS,
+               "Create C2: nameAlg=NULL should fail\n",
+               "!= TPM_RC_SUCCESS", string_from_TPM_RC(res));
+        DBG_PRINTF("[TEST] Create C2 (null nameAlg): rc=0x%08lX (%s)\n",
+                   (unsigned long)res, string_from_TPM_RC(res));
+    }
+
+    DBG_PRINT("[TEST] Create negative tests: DONE\n");
+}
+#endif
+
+/* ===========================================================================
+ * GROUP D: Load Private Blob Integrity  (verification §5)
+ * ===========================================================================
+ */
+#if defined(TPM_TEST_ENABLE_LOAD_PRIVATE_INTEGRITY) && \
+    defined(TPM_TEST_ENABLE_CREATE) && defined(TPM_TEST_ENABLE_LOAD)
+void TPM2_Load_private_integrity_test(void) {
+    TPM_RC res;
+
+    DBG_PRINT("\n[TEST] Load private blob integrity test\n");
+
+    if (!g_key_created) {
+        DBG_PRINT("[TEST] Load integrity: SKIPPED (Create failed)\n");
+        return;
+    }
+
+    /* Flip a byte in the middle of the private blob (inside the
+     * TPMT_SENSITIVE region, before the integrity digest).
+     * PrivateToSensitive() in QEMU recomputes SHA256(Name || sensitive)
+     * and compares against the stored digest — this must mismatch. */
+    {
+        Load_In bad_in = {0};
+        Load_Out bad_out = {0};
+        bad_in.parentHandle = g_parent_handle;
+        memcpy(&bad_in.inPrivate, &g_create_out.outPrivate,
+               sizeof(bad_in.inPrivate));
+        memcpy(&bad_in.inPublic, &g_create_out.outPublic,
+               sizeof(bad_in.inPublic));
+
+        /* Corrupt byte 10 (well within the TPMT_SENSITIVE area) */
+        if (bad_in.inPrivate.size > 10) {
+            bad_in.inPrivate.buffer[10] ^= 0xFF;
+        }
+
+        res = TPM2_Load(&bad_in, &bad_out);
+        assert(res != TPM_RC_SUCCESS,
+               "Load integrity: corrupted private blob should fail\n",
+               "!= TPM_RC_SUCCESS", string_from_TPM_RC(res));
+        DBG_PRINTF("[TEST] Load integrity (corrupt blob): rc=0x%08lX (%s)\n",
+                   (unsigned long)res, string_from_TPM_RC(res));
+    }
+
+    DBG_PRINT("[TEST] Load private blob integrity: DONE\n");
+}
+#endif
+
+/* ===========================================================================
+ * GROUP E: Sign Integration Tests  (verification §6)
+ * ===========================================================================
+ */
+#if defined(TPM_TEST_ENABLE_SIGN_INTEGRATION) && \
+    defined(TPM_TEST_ENABLE_SIGN) && defined(TPM_TEST_ENABLE_LOAD)
+void TPM2_Sign_integration_tests(void) {
+    TPM_RC res;
+
+    DBG_PRINT("\n[TEST] Sign integration tests\n");
+
+    if (!g_key_loaded) {
+        DBG_PRINT("[TEST] Sign integration: SKIPPED (key not loaded)\n");
+        return;
+    }
+
+    /* E1 + E2 + E3 — Sign with the loaded child key handle */
+    {
+        Sign_In in = {0};
+        Sign_Out out = {0};
+
+        in.keyHandle = g_load_out.objectHandle;
+        in.inScheme.scheme = TPM_ALG_NULL;
+        in.inScheme.hashAlg = TPM_ALG_NULL;
+
+        /* Use a 32-byte SHA-256 digest */
+        in.digest.size = 32;
+        for (int i = 0; i < 32; i++) {
+            in.digest.buffer[i] = (uint8_t)(0x41 + (i % 26));
+        }
+
+        res = TPM2_Sign(&in, &out);
+
+        /* E1: keyHandle references loaded key → SUCCESS */
+        assert(res == TPM_RC_SUCCESS,
+               "Sign E1: Sign with loaded key should succeed\n",
+               string_from_TPM_RC(TPM_RC_SUCCESS), string_from_TPM_RC(res));
+
+        if (res == TPM_RC_SUCCESS) {
+            /* E3: signature must be non-empty */
+            assert(out.signature.signature.size > 0,
+                   "Sign E3: signature is empty\n", "> 0", "0");
+
+            /* E2: scheme fields populated */
+            assert(out.signature.sigAlg != 0,
+                   "Sign E2: sigAlg is zero\n", "!= 0", "0");
+
+            DBG_PRINTF("[TEST] Sign E1-E3: sig_size=%u, sigAlg=0x%04X\n",
+                       out.signature.signature.size, out.signature.sigAlg);
+        }
+    }
+
+    /* E4 — Invalid hash algorithm → expect error */
+    {
+        Sign_In in = {0};
+        Sign_Out out = {0};
+
+        in.keyHandle = g_load_out.objectHandle;
+        in.inScheme.scheme = TPM_ALG_NULL;
+        in.inScheme.hashAlg = 0xFFFF; /* bogus */
+
+        in.digest.size = 32;
+        for (int i = 0; i < 32; i++) {
+            in.digest.buffer[i] = (uint8_t)i;
+        }
+
+        res = TPM2_Sign(&in, &out);
+        assert(res != TPM_RC_SUCCESS,
+               "Sign E4: invalid hashAlg should fail\n",
+               "!= TPM_RC_SUCCESS", string_from_TPM_RC(res));
+        DBG_PRINTF("[TEST] Sign E4 (bad hashAlg): rc=0x%08lX (%s)\n",
+                   (unsigned long)res, string_from_TPM_RC(res));
+    }
+
+    DBG_PRINT("[TEST] Sign integration tests: DONE\n");
+}
+#endif
+
+/* ===========================================================================
+ * GROUP F: Workflow Integration Tests  (verification §8)
+ * ===========================================================================
+ */
+#if defined(TPM_TEST_ENABLE_WORKFLOW_INTEGRATION) && \
+    defined(TPM_TEST_ENABLE_CREATEPRIMARY) &&        \
+    defined(TPM_TEST_ENABLE_CREATE) &&                \
+    defined(TPM_TEST_ENABLE_LOAD)
+void TPM2_Workflow_integration_tests(void) {
+    TPM_RC res;
+
+    DBG_PRINT("\n[TEST] Workflow integration tests\n");
+
+    if (!g_key_loaded) {
+        DBG_PRINT("[TEST] Workflow: SKIPPED (key not loaded)\n");
+        return;
+    }
+
+    /* F1 — End-to-end: CreatePrimary→Create→Load→Sign */
+#ifdef TPM_TEST_ENABLE_SIGN
+    {
+        Sign_In in = {0};
+        Sign_Out out = {0};
+
+        in.keyHandle = g_load_out.objectHandle;
+        in.inScheme.scheme = TPM_ALG_NULL;
+        in.inScheme.hashAlg = TPM_ALG_NULL;
+        in.digest.size = 32;
+        for (int i = 0; i < 32; i++) {
+            in.digest.buffer[i] = (uint8_t)(0xBB ^ (uint8_t)i);
+        }
+
+        res = TPM2_Sign(&in, &out);
+        assert(res == TPM_RC_SUCCESS,
+               "Workflow F1: end-to-end Sign should succeed\n",
+               string_from_TPM_RC(TPM_RC_SUCCESS), string_from_TPM_RC(res));
+        if (res == TPM_RC_SUCCESS) {
+            assert(out.signature.signature.size > 0,
+                   "Workflow F1: signature is empty\n", "> 0", "0");
+        }
+        DBG_PRINTF("[TEST] Workflow F1 (e2e sign): rc=0x%08lX\n",
+                   (unsigned long)res);
+    }
+#endif
+
+    /* F2 — Reuse protection: mutate outPrivate and try Load again */
+    {
+        Load_In bad_in = {0};
+        Load_Out bad_out = {0};
+        bad_in.parentHandle = g_parent_handle;
+        memcpy(&bad_in.inPrivate, &g_create_out.outPrivate,
+               sizeof(bad_in.inPrivate));
+        memcpy(&bad_in.inPublic, &g_create_out.outPublic,
+               sizeof(bad_in.inPublic));
+
+        /* XOR a byte in the private blob */
+        if (bad_in.inPrivate.size > 5) {
+            bad_in.inPrivate.buffer[5] ^= 0xAA;
+        }
+
+        res = TPM2_Load(&bad_in, &bad_out);
+        assert(res != TPM_RC_SUCCESS,
+               "Workflow F2: modified outPrivate should fail Load\n",
+               "!= TPM_RC_SUCCESS", string_from_TPM_RC(res));
+        DBG_PRINTF("[TEST] Workflow F2 (reuse protection): rc=0x%08lX (%s)\n",
+                   (unsigned long)res, string_from_TPM_RC(res));
+    }
+
+    /* F3 — Multiple objects under one primary: create + load second child */
+    {
+        Create_In in2 = {0};
+        Create_Out out2 = {0};
+
+        in2.parentHandle = g_parent_handle;
+        in2.inSensitive.size = 0;
+        in2.inSensitive.sensitive.userAuth.size = 0;
+        in2.inSensitive.sensitive.data.size = 0;
+        in2.inPublic.size = 0;
+        in2.inPublic.publicArea.type = TPM_ALG_RSA;
+        in2.inPublic.publicArea.nameAlg = TPM_ALG_SHA256;
+        in2.inPublic.publicArea.objectAttributes.fixedTPM = 1;
+        in2.inPublic.publicArea.objectAttributes.fixedParent = 1;
+        in2.inPublic.publicArea.objectAttributes.sensitiveDataOrigin = 1;
+        in2.inPublic.publicArea.objectAttributes.userWithAuth = 1;
+        in2.inPublic.publicArea.objectAttributes.sign_encrypt = 1;
+        in2.inPublic.publicArea.parameters.rsaDetail.symmetric.algorithm =
+            TPM_ALG_NULL;
+        in2.inPublic.publicArea.parameters.rsaDetail.scheme.scheme =
+            TPM_ALG_RSASSA;
+        in2.inPublic.publicArea.parameters.rsaDetail.scheme.details.anySig
+            .hashAlg = TPM_ALG_SHA256;
+        in2.inPublic.publicArea.parameters.rsaDetail.keyBits = 2048;
+        in2.inPublic.publicArea.parameters.rsaDetail.exponent = 0;
+        in2.inPublic.publicArea.unique.rsa.size = 0;
+        in2.outsideInfo.size = 0;
+        in2.creationPCR.count = 0;
+
+        res = TPM2_Create(&in2, &out2);
+        assert(res == TPM_RC_SUCCESS,
+               "Workflow F3: second Create should succeed\n",
+               string_from_TPM_RC(TPM_RC_SUCCESS), string_from_TPM_RC(res));
+
+        if (res == TPM_RC_SUCCESS) {
+            Load_In load2 = {0};
+            Load_Out load_out2 = {0};
+            load2.parentHandle = g_parent_handle;
+            memcpy(&load2.inPrivate, &out2.outPrivate,
+                   sizeof(load2.inPrivate));
+            memcpy(&load2.inPublic, &out2.outPublic,
+                   sizeof(load2.inPublic));
+
+            res = TPM2_Load(&load2, &load_out2);
+            assert(res == TPM_RC_SUCCESS,
+                   "Workflow F3: second Load should succeed\n",
+                   string_from_TPM_RC(TPM_RC_SUCCESS),
+                   string_from_TPM_RC(res));
+
+            if (res == TPM_RC_SUCCESS) {
+                /* Handles must be distinct */
+                assert(load_out2.objectHandle != g_load_out.objectHandle,
+                       "Workflow F3: second handle must differ from first\n",
+                       "different", "same");
+
+                /* Second handle in transient range */
+                uint8_t ht = (uint8_t)(load_out2.objectHandle >> HR_SHIFT);
+                char exp_s[8], act_s[8];
+                snprintf(exp_s, sizeof(exp_s), "0x80");
+                snprintf(act_s, sizeof(act_s), "0x%02X", ht);
+                assert(ht == 0x80,
+                       "Workflow F3: second handle not transient\n",
+                       exp_s, act_s);
+
+                DBG_PRINTF("[TEST] Workflow F3: child1=0x%08lX, "
+                           "child2=0x%08lX\n",
+                           (unsigned long)g_load_out.objectHandle,
+                           (unsigned long)load_out2.objectHandle);
+            }
+        }
+    }
+
+    DBG_PRINT("[TEST] Workflow integration tests: DONE\n");
+}
+#endif
+
+/* ===========================================================================
+ * GROUP G: Error Handling Tests  (verification §9)
+ * ===========================================================================
+ */
+#ifdef TPM_TEST_ENABLE_ERROR_HANDLING
+void TPM2_Error_handling_tests(void) {
+    DBG_PRINT("\n[TEST] Error handling tests\n");
+
+    /* G1 — TPM_RC_HANDLE for invalid handles: Load with bad parent */
+#ifdef TPM_TEST_ENABLE_LOAD
+    {
+        Load_In bad_in = {0};
+        Load_Out bad_out = {0};
+        bad_in.parentHandle = 0xFFFFFFFF; /* invalid */
+        bad_in.inPrivate.size = 1;        /* non-zero so we pass size check */
+        bad_in.inPrivate.buffer[0] = 0xAA;
+
+        TPM_RC res = TPM2_Load(&bad_in, &bad_out);
+        assert(res != TPM_RC_SUCCESS,
+               "Error G1: Load with invalid parent should fail\n",
+               "!= TPM_RC_SUCCESS", string_from_TPM_RC(res));
+        DBG_PRINTF("[TEST] Error G1 (bad handle): rc=0x%08lX (%s)\n",
+                   (unsigned long)res, string_from_TPM_RC(res));
+    }
+#endif
+
+    /* G2 — TPM_RC_VALUE / TPM_RC_HASH for empty data:
+     *       Hash with data.size = 0 → expect error */
+#ifdef TPM_TEST_ENABLE_HASH
+    {
+        Hash_In in = {0};
+        Hash_Out out = {0};
+        in.hashAlg = TPM_ALG_SHA256;
+        in.data.size = 0; /* empty → should be rejected */
+
+        TPM_RC res = TPM2_Hash(&in, &out);
+        assert(res != TPM_RC_SUCCESS,
+               "Error G2: Hash with empty data should fail\n",
+               "!= TPM_RC_SUCCESS", string_from_TPM_RC(res));
+        DBG_PRINTF("[TEST] Error G2 (empty hash data): rc=0x%08lX (%s)\n",
+                   (unsigned long)res, string_from_TPM_RC(res));
+    }
+#endif
+
+    DBG_PRINT("[TEST] Error handling tests: DONE\n");
+}
+#endif
+
+/* ===========================================================================
+ * GROUP H: Data Size Tests  (verification §10)
+ * ===========================================================================
+ */
+#if defined(TPM_TEST_ENABLE_DATA_SIZES) && \
+    defined(TPM_TEST_ENABLE_CREATEPRIMARY)
+void TPM2_Data_size_tests(void) {
+    DBG_PRINT("\n[TEST] Data size and boundary tests\n");
+
+    /* H1 — TPM2B size enforced: Hash with data.size = 0 (empty) */
+#ifdef TPM_TEST_ENABLE_HASH
+    {
+        Hash_In in = {0};
+        Hash_Out out = {0};
+        in.hashAlg = TPM_ALG_SHA256;
+        in.data.size = 0;
+
+        TPM_RC res = TPM2_Hash(&in, &out);
+        assert(res != TPM_RC_SUCCESS,
+               "DataSize H1: Hash with size=0 should fail\n",
+               "!= TPM_RC_SUCCESS", string_from_TPM_RC(res));
+    }
+#endif
+
+    /* H2 — RSA public key size matches template (2048 bits → 256 bytes) */
+    {
+        uint16_t unique_size = g_create_primary_out.outPublic.publicArea
+                                   .unique.rsa.size;
+        char exp_s[8], act_s[8];
+        snprintf(exp_s, sizeof(exp_s), "256");
+        snprintf(act_s, sizeof(act_s), "%u", unique_size);
+        assert(unique_size == 256,
+               "DataSize H2: RSA modulus size != 256 bytes\n", exp_s, act_s);
+    }
+
+    DBG_PRINT("[TEST] Data size tests: DONE\n");
+}
+#endif
+
 /**
  * @brief Run all key management tests in sequence
  *
@@ -1735,10 +2331,28 @@ void TPM2_KeyManagement_test_suite(void) {
     DBG_PRINT("[TEST] TPM2_CreatePrimary: SKIPPED (not enabled)\n");
 #endif
 
+    /* GROUP B — CreatePrimary template match (§3) */
+#if defined(TPM_TEST_ENABLE_CREATEPRIMARY_TEMPLATE_MATCH) && \
+    defined(TPM_TEST_ENABLE_CREATEPRIMARY)
+    TPM2_CreatePrimary_template_match_test();
+#endif
+
+    /* GROUP H — Data size tests (§10) — needs CreatePrimary output */
+#if defined(TPM_TEST_ENABLE_DATA_SIZES) && \
+    defined(TPM_TEST_ENABLE_CREATEPRIMARY)
+    TPM2_Data_size_tests();
+#endif
+
 #if defined(TPM_TEST_ENABLE_CREATE) && defined(TPM_TEST_ENABLE_CREATEPRIMARY)
     TPM2_Create_test();
 #elif defined(TPM_TEST_ENABLE_CREATE)
     DBG_PRINT("[TEST] TPM2_Create: SKIPPED (CreatePrimary not enabled)\n");
+#endif
+
+    /* GROUP C — Create negative tests (§4) */
+#if defined(TPM_TEST_ENABLE_CREATE_NEGATIVE) && \
+    defined(TPM_TEST_ENABLE_CREATEPRIMARY)
+    TPM2_Create_negative_tests();
 #endif
 
 #if defined(TPM_TEST_ENABLE_LOAD) && defined(TPM_TEST_ENABLE_CREATE)
@@ -1748,10 +2362,30 @@ void TPM2_KeyManagement_test_suite(void) {
     DBG_PRINT("[TEST] TPM2_Load: SKIPPED (Create not enabled)\n");
 #endif
 
+    /* GROUP D — Load private blob integrity (§5) */
+#if defined(TPM_TEST_ENABLE_LOAD_PRIVATE_INTEGRITY) && \
+    defined(TPM_TEST_ENABLE_CREATE) && defined(TPM_TEST_ENABLE_LOAD)
+    TPM2_Load_private_integrity_test();
+#endif
+
 #if defined(TPM_TEST_ENABLE_READPUBLIC) && defined(TPM_TEST_ENABLE_LOAD)
     TPM2_ReadPublic_test();
 #elif defined(TPM_TEST_ENABLE_READPUBLIC)
     DBG_PRINT("[TEST] TPM2_ReadPublic: SKIPPED (Load not enabled)\n");
+#endif
+
+    /* GROUP E — Sign integration tests (§6) */
+#if defined(TPM_TEST_ENABLE_SIGN_INTEGRATION) && \
+    defined(TPM_TEST_ENABLE_SIGN) && defined(TPM_TEST_ENABLE_LOAD)
+    TPM2_Sign_integration_tests();
+#endif
+
+    /* GROUP F — Workflow integration tests (§8) */
+#if defined(TPM_TEST_ENABLE_WORKFLOW_INTEGRATION) && \
+    defined(TPM_TEST_ENABLE_CREATEPRIMARY) &&        \
+    defined(TPM_TEST_ENABLE_CREATE) &&                \
+    defined(TPM_TEST_ENABLE_LOAD)
+    TPM2_Workflow_integration_tests();
 #endif
 
 #if defined(TPM_TEST_ENABLE_OBJECTCHANGEAUTH) && defined(TPM_TEST_ENABLE_LOAD)
@@ -1771,6 +2405,11 @@ void tpm_test(void) {
                             (uint8_t *)"[INFO] TPM access granted\n", 26,
                             portMAX_DELAY);
 
+    /* GROUP A — Transport & framing negative tests (§1) */
+#ifdef TPM_TEST_ENABLE_TRANSPORT_NEGATIVE
+    TPM2_Transport_negative_tests();
+#endif
+
 #ifdef TPM_TEST_ENABLE_NV_DEFINE
     TPM2_NV_DefineSpace_test();
 #else
@@ -1787,6 +2426,11 @@ void tpm_test(void) {
     TPM2_Hash_smoke_test();
 #else
     DBG_PRINT("[TEST] TPM2_Hash: SKIPPED (not enabled)\n");
+#endif
+
+    /* GROUP G — Error handling tests (§9) */
+#ifdef TPM_TEST_ENABLE_ERROR_HANDLING
+    TPM2_Error_handling_tests();
 #endif
 
 #ifdef TPM_TEST_ENABLE_SIGN
