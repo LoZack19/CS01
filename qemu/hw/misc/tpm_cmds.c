@@ -415,6 +415,64 @@ TPM_RC TPM2_RSA_Decrypt(RSA_Decrypt_In *in, RSA_Decrypt_Out *out) {
     return TPM_RC_SUCCESS;
 }
 
+/*
+ * TPM2_ReadPublic – Return the public area of a loaded object.
+ *
+ * This command does not require authorization.  It returns the
+ * public area, the Name, and the Qualified Name of the object
+ * referenced by objectHandle.
+ *
+ * Reference: ms-tpm-20-ref ReadPublic.c TPM2_ReadPublic()
+ *            TPM 2.0 Spec Part 3 – Commands, Section 12.4
+ */
+TPM_RC TPM2_ReadPublic(ReadPublic_In *in, ReadPublic_Out *out) {
+    OBJECT *object;
+
+    qemu_log_mask(LOG_GUEST_ERROR,
+                  "TPM2_ReadPublic: Reading public area for handle 0x%08X\n",
+                  in->objectHandle);
+
+    /* Input Validation */
+    object = HandleToObject(in->objectHandle);
+    if (object == NULL) {
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "TPM2_ReadPublic: Handle 0x%08X not loaded\n",
+                      in->objectHandle);
+        return TPM_RCS_HANDLE;
+    }
+
+    /* Command Output */
+
+    /* 1. Return the public area with its marshaled size. */
+    out->outPublic.publicArea = object->publicArea;
+    {
+        BYTE marshalBuf[sizeof(TPMT_PUBLIC) * 2];
+        out->outPublic.size = TPMT_PUBLIC_Marshal(&out->outPublic.publicArea,
+                                                   marshalBuf);
+    }
+
+    /* 2. Return the Name of the object. */
+    out->name = object->name;
+
+    /* 3. Return the Qualified Name.
+     *    In the simplified model QN == Name (see ObjectLoad). If the
+     *    qualified name has not been computed yet (e.g. for a primary
+     *    object that bypassed ObjectLoad), fall back to Name. */
+    if (object->qualifiedName.size > 0) {
+        out->qualifiedName = object->qualifiedName;
+    } else {
+        out->qualifiedName = object->name;
+    }
+
+    qemu_log_mask(LOG_GUEST_ERROR,
+                  "TPM2_ReadPublic: Success, name size=%u, "
+                  "qualifiedName size=%u, public size=%u\n",
+                  out->name.size, out->qualifiedName.size,
+                  out->outPublic.size);
+
+    return TPM_RC_SUCCESS;
+}
+
 TPM_RC TPM2_CreatePrimary(CreatePrimary_In *in, CreatePrimary_Out *out) {
     TPM_RC result = TPM_RC_SUCCESS;
     TPMT_PUBLIC *publicArea;
