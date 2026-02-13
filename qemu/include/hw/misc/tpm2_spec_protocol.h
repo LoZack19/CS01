@@ -89,6 +89,7 @@
 #define TPM_RC_HIERARCHY        (TPM_RC)(RC_FMT1 + 0x005)
 #define TPM_RCS_HIERARCHY       (TPM_RC)(RC_FMT1 + 0x005)
 #define TPM_RC_KEY_SIZE         (TPM_RC)(RC_FMT1 + 0x007)
+#define TPM_RC_SCHEME           (TPM_RC)(RC_FMT1 + 0x008)
 #define TPM_RC_MODE             (TPM_RC)(RC_FMT1 + 0x009)
 #define TPM_RC_TYPE             (TPM_RC)(RC_FMT1 + 0x00A)
 #define TPM_RCS_TYPE            (TPM_RC)(RC_FMT1 + 0x00A)
