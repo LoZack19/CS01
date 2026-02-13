@@ -339,13 +339,11 @@ void skip_auth_response_area(void) {
 
 TPM2_InOut(GetRandom)
 
-#ifdef TPM_TEST_ENABLE_STATE_MACHINE
     TPM2_In(Startup);
 TPM2_In(Shutdown);
 TPM2_In(SelfTest);
 TPM2_InOut(GetCapability);
 TPM2_NoInOut(GetTestResult);
-#endif
 
 #ifdef TPM_TEST_ENABLE_NV_DEFINE
 TPM2_In(NV_DefineSpace);

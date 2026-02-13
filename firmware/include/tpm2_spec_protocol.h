@@ -1010,6 +1010,21 @@ TPM_RC NvDefineSpace(TPMI_RH_PROVISION authHandle, TPM2B_AUTH *auth,
                      TPM_RC blameAuth, TPM_RC blamePublic);
 BOOL NvInit(void *memory, size_t size, state_clear_data *tpm_saved_state);
 
+/* State Machine Helpers */
+struct S32k358TPMState;
+void tpm_state_machine_reset(struct S32k358TPMState *s);
+bool tpm_command_allowed_in_current_mode(struct S32k358TPMState *s, TPM_CC cc,
+                                         TPM_RC *rc_out);
+TPM_RC TPM2_Startup_SM(struct S32k358TPMState *s, Startup_In *in);
+TPM_RC TPM2_Shutdown_SM(struct S32k358TPMState *s, Shutdown_In *in);
+TPM_RC TPM2_SelfTest_SM(struct S32k358TPMState *s, SelfTest_In *in);
+TPM_RC TPM2_GetTestResult_SM(struct S32k358TPMState *s, GetTestResult_Out *out);
+TPM_RC TPM2_GetCapability_SM(struct S32k358TPMState *s, GetCapability_In *in,
+                             GetCapability_Out *out);
+TPM_RC TPM2_FieldUpgradeStart_SM(struct S32k358TPMState *s);
+TPM_RC TPM2_FieldUpgradeData_SM(struct S32k358TPMState *s,
+                                FieldUpgradeData_In *in);
+
 /* Subsection #6.3: TPM Commands */
 TPM_RC TPM2_GetRandom(GetRandom_In *in, GetRandom_Out *out);
 /* Cryptographic Primitives */

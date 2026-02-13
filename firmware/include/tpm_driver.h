@@ -62,13 +62,11 @@ void skip_auth_response_area(void);
 
 TPM_RC TPM2_GetRandom(GetRandom_In *in, GetRandom_Out *out);
 
-#ifdef TPM_TEST_ENABLE_STATE_MACHINE
 TPM_RC TPM2_Startup(Startup_In *in);
 TPM_RC TPM2_Shutdown(Shutdown_In *in);
 TPM_RC TPM2_SelfTest(SelfTest_In *in);
 TPM_RC TPM2_GetCapability(GetCapability_In *in, GetCapability_Out *out);
 TPM_RC TPM2_GetTestResult(GetTestResult_Out *out);
-#endif
 
 #ifdef TPM_TEST_ENABLE_NV_DEFINE
 TPM_RC TPM2_NV_DefineSpace(NV_DefineSpace_In *in);

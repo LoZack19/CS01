@@ -18,7 +18,6 @@
 #include "tpm2_spec_protocol.h"
 #include "tpm_tests_config.h"
 
-#ifdef TPM_TEST_ENABLE_STATE_MACHINE
 bool TPM2_StateMachine_startup_test(void) {
     DBG_PRINT("\n[TEST] State machine startup test\n");
     bool ok = true;
@@ -90,7 +89,6 @@ void TPM2_StateMachine_shutdown_test(void) {
     assert(rc == TPM_RC_SUCCESS, "StateMachine: TPM2_Shutdown(STATE) failed\n",
            string_from_TPM_RC(TPM_RC_SUCCESS), string_from_TPM_RC(rc));
 }
-#endif
 
 /* ===========================================================================
  * GROUP A: Transport & Framing Negative Tests  (verification S.1)
