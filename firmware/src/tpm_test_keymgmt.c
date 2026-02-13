@@ -1,5 +1,5 @@
 /*
- * tpm_test_keymgmt.c — Key lifecycle tests and verification property groups.
+ * tpm_test_keymgmt.c - Key lifecycle tests and verification property groups.
  *
  * Contains:
  *   - Shared state for key management tests
@@ -8,12 +8,20 @@
  *   - TPM2_Load test + negative tests
  *   - TPM2_ReadPublic test
  *   - TPM2_ObjectChangeAuth test
- *   - GROUP B: CreatePrimary template match  (verification §3)
- *   - GROUP C: Create negative tests         (verification §4)
- *   - GROUP D: Load private blob integrity   (verification §5)
- *   - GROUP E: Sign integration tests        (verification §6)
- *   - GROUP F: Workflow integration tests    (verification §8)
- *   - GROUP H: Data size tests               (verification §10)
+ *   - GROUP B: CreatePrimary template match  (verification S.3)
+ *   - GROUP C: Create negative tests         (verification S.4)
+ *   - GROUP D: Load private blob integrity   (verification S.5)
+ *   - GROUP E: Sign integration tests        (verification S.6)
+ *       E1-E3: Basic sign, scheme fields, signature size
+ *       E4: Invalid hashAlg
+ *       E5: Empty digest rejection
+ *       E6: Signature structure (sigAlg/hashAlg field values)
+ *       E7: Sign->VerifySignature roundtrip
+ *       E8: VerifySignature with wrong digest (negative)
+ *       E9: VerifySignature with corrupted signature (negative)
+ *       E10: Explicit SHA256 hashAlg scheme handling
+ *   - GROUP F: Workflow integration tests    (verification S.8)
+ *   - GROUP H: Data size tests               (verification S.10)
  *   - TPM2_KeyManagement_test_suite() orchestrator
  */
 
@@ -709,7 +717,7 @@ void TPM2_Load_negative_tests(void) {
     }
 
     /* ================================================================
-     * 1B: Binding Validation — modify nameAlg in public area
+     * 1B: Binding Validation - modify nameAlg in public area
      *
      * The inPrivate was encrypted for the original public template.
      * Changing nameAlg in inPublic creates a public/private mismatch.
@@ -736,7 +744,7 @@ void TPM2_Load_negative_tests(void) {
     }
 
     /* ================================================================
-     * 1A: Attribute Consistency — clear both sign and decrypt
+     * 1A: Attribute Consistency - clear both sign and decrypt
      *
      * For a non-keyedHash object, at least one of sign_encrypt or
      * decrypt must be SET. Clearing both should yield TPM_RC_ATTRIBUTES.
@@ -763,7 +771,7 @@ void TPM2_Load_negative_tests(void) {
     }
 
     /* ================================================================
-     * 1A: Key Size Consistency — change keyBits to wrong value
+     * 1A: Key Size Consistency - change keyBits to wrong value
      *
      * The private portion was created for 2048-bit RSA. Claiming
      * 1024-bit in the public area should be rejected.
@@ -1062,7 +1070,7 @@ void TPM2_ObjectChangeAuth_test(void) {
 #endif
 
 /* ===========================================================================
- * GROUP B: CreatePrimary Template Match  (verification §3)
+ * GROUP B: CreatePrimary Template Match  (verification S.3)
  * ===========================================================================
  */
 #if defined(TPM_TEST_ENABLE_CREATEPRIMARY_TEMPLATE_MATCH) && \
@@ -1117,7 +1125,7 @@ void TPM2_CreatePrimary_template_match_test(void) {
 #endif
 
 /* ===========================================================================
- * GROUP C: Create Negative Tests  (verification §4)
+ * GROUP C: Create Negative Tests  (verification S.4)
  * ===========================================================================
  */
 #if defined(TPM_TEST_ENABLE_CREATE_NEGATIVE) && \
@@ -1127,7 +1135,7 @@ void TPM2_Create_negative_tests(void) {
 
     DBG_PRINT("\n[TEST] Create negative tests\n");
 
-    /* C1 — Invalid parent handle */
+    /* C1 - Invalid parent handle */
     {
         Create_In bad_in = {0};
         Create_Out bad_out = {0};
@@ -1149,7 +1157,7 @@ void TPM2_Create_negative_tests(void) {
                    (unsigned long)res, string_from_TPM_RC(res));
     }
 
-    /* C2 — nameAlg = TPM_ALG_NULL → should return error (TPM_RC_HASH) */
+    /* C2 - nameAlg = TPM_ALG_NULL -> should return error (TPM_RC_HASH) */
     {
         Create_In bad_in = {0};
         Create_Out bad_out = {0};
@@ -1173,7 +1181,7 @@ void TPM2_Create_negative_tests(void) {
 #endif
 
 /* ===========================================================================
- * GROUP D: Load Private Blob Integrity  (verification §5)
+ * GROUP D: Load Private Blob Integrity  (verification S.5)
  * ===========================================================================
  */
 #if defined(TPM_TEST_ENABLE_LOAD_PRIVATE_INTEGRITY) && \
@@ -1191,7 +1199,7 @@ void TPM2_Load_private_integrity_test(void) {
     /* Flip a byte in the middle of the private blob (inside the
      * TPMT_SENSITIVE region, before the integrity digest).
      * PrivateToSensitive() in QEMU recomputes SHA256(Name || sensitive)
-     * and compares against the stored digest — this must mismatch. */
+     * and compares against the stored digest - this must mismatch. */
     {
         Load_In bad_in = {0};
         Load_Out bad_out = {0};
@@ -1219,7 +1227,7 @@ void TPM2_Load_private_integrity_test(void) {
 #endif
 
 /* ===========================================================================
- * GROUP E: Sign Integration Tests  (verification §6)
+ * GROUP E: Sign Integration Tests  (verification S.6)
  * ===========================================================================
  */
 #if defined(TPM_TEST_ENABLE_SIGN_INTEGRATION) && \
@@ -1234,7 +1242,7 @@ void TPM2_Sign_integration_tests(void) {
         return;
     }
 
-    /* E1 + E2 + E3 — Sign with the loaded child key handle */
+    /* E1 + E2 + E3 - Sign with the loaded child key handle */
     {
         Sign_In in = {0};
         Sign_Out out = {0};
@@ -1251,7 +1259,7 @@ void TPM2_Sign_integration_tests(void) {
 
         res = TPM2_Sign(&in, &out);
 
-        /* E1: keyHandle references loaded key → SUCCESS */
+        /* E1: keyHandle references loaded key -> SUCCESS */
         assert(res == TPM_RC_SUCCESS,
                "Sign E1: Sign with loaded key should succeed\n",
                string_from_TPM_RC(TPM_RC_SUCCESS), string_from_TPM_RC(res));
@@ -1270,7 +1278,7 @@ void TPM2_Sign_integration_tests(void) {
         }
     }
 
-    /* E4 — Invalid hash algorithm → expect error */
+    /* E4 - Invalid hash algorithm -> expect error */
     {
         Sign_In in = {0};
         Sign_Out out = {0};
@@ -1291,12 +1299,221 @@ void TPM2_Sign_integration_tests(void) {
                    (unsigned long)res, string_from_TPM_RC(res));
     }
 
+    /* E5 - Empty digest -> TPM_RC_VALUE (verification S.6: digest handling) */
+    {
+        Sign_In in = {0};
+        Sign_Out out = {0};
+
+        in.keyHandle = g_load_out.objectHandle;
+        in.inScheme.scheme = TPM_ALG_NULL;
+        in.inScheme.hashAlg = TPM_ALG_NULL;
+        in.digest.size = 0; /* empty digest */
+
+        res = TPM2_Sign(&in, &out);
+        assert(res != TPM_RC_SUCCESS, "Sign E5: empty digest should fail\n",
+               "!= TPM_RC_SUCCESS", string_from_TPM_RC(res));
+        DBG_PRINTF("[TEST] Sign E5 (empty digest): rc=0x%08lX (%s)\n",
+                   (unsigned long)res, string_from_TPM_RC(res));
+    }
+
+    /* E6 - Signature structure: sigAlg and hashAlg fields
+     *       (verification S.6: scheme handling + digest handling) */
+    {
+        Sign_In in = {0};
+        Sign_Out out = {0};
+
+        in.keyHandle = g_load_out.objectHandle;
+        in.inScheme.scheme = TPM_ALG_NULL;
+        in.inScheme.hashAlg = TPM_ALG_NULL;
+        in.digest.size = 32;
+        for (int i = 0; i < 32; i++)
+            in.digest.buffer[i] = (uint8_t)(0x55 ^ (uint8_t)i);
+
+        res = TPM2_Sign(&in, &out);
+        assert(res == TPM_RC_SUCCESS, "Sign E6: Sign should succeed\n",
+               string_from_TPM_RC(TPM_RC_SUCCESS), string_from_TPM_RC(res));
+
+        if (res == TPM_RC_SUCCESS) {
+            /* sigAlg must be RSASSA (the key's default scheme) */
+            {
+                char exp[8], act[8];
+                snprintf(exp, sizeof(exp), "0x%04X", TPM_ALG_RSASSA);
+                snprintf(act, sizeof(act), "0x%04X", out.signature.sigAlg);
+                assert(out.signature.sigAlg == TPM_ALG_RSASSA,
+                       "Sign E6: sigAlg != TPM_ALG_RSASSA\n", exp, act);
+            }
+            /* hashAlg must be SHA-256 */
+            {
+                char exp[8], act[8];
+                snprintf(exp, sizeof(exp), "0x%04X", TPM_ALG_SHA256);
+                snprintf(act, sizeof(act), "0x%04X", out.signature.hashAlg);
+                assert(out.signature.hashAlg == TPM_ALG_SHA256,
+                       "Sign E6: hashAlg != TPM_ALG_SHA256\n", exp, act);
+            }
+            DBG_PRINTF("[TEST] Sign E6: sigAlg=0x%04X, hashAlg=0x%04X\n",
+                       out.signature.sigAlg, out.signature.hashAlg);
+        }
+    }
+
+    /* E7 - Sign then VerifySignature roundtrip
+     *       (verification S.6: signature verification) */
+#ifdef TPM_TEST_ENABLE_VERIFY_SIGNATURE
+    {
+        Sign_In sign_in = {0};
+        Sign_Out sign_out = {0};
+
+        sign_in.keyHandle = g_load_out.objectHandle;
+        sign_in.inScheme.scheme = TPM_ALG_NULL;
+        sign_in.inScheme.hashAlg = TPM_ALG_NULL;
+        sign_in.digest.size = 32;
+        for (int i = 0; i < 32; i++)
+            sign_in.digest.buffer[i] = (uint8_t)(0xCC ^ (uint8_t)i);
+
+        res = TPM2_Sign(&sign_in, &sign_out);
+        assert(res == TPM_RC_SUCCESS, "Sign E7: Sign should succeed\n",
+               string_from_TPM_RC(TPM_RC_SUCCESS), string_from_TPM_RC(res));
+
+        if (res == TPM_RC_SUCCESS) {
+            VerifySignature_In verify_in = {0};
+            VerifySignature_Out verify_out = {0};
+
+            verify_in.keyHandle = g_load_out.objectHandle;
+            memcpy(&verify_in.digest, &sign_in.digest,
+                   sizeof(verify_in.digest));
+            memcpy(&verify_in.signature, &sign_out.signature,
+                   sizeof(verify_in.signature));
+
+            res = TPM2_VerifySignature(&verify_in, &verify_out);
+            assert(res == TPM_RC_SUCCESS,
+                   "Sign E7: VerifySignature should succeed for valid "
+                   "signature\n",
+                   string_from_TPM_RC(TPM_RC_SUCCESS), string_from_TPM_RC(res));
+
+            if (res == TPM_RC_SUCCESS) {
+                /* Validation ticket tag must be present */
+                assert(verify_out.validation.digest.size > 0,
+                       "Sign E7: validation ticket digest is empty\n", "> 0",
+                       "0");
+            }
+            DBG_PRINTF("[TEST] Sign E7 (roundtrip): rc=0x%08lX\n",
+                       (unsigned long)res);
+        }
+    }
+#endif
+
+    /* E8 - VerifySignature with wrong digest -> should fail
+     *       (verification S.6: signature verification negative) */
+#ifdef TPM_TEST_ENABLE_VERIFY_SIGNATURE
+    {
+        Sign_In sign_in = {0};
+        Sign_Out sign_out = {0};
+
+        sign_in.keyHandle = g_load_out.objectHandle;
+        sign_in.inScheme.scheme = TPM_ALG_NULL;
+        sign_in.inScheme.hashAlg = TPM_ALG_NULL;
+        sign_in.digest.size = 32;
+        for (int i = 0; i < 32; i++)
+            sign_in.digest.buffer[i] = (uint8_t)(0xDD ^ (uint8_t)i);
+
+        res = TPM2_Sign(&sign_in, &sign_out);
+
+        if (res == TPM_RC_SUCCESS) {
+            VerifySignature_In verify_in = {0};
+            VerifySignature_Out verify_out = {0};
+
+            verify_in.keyHandle = g_load_out.objectHandle;
+            /* Use a DIFFERENT digest than what was signed */
+            verify_in.digest.size = 32;
+            for (int i = 0; i < 32; i++)
+                verify_in.digest.buffer[i] = (uint8_t)(0xEE ^ (uint8_t)i);
+            memcpy(&verify_in.signature, &sign_out.signature,
+                   sizeof(verify_in.signature));
+
+            res = TPM2_VerifySignature(&verify_in, &verify_out);
+            assert(res != TPM_RC_SUCCESS,
+                   "Sign E8: VerifySignature with wrong digest should "
+                   "fail\n",
+                   "!= TPM_RC_SUCCESS", string_from_TPM_RC(res));
+            DBG_PRINTF("[TEST] Sign E8 (wrong digest): rc=0x%08lX (%s)\n",
+                       (unsigned long)res, string_from_TPM_RC(res));
+        }
+    }
+#endif
+
+    /* E9 - VerifySignature with corrupted signature -> should fail
+     *       (verification S.6: signature verification negative) */
+#ifdef TPM_TEST_ENABLE_VERIFY_SIGNATURE
+    {
+        Sign_In sign_in = {0};
+        Sign_Out sign_out = {0};
+
+        sign_in.keyHandle = g_load_out.objectHandle;
+        sign_in.inScheme.scheme = TPM_ALG_NULL;
+        sign_in.inScheme.hashAlg = TPM_ALG_NULL;
+        sign_in.digest.size = 32;
+        for (int i = 0; i < 32; i++)
+            sign_in.digest.buffer[i] = (uint8_t)(0xFF ^ (uint8_t)i);
+
+        res = TPM2_Sign(&sign_in, &sign_out);
+
+        if (res == TPM_RC_SUCCESS) {
+            VerifySignature_In verify_in = {0};
+            VerifySignature_Out verify_out = {0};
+
+            verify_in.keyHandle = g_load_out.objectHandle;
+            memcpy(&verify_in.digest, &sign_in.digest,
+                   sizeof(verify_in.digest));
+            memcpy(&verify_in.signature, &sign_out.signature,
+                   sizeof(verify_in.signature));
+
+            /* Corrupt one byte of the signature */
+            if (verify_in.signature.signature.size > 0) {
+                verify_in.signature.signature.buffer[0] ^= 0xFF;
+            }
+
+            res = TPM2_VerifySignature(&verify_in, &verify_out);
+            assert(res != TPM_RC_SUCCESS,
+                   "Sign E9: VerifySignature with corrupted sig should "
+                   "fail\n",
+                   "!= TPM_RC_SUCCESS", string_from_TPM_RC(res));
+            DBG_PRINTF("[TEST] Sign E9 (corrupted sig): rc=0x%08lX (%s)\n",
+                       (unsigned long)res, string_from_TPM_RC(res));
+        }
+    }
+#endif
+
+    /* E10 - Sign with explicit TPM_ALG_SHA256 hashAlg (not NULL)
+     *        (verification S.6: scheme handling) */
+    {
+        Sign_In in = {0};
+        Sign_Out out = {0};
+
+        in.keyHandle = g_load_out.objectHandle;
+        in.inScheme.scheme = TPM_ALG_RSASSA;
+        in.inScheme.hashAlg = TPM_ALG_SHA256; /* explicit, not NULL */
+        in.digest.size = 32;
+        for (int i = 0; i < 32; i++)
+            in.digest.buffer[i] = (uint8_t)(0xAA ^ (uint8_t)i);
+
+        res = TPM2_Sign(&in, &out);
+        assert(res == TPM_RC_SUCCESS,
+               "Sign E10: explicit SHA256 hashAlg should succeed\n",
+               string_from_TPM_RC(TPM_RC_SUCCESS), string_from_TPM_RC(res));
+
+        if (res == TPM_RC_SUCCESS) {
+            assert(out.signature.signature.size > 0,
+                   "Sign E10: signature is empty\n", "> 0", "0");
+        }
+        DBG_PRINTF("[TEST] Sign E10 (explicit hashAlg): rc=0x%08lX\n",
+                   (unsigned long)res);
+    }
+
     DBG_PRINT("[TEST] Sign integration tests: DONE\n");
 }
 #endif
 
 /* ===========================================================================
- * GROUP F: Workflow Integration Tests  (verification §8)
+ * GROUP F: Workflow Integration Tests  (verification S.8)
  * ===========================================================================
  */
 #if defined(TPM_TEST_ENABLE_WORKFLOW_INTEGRATION) && \
@@ -1312,7 +1529,7 @@ void TPM2_Workflow_integration_tests(void) {
         return;
     }
 
-    /* F1 — End-to-end: CreatePrimary→Create→Load→Sign */
+    /* F1 - End-to-end: CreatePrimary->Create->Load->Sign */
 #ifdef TPM_TEST_ENABLE_SIGN
     {
         Sign_In in = {0};
@@ -1339,7 +1556,7 @@ void TPM2_Workflow_integration_tests(void) {
     }
 #endif
 
-    /* F2 — Reuse protection: mutate outPrivate and try Load again */
+    /* F2 - Reuse protection: mutate outPrivate and try Load again */
     {
         Load_In bad_in = {0};
         Load_Out bad_out = {0};
@@ -1362,7 +1579,7 @@ void TPM2_Workflow_integration_tests(void) {
                    (unsigned long)res, string_from_TPM_RC(res));
     }
 
-    /* F3 — Multiple objects under one primary: create + load second child */
+    /* F3 - Multiple objects under one primary: create + load second child */
     {
         Create_In in2 = {0};
         Create_Out out2 = {0};
@@ -1435,7 +1652,7 @@ void TPM2_Workflow_integration_tests(void) {
 #endif
 
 /* ===========================================================================
- * GROUP H: Data Size Tests  (verification §10)
+ * GROUP H: Data Size Tests  (verification S.10)
  * ===========================================================================
  */
 #if defined(TPM_TEST_ENABLE_DATA_SIZES) && \
@@ -1443,7 +1660,7 @@ void TPM2_Workflow_integration_tests(void) {
 void TPM2_Data_size_tests(void) {
     DBG_PRINT("\n[TEST] Data size and boundary tests\n");
 
-    /* H1 — TPM2B size enforced: Hash with data.size = 0 (empty) */
+    /* H1 - TPM2B size enforced: Hash with data.size = 0 (empty) */
 #ifdef TPM_TEST_ENABLE_HASH
     {
         Hash_In in = {0};
@@ -1458,7 +1675,7 @@ void TPM2_Data_size_tests(void) {
     }
 #endif
 
-    /* H2 — RSA public key size matches template (2048 bits → 256 bytes) */
+    /* H2 - RSA public key size matches template (2048 bits -> 256 bytes) */
     {
         uint16_t unique_size =
             g_create_primary_out.outPublic.publicArea.unique.rsa.size;
@@ -1511,13 +1728,13 @@ void TPM2_KeyManagement_test_suite(void) {
     DBG_PRINT("[TEST] TPM2_CreatePrimary: SKIPPED (not enabled)\n");
 #endif
 
-    /* GROUP B — CreatePrimary template match (§3) */
+    /* GROUP B - CreatePrimary template match (S.3) */
 #if defined(TPM_TEST_ENABLE_CREATEPRIMARY_TEMPLATE_MATCH) && \
     defined(TPM_TEST_ENABLE_CREATEPRIMARY)
     TPM2_CreatePrimary_template_match_test();
 #endif
 
-    /* GROUP H — Data size tests (§10) — needs CreatePrimary output */
+    /* GROUP H - Data size tests (S.10) - needs CreatePrimary output */
 #if defined(TPM_TEST_ENABLE_DATA_SIZES) && \
     defined(TPM_TEST_ENABLE_CREATEPRIMARY)
     TPM2_Data_size_tests();
@@ -1529,7 +1746,7 @@ void TPM2_KeyManagement_test_suite(void) {
     DBG_PRINT("[TEST] TPM2_Create: SKIPPED (CreatePrimary not enabled)\n");
 #endif
 
-    /* GROUP C — Create negative tests (§4) */
+    /* GROUP C - Create negative tests (S.4) */
 #if defined(TPM_TEST_ENABLE_CREATE_NEGATIVE) && \
     defined(TPM_TEST_ENABLE_CREATEPRIMARY)
     TPM2_Create_negative_tests();
@@ -1542,7 +1759,7 @@ void TPM2_KeyManagement_test_suite(void) {
     DBG_PRINT("[TEST] TPM2_Load: SKIPPED (Create not enabled)\n");
 #endif
 
-    /* GROUP D — Load private blob integrity (§5) */
+    /* GROUP D - Load private blob integrity (S.5) */
 #if defined(TPM_TEST_ENABLE_LOAD_PRIVATE_INTEGRITY) && \
     defined(TPM_TEST_ENABLE_CREATE) && defined(TPM_TEST_ENABLE_LOAD)
     TPM2_Load_private_integrity_test();
@@ -1554,13 +1771,13 @@ void TPM2_KeyManagement_test_suite(void) {
     DBG_PRINT("[TEST] TPM2_ReadPublic: SKIPPED (Load not enabled)\n");
 #endif
 
-    /* GROUP E — Sign integration tests (§6) */
+    /* GROUP E - Sign integration tests (S.6) */
 #if defined(TPM_TEST_ENABLE_SIGN_INTEGRATION) && \
     defined(TPM_TEST_ENABLE_SIGN) && defined(TPM_TEST_ENABLE_LOAD)
     TPM2_Sign_integration_tests();
 #endif
 
-    /* GROUP F — Workflow integration tests (§8) */
+    /* GROUP F - Workflow integration tests (S.8) */
 #if defined(TPM_TEST_ENABLE_WORKFLOW_INTEGRATION) && \
     defined(TPM_TEST_ENABLE_CREATEPRIMARY) &&        \
     defined(TPM_TEST_ENABLE_CREATE) && defined(TPM_TEST_ENABLE_LOAD)
