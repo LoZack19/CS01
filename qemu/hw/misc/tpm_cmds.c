@@ -226,6 +226,17 @@ TPM_RC TPM2_Sign(Sign_In *in, Sign_Out *out) {
     /* A restricted signing key must not sign externally-supplied data
      * without a valid ticket, but our simplified model accepts it. */
 
+    /* Validate signing scheme: only RSA schemes (RSASSA, RSAPSS) or NULL
+     * (inherit from key) are accepted. */
+    if (in->inScheme.scheme != TPM_ALG_NULL &&
+        in->inScheme.scheme != TPM_ALG_RSASSA &&
+        in->inScheme.scheme != TPM_ALG_RSAPSS) {
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "TPM2_Sign: Unsupported scheme 0x%04X for key 0x%08X\n",
+                      in->inScheme.scheme, in->keyHandle);
+        return TPM_RC_SCHEME;
+    }
+
     if (in->digest.size == 0 || in->digest.size > sizeof(in->digest.buffer)) {
         return TPM_RC_VALUE;
     }
