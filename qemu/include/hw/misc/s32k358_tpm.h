@@ -86,6 +86,16 @@ struct S32k358TPMState {
     uint32_t nvmem_size;
     char *filename;
 
+    bool initialized;
+    bool in_failure_mode;
+    bool in_fum_mode;
+    bool orderly_shutdown;
+    bool startup_clear_required;
+    bool read_only_mode;
+    TPM_SU last_shutdown_type;
+    TPM_RC self_test_result;
+    bool self_test_done;
+
     state_clear_data gc;
 
     Fifo8 infifo;

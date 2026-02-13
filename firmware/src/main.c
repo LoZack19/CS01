@@ -18,6 +18,10 @@
 #ifdef TPM_TEST_ENABLE_TRANSPORT_NEGATIVE
 void TPM2_Transport_negative_tests(void);
 #endif
+#ifdef TPM_TEST_ENABLE_STATE_MACHINE
+bool TPM2_StateMachine_startup_test(void);
+void TPM2_StateMachine_shutdown_test(void);
+#endif
 #ifdef TPM_TEST_ENABLE_NV_DEFINE
 void TPM2_NV_DefineSpace_test(void);
 #endif
@@ -54,6 +58,14 @@ void tpm_test(void) {
     Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE,
                             (uint8_t *)"[INFO] TPM access granted\n", 26,
                             portMAX_DELAY);
+
+#ifdef TPM_TEST_ENABLE_STATE_MACHINE
+    if (!TPM2_StateMachine_startup_test()) {
+        DBG_PRINT("[FATAL] State machine startup failed. Skipping all "
+                  "remaining TPM tests.\n");
+        return;
+    }
+#endif
 
     /* GROUP A - Transport & framing negative tests (S.1) */
 #ifdef TPM_TEST_ENABLE_TRANSPORT_NEGATIVE
@@ -109,6 +121,10 @@ void tpm_test(void) {
 
     /* Key Management Tests */
     TPM2_KeyManagement_test_suite();
+
+#ifdef TPM_TEST_ENABLE_STATE_MACHINE
+    TPM2_StateMachine_shutdown_test();
+#endif
 }
 
 /* ================================================================

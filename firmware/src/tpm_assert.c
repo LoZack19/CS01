@@ -21,8 +21,16 @@ const char *string_from_TPM_RC(TPM_RC rc) {
         return "TPM_RC_BAD_TAG";
 
     /* Ver1 family (RC_VER1 is a base, not a standalone code) */
+    case TPM_RC_INITIALIZE:
+        return "TPM_RC_INITIALIZE";
     case TPM_RC_FAILURE:
         return "TPM_RC_FAILURE";
+    case TPM_RC_UPGRADE:
+        return "TPM_RC_UPGRADE";
+    case TPM_RC_REBOOT:
+        return "TPM_RC_REBOOT";
+    case TPM_RC_READ_ONLY:
+        return "TPM_RC_READ_ONLY";
     case TPM_RC_COMMAND_SIZE:
         return "TPM_RC_COMMAND_SIZE";
     case TPM_RC_COMMAND_CODE:

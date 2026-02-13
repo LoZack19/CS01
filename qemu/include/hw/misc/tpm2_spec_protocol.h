@@ -70,6 +70,7 @@
 #define TPM_RC_BAD_TAG          (TPM_RC)0x01E
 #define RC_VER1                 (TPM_RC)0x100
 #define TPM_RC_FAILURE          (TPM_RC)(RC_VER1 + 0x01)
+#define TPM_RC_INITIALIZE       (TPM_RC)(RC_VER1 + 0x00)
 #define TPM_RC_OBJECT_MEMORY    (TPM_RC)(RC_VER1 + 0x19)
 #define TPM_RC_COMMAND_SIZE     (TPM_RC)(RC_VER1 + 0x42)
 #define TPM_RC_COMMAND_CODE     (TPM_RC)(RC_VER1 + 0x43)
@@ -79,6 +80,9 @@
 #define TPM_RC_NV_UNINITIALIZED (TPM_RC)(RC_VER1 + 0x4A)
 #define TPM_RC_NV_SPACE         (TPM_RC)(RC_VER1 + 0x4B)
 #define TPM_RC_NV_DEFINED       (TPM_RC)(RC_VER1 + 0x4C)
+#define TPM_RC_UPGRADE          (TPM_RC)(RC_VER1 + 0x2D)
+#define TPM_RC_REBOOT           (TPM_RC)(RC_VER1 + 0x30)
+#define TPM_RC_READ_ONLY        (TPM_RC)(RC_VER1 + 0x56)
 #define RC_FMT1                 (TPM_RC)(0x080)
 #define TPM_RC_ATTRIBUTES       (TPM_RC)(RC_FMT1 + 0x002)
 #define TPM_RCS_ATTRIBUTES      (TPM_RC)(RC_FMT1 + 0x002)
@@ -144,7 +148,14 @@
 #define TPM_RS_PW 0x40000009 /* Password authorization pseudo-handle */
 
 // TPM_CC
-#define TPM_CC_GetRandom 0x0000017B
+#define TPM_CC_Startup           0x00000144
+#define TPM_CC_Shutdown          0x00000145
+#define TPM_CC_SelfTest          0x00000143
+#define TPM_CC_GetCapability     0x0000017A
+#define TPM_CC_GetTestResult     0x0000017C
+#define TPM_CC_FieldUpgradeStart 0x0000012F
+#define TPM_CC_FieldUpgradeData  0x00000141
+#define TPM_CC_GetRandom         0x0000017B
 /* NV Memory*/
 #define TPM_CC_NV_DefineSpace 0x0000012A
 #define TPM_CC_NV_Write       0x00000137
@@ -153,7 +164,7 @@
 #define TPM_CC_Sign            0x0000015D
 #define TPM_CC_VerifySignature 0x00000177
 #define TPM_CC_Hash            0x0000017D
-#define TPM_CC_EncryptDecrypt2 0x00000143
+#define TPM_CC_EncryptDecrypt2 0x00000193
 #define TPM_CC_RSA_Encrypt     0x00000174
 #define TPM_CC_RSA_Decrypt     0x00000159
 // TPM Key Life Cycle Management
@@ -233,6 +244,7 @@ typedef BYTE TPMI_YES_NO;
 /* Subsection #3.2: Secondary Types*/
 
 typedef UINT8 TPM_HT;
+typedef UINT16 TPM_SU;
 
 typedef UINT16 TPM_ST;
 typedef UINT16 TPM_ALG_ID;
@@ -255,6 +267,30 @@ typedef UINT32 TPM_HANDLE;
 typedef UINT32 NV_REF;
 typedef UINT32 TPM_RC;
 typedef UINT32 TPM_CC;
+typedef UINT32 TPM_PT;
+typedef UINT32 TPM_CAP;
+
+#define TPM_SU_CLEAR 0x0000
+#define TPM_SU_STATE 0x0001
+
+#define TPM_CAP_TPM_PROPERTIES 0x00000006
+
+#define TPM_PT_FIXED         0x00000000
+#define TPM_PT_VAR           0x00000100
+#define TPM_PT_PERMANENT     (TPM_PT_VAR + 0)
+#define TPM_PT_STARTUP_CLEAR (TPM_PT_VAR + 1)
+#define TPM_PT_MODES         (TPM_PT_FIXED + 45)
+
+#define TPMA_STARTUP_CLEAR_PH_ENABLE (1U << 0)
+#define TPMA_STARTUP_CLEAR_SH_ENABLE (1U << 1)
+#define TPMA_STARTUP_CLEAR_EH_ENABLE (1U << 2)
+#define TPMA_STARTUP_CLEAR_READ_ONLY (1U << 4)
+#define TPMA_STARTUP_CLEAR_ORDERLY   (1U << 31)
+
+#define TPMA_PERMANENT_DISABLE_CLEAR (1U << 8)
+#define TPMA_PERMANENT_IN_LOCKOUT    (1U << 9)
+
+#define TPMA_MODES_FIPS_140_2 (1U << 0)
 
 /* Subsection #3.3: Specializations of Secondary Types*/
 typedef TPM_ST TPMI_ST_COMMAND_TAG;
@@ -737,6 +773,45 @@ typedef struct __packed {
 
 /* Subsection #5.1: Random Number Generation Commands */
 
+// Startup
+typedef struct __packed {
+    TPM_SU startupType;
+} Startup_In;
+
+// Shutdown
+typedef struct __packed {
+    TPM_SU shutdownType;
+} Shutdown_In;
+
+// SelfTest
+typedef struct __packed {
+    TPMI_YES_NO fullTest;
+} SelfTest_In;
+
+// GetCapability
+typedef struct __packed {
+    TPM_CAP capability;
+    TPM_PT property;
+    UINT32 propertyCount;
+} GetCapability_In;
+
+typedef struct __packed {
+    TPMI_YES_NO moreData;
+    TPM_PT property;
+    UINT32 value;
+} GetCapability_Out;
+
+// GetTestResult
+typedef struct __packed {
+    TPM2B_MAX_BUFFER outData;
+    TPM_RC testResult;
+} GetTestResult_Out;
+
+// FieldUpgradeData
+typedef struct __packed {
+    TPM2B_MAX_BUFFER fuData;
+} FieldUpgradeData_In;
+
 // GetRandom
 typedef struct __packed {
     UINT16 bytesRequested;
@@ -934,6 +1009,21 @@ TPM_RC NvDefineSpace(TPMI_RH_PROVISION authHandle, TPM2B_AUTH *auth,
                      TPMS_NV_PUBLIC *publicInfo, TPM_RC blameAuthHandle,
                      TPM_RC blameAuth, TPM_RC blamePublic);
 BOOL NvInit(void *memory, size_t size, state_clear_data *tpm_saved_state);
+
+/* State Machine Helpers */
+struct S32k358TPMState;
+void tpm_state_machine_reset(struct S32k358TPMState *s);
+bool tpm_command_allowed_in_current_mode(struct S32k358TPMState *s, TPM_CC cc,
+                                         TPM_RC *rc_out);
+TPM_RC TPM2_Startup_SM(struct S32k358TPMState *s, Startup_In *in);
+TPM_RC TPM2_Shutdown_SM(struct S32k358TPMState *s, Shutdown_In *in);
+TPM_RC TPM2_SelfTest_SM(struct S32k358TPMState *s, SelfTest_In *in);
+TPM_RC TPM2_GetTestResult_SM(struct S32k358TPMState *s, GetTestResult_Out *out);
+TPM_RC TPM2_GetCapability_SM(struct S32k358TPMState *s, GetCapability_In *in,
+                             GetCapability_Out *out);
+TPM_RC TPM2_FieldUpgradeStart_SM(struct S32k358TPMState *s);
+TPM_RC TPM2_FieldUpgradeData_SM(struct S32k358TPMState *s,
+                                FieldUpgradeData_In *in);
 
 /* Subsection #6.3: TPM Commands */
 TPM_RC TPM2_GetRandom(GetRandom_In *in, GetRandom_Out *out);

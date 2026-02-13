@@ -18,6 +18,80 @@
 #include "tpm2_spec_protocol.h"
 #include "tpm_tests_config.h"
 
+#ifdef TPM_TEST_ENABLE_STATE_MACHINE
+bool TPM2_StateMachine_startup_test(void) {
+    DBG_PRINT("\n[TEST] State machine startup test\n");
+    bool ok = true;
+
+    GetRandom_In rnd_in = {.bytesRequested = 8};
+    GetRandom_Out rnd_out = {0};
+    TPM_RC rc = TPM2_GetRandom(&rnd_in, &rnd_out);
+    assert(
+        rc == TPM_RC_INITIALIZE,
+        "StateMachine: pre-startup command should return TPM_RC_INITIALIZE\n",
+        string_from_TPM_RC(TPM_RC_INITIALIZE), string_from_TPM_RC(rc));
+    if (rc != TPM_RC_INITIALIZE) {
+        ok = false;
+    }
+
+    Startup_In startup_in = {.startupType = TPM_SU_CLEAR};
+    rc = TPM2_Startup(&startup_in);
+    assert(rc == TPM_RC_SUCCESS, "StateMachine: TPM2_Startup(CLEAR) failed\n",
+           string_from_TPM_RC(TPM_RC_SUCCESS), string_from_TPM_RC(rc));
+    if (rc != TPM_RC_SUCCESS) {
+        return false;
+    }
+
+    SelfTest_In self_test_in = {.fullTest = 1};
+    rc = TPM2_SelfTest(&self_test_in);
+    assert(rc == TPM_RC_SUCCESS, "StateMachine: TPM2_SelfTest failed\n",
+           string_from_TPM_RC(TPM_RC_SUCCESS), string_from_TPM_RC(rc));
+    if (rc != TPM_RC_SUCCESS) {
+        ok = false;
+    }
+
+    GetTestResult_Out test_result_out = {0};
+    rc = TPM2_GetTestResult(&test_result_out);
+    assert(rc == TPM_RC_SUCCESS, "StateMachine: TPM2_GetTestResult failed\n",
+           string_from_TPM_RC(TPM_RC_SUCCESS), string_from_TPM_RC(rc));
+    if (rc != TPM_RC_SUCCESS) {
+        ok = false;
+    }
+    assert(test_result_out.testResult == TPM_RC_SUCCESS,
+           "StateMachine: self-test result should be TPM_RC_SUCCESS\n",
+           string_from_TPM_RC(TPM_RC_SUCCESS),
+           string_from_TPM_RC(test_result_out.testResult));
+    if (test_result_out.testResult != TPM_RC_SUCCESS) {
+        ok = false;
+    }
+
+    GetCapability_In cap_in = {
+        .capability = TPM_CAP_TPM_PROPERTIES,
+        .property = TPM_PT_STARTUP_CLEAR,
+        .propertyCount = 1,
+    };
+    GetCapability_Out cap_out = {0};
+    rc = TPM2_GetCapability(&cap_in, &cap_out);
+    assert(rc == TPM_RC_SUCCESS,
+           "StateMachine: TPM2_GetCapability(STARTUP_CLEAR) failed\n",
+           string_from_TPM_RC(TPM_RC_SUCCESS), string_from_TPM_RC(rc));
+    if (rc != TPM_RC_SUCCESS) {
+        ok = false;
+    }
+
+    return ok;
+}
+
+void TPM2_StateMachine_shutdown_test(void) {
+    DBG_PRINT("\n[TEST] State machine shutdown test\n");
+
+    Shutdown_In shutdown_state = {.shutdownType = TPM_SU_STATE};
+    TPM_RC rc = TPM2_Shutdown(&shutdown_state);
+    assert(rc == TPM_RC_SUCCESS, "StateMachine: TPM2_Shutdown(STATE) failed\n",
+           string_from_TPM_RC(TPM_RC_SUCCESS), string_from_TPM_RC(rc));
+}
+#endif
+
 /* ===========================================================================
  * GROUP A: Transport & Framing Negative Tests  (verification S.1)
  * ===========================================================================

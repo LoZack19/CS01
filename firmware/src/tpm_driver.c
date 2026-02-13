@@ -296,7 +296,56 @@ void skip_auth_response_area(void) {
         return rsp.responseCode;                                           \
     }
 
+#define TPM2_NoInOut(F)                                                    \
+    TPM_RC TPM2_##F(F##_Out *out) {                                        \
+        tpm_rsp_header_t rsp;                                              \
+                                                                           \
+        tpm_cmd_header_t cmd = {.tag = TPM_ST_NO_SESSIONS,                 \
+                                .commandSize = sizeof(cmd),                \
+                                .commandCode = TPM_CC_##F};                \
+                                                                           \
+        tpm_command_ready();                                               \
+        tpm_send(&cmd, sizeof(cmd));                                       \
+        tpm_go();                                                          \
+                                                                           \
+        tpm_receive(&rsp, sizeof(rsp));                                    \
+                                                                           \
+        size_t remaining = 0;                                              \
+        if (rsp.responseSize >= sizeof(rsp) && rsp.responseSize <= 4096) { \
+            remaining = (size_t)rsp.responseSize - sizeof(rsp);            \
+        }                                                                  \
+                                                                           \
+        if (out != NULL) {                                                 \
+            memset(out, 0, sizeof(*out));                                  \
+        }                                                                  \
+                                                                           \
+        if (rsp.responseCode != TPM_RC_SUCCESS) {                          \
+            tpm_drain_bytes(remaining);                                    \
+            return rsp.responseCode;                                       \
+        }                                                                  \
+                                                                           \
+        if (out != NULL) {                                                 \
+            size_t to_read = min_size(remaining, sizeof(*out));            \
+            tpm_receive(out, to_read);                                     \
+            tpm_drain_bytes(remaining - to_read);                          \
+        } else {                                                           \
+            tpm_drain_bytes(remaining);                                    \
+        }                                                                  \
+                                                                           \
+        return rsp.responseCode;                                           \
+    }
+
 /* ---- Instantiate command wrappers -------------------------------------- */
+
+TPM2_InOut(GetRandom)
+
+#ifdef TPM_TEST_ENABLE_STATE_MACHINE
+    TPM2_In(Startup);
+TPM2_In(Shutdown);
+TPM2_In(SelfTest);
+TPM2_InOut(GetCapability);
+TPM2_NoInOut(GetTestResult);
+#endif
 
 #ifdef TPM_TEST_ENABLE_NV_DEFINE
 TPM2_In(NV_DefineSpace);
