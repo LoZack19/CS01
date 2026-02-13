@@ -63,7 +63,7 @@ TPMI_RH_HIERARCHY EntityGetHierarchy(TPM_HANDLE handle);
  * Maximum number of simultaneously loaded transient objects.
  * The ms-tpm-20-ref uses a similar compile-time constant.
  */
-#define MAX_LOADED_OBJECTS 8
+#define MAX_LOADED_OBJECTS 16
 
 /* First transient handle (HR_TRANSIENT) */
 #define HR_TRANSIENT 0x80000000

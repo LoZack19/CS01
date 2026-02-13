@@ -367,11 +367,17 @@ TPM_RC CryptCreateObject(OBJECT *object, TPMS_SENSITIVE_CREATE *sensitiveCreate,
         }
         sensitive->sensitive.rsa.size = keyBytes;
 
-        /* Generate the public unique value by hashing the private key.
-         * (In a real TPM this would be the modulus.) */
-        SHA256_Calculate(sensitive->sensitive.rsa.buffer, keyBytes,
-                         publicArea->unique.rsa.buffer);
-        publicArea->unique.rsa.size = SHA256_DIGEST_SIZE;
+        /* Generate the public unique value.
+         * In a real TPM this would be the RSA modulus (n = p*q).
+         * In our simplified XOR-based simulation the encrypt/decrypt
+         * and sign/verify primitives derive a PRNG seed from the first
+         * 4 bytes of the key material.  For roundtrips to work the
+         * public and private representations must share those bytes.
+         * We therefore copy the private-key buffer to the public
+         * unique field so that both keys produce the same XOR stream. */
+        memcpy(publicArea->unique.rsa.buffer,
+               sensitive->sensitive.rsa.buffer, keyBytes);
+        publicArea->unique.rsa.size = keyBytes;
         break;
     }
     default: {

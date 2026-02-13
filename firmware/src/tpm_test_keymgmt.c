@@ -12,6 +12,9 @@
  *   - GROUP C: Create negative tests         (verification §4)
  *   - GROUP D: Load private blob integrity   (verification §5)
  *   - GROUP E: Sign integration tests        (verification §6)
+ *                E5: Sign+Verify roundtrip with real handle
+ *                E6: Attribute enforcement (sign with decrypt-only key)
+ *                E7: RSA_Encrypt/Decrypt roundtrip with handle
  *   - GROUP F: Workflow integration tests    (verification §8)
  *   - GROUP H: Data size tests               (verification §10)
  *   - TPM2_KeyManagement_test_suite() orchestrator
@@ -1290,6 +1293,172 @@ void TPM2_Sign_integration_tests(void) {
         DBG_PRINTF("[TEST] Sign E4 (bad hashAlg): rc=0x%08lX (%s)\n",
                    (unsigned long)res, string_from_TPM_RC(res));
     }
+
+    /* E5 — VerifySignature: sign then verify with the same loaded key */
+#ifdef TPM_TEST_ENABLE_VERIFY_SIGNATURE
+    {
+        /* First, produce a signature */
+        Sign_In sign_in = {0};
+        Sign_Out sign_out = {0};
+
+        sign_in.keyHandle = g_load_out.objectHandle;
+        sign_in.inScheme.scheme = TPM_ALG_NULL;
+        sign_in.inScheme.hashAlg = TPM_ALG_NULL;
+        sign_in.digest.size = 32;
+        for (int i = 0; i < 32; i++) {
+            sign_in.digest.buffer[i] = (uint8_t)(0xCC ^ (uint8_t)i);
+        }
+
+        res = TPM2_Sign(&sign_in, &sign_out);
+        assert(res == TPM_RC_SUCCESS,
+               "Sign E5a: Sign for verify test should succeed\n",
+               string_from_TPM_RC(TPM_RC_SUCCESS), string_from_TPM_RC(res));
+
+        if (res == TPM_RC_SUCCESS) {
+            /* Now verify the signature with the same key handle */
+            VerifySignature_In verify_in = {0};
+            VerifySignature_Out verify_out = {0};
+
+            verify_in.keyHandle = g_load_out.objectHandle;
+            verify_in.digest = sign_in.digest;
+            verify_in.signature = sign_out.signature;
+
+            res = TPM2_VerifySignature(&verify_in, &verify_out);
+            assert(res == TPM_RC_SUCCESS,
+                   "Sign E5b: VerifySignature should succeed\n",
+                   string_from_TPM_RC(TPM_RC_SUCCESS),
+                   string_from_TPM_RC(res));
+
+            if (res == TPM_RC_SUCCESS) {
+                /* Validation ticket tag must be TPM_ST_NO_SESSIONS */
+                char exp_s[16], act_s[16];
+                snprintf(exp_s, sizeof(exp_s), "0x%04X", TPM_ST_NO_SESSIONS);
+                snprintf(act_s, sizeof(act_s), "0x%04X",
+                         verify_out.validation.tag);
+                assert(verify_out.validation.tag == TPM_ST_NO_SESSIONS,
+                       "Sign E5c: validation ticket tag\n", exp_s, act_s);
+            }
+
+            DBG_PRINTF("[TEST] Sign E5 (Sign+Verify roundtrip): "
+                       "rc=0x%08lX\n", (unsigned long)res);
+        }
+
+        /* E5d — VerifySignature with corrupted signature → must fail */
+        if (sign_out.signature.signature.size > 0) {
+            VerifySignature_In bad_verify = {0};
+            VerifySignature_Out bad_out = {0};
+
+            bad_verify.keyHandle = g_load_out.objectHandle;
+            bad_verify.digest = sign_in.digest;
+            bad_verify.signature = sign_out.signature;
+            /* corrupt a byte */
+            bad_verify.signature.signature.buffer[0] ^= 0xFF;
+
+            res = TPM2_VerifySignature(&bad_verify, &bad_out);
+            assert(res != TPM_RC_SUCCESS,
+                   "Sign E5d: corrupted sig should fail verify\n",
+                   "!= TPM_RC_SUCCESS", string_from_TPM_RC(res));
+            DBG_PRINTF("[TEST] Sign E5d (bad sig verify): rc=0x%08lX (%s)\n",
+                       (unsigned long)res, string_from_TPM_RC(res));
+        }
+    }
+#endif /* TPM_TEST_ENABLE_VERIFY_SIGNATURE */
+
+    /* E6 — Attribute enforcement: Sign with decrypt-only primary key
+     *      The primary key has restricted+decrypt but NOT sign_encrypt,
+     *      so TPM2_Sign must reject it with TPM_RC_ATTRIBUTES. */
+    {
+        Sign_In in = {0};
+        Sign_Out out = {0};
+
+        in.keyHandle = g_parent_handle; /* primary: decrypt-only */
+        in.inScheme.scheme = TPM_ALG_NULL;
+        in.inScheme.hashAlg = TPM_ALG_NULL;
+        in.digest.size = 32;
+        for (int i = 0; i < 32; i++) {
+            in.digest.buffer[i] = (uint8_t)(0xDD + (uint8_t)i);
+        }
+
+        res = TPM2_Sign(&in, &out);
+        assert(res != TPM_RC_SUCCESS,
+               "Sign E6: decrypt-only key should fail Sign\n",
+               "!= TPM_RC_SUCCESS", string_from_TPM_RC(res));
+        DBG_PRINTF("[TEST] Sign E6 (attribute enforcement): "
+                   "rc=0x%08lX (%s)\n",
+                   (unsigned long)res, string_from_TPM_RC(res));
+    }
+
+    /* E7 — RSA_Encrypt/Decrypt roundtrip with a loaded key handle */
+#ifdef TPM_TEST_ENABLE_RSA_ENCRYPT_DECRYPT
+    {
+        /* We use the primary key (0x80000000) which has decrypt attribute */
+        RSA_Encrypt_In enc_in = {0};
+        RSA_Encrypt_Out enc_out = {0};
+
+        enc_in.keyHandle = g_parent_handle;
+
+        /* Prepare a short test message */
+        const char *msg = "TPM2 RSA handle test";
+        enc_in.message.size = (uint16_t)strlen(msg);
+        memcpy(enc_in.message.buffer, msg, enc_in.message.size);
+
+        res = TPM2_RSA_Encrypt(&enc_in, &enc_out);
+        assert(res == TPM_RC_SUCCESS,
+               "Sign E7a: RSA_Encrypt with primary handle should succeed\n",
+               string_from_TPM_RC(TPM_RC_SUCCESS), string_from_TPM_RC(res));
+
+        if (res == TPM_RC_SUCCESS) {
+            assert(enc_out.encrypted.size > 0,
+                   "Sign E7b: encrypted output is empty\n", "> 0", "0");
+
+            /* Decrypt with the same handle */
+            RSA_Decrypt_In dec_in = {0};
+            RSA_Decrypt_Out dec_out = {0};
+
+            dec_in.keyHandle = g_parent_handle;
+            dec_in.encrypted = enc_out.encrypted;
+
+            res = TPM2_RSA_Decrypt(&dec_in, &dec_out);
+            assert(res == TPM_RC_SUCCESS,
+                   "Sign E7c: RSA_Decrypt with primary handle should "
+                   "succeed\n",
+                   string_from_TPM_RC(TPM_RC_SUCCESS),
+                   string_from_TPM_RC(res));
+
+            if (res == TPM_RC_SUCCESS) {
+                /* Verify decrypted == original plaintext */
+                assert(dec_out.decrypted.size == enc_in.message.size,
+                       "Sign E7d: decrypted size mismatch\n", NULL, NULL);
+                assert(memcmp(dec_out.decrypted.buffer, msg,
+                              enc_in.message.size) == 0,
+                       "Sign E7e: decrypted content mismatch\n", NULL, NULL);
+            }
+
+            DBG_PRINTF("[TEST] Sign E7 (RSA Encrypt/Decrypt roundtrip): "
+                       "enc_size=%u, dec_rc=0x%08lX\n",
+                       enc_out.encrypted.size, (unsigned long)res);
+        }
+
+        /* E7f — RSA_Decrypt with sign-only child key → must fail
+         *       (child key has sign_encrypt but NOT decrypt) */
+        {
+            RSA_Decrypt_In bad_dec = {0};
+            RSA_Decrypt_Out bad_out = {0};
+
+            bad_dec.keyHandle = g_load_out.objectHandle; /* sign-only child */
+            bad_dec.encrypted.size = 16;
+            memset(bad_dec.encrypted.buffer, 0xAA, 16);
+
+            res = TPM2_RSA_Decrypt(&bad_dec, &bad_out);
+            assert(res != TPM_RC_SUCCESS,
+                   "Sign E7f: sign-only key should fail RSA_Decrypt\n",
+                   "!= TPM_RC_SUCCESS", string_from_TPM_RC(res));
+            DBG_PRINTF("[TEST] Sign E7f (attr enforcement decrypt): "
+                       "rc=0x%08lX (%s)\n",
+                       (unsigned long)res, string_from_TPM_RC(res));
+        }
+    }
+#endif /* TPM_TEST_ENABLE_RSA_ENCRYPT_DECRYPT */
 
     DBG_PRINT("[TEST] Sign integration tests: DONE\n");
 }
