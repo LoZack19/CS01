@@ -1,4 +1,4 @@
-giovanni@DESKTOP-UVR7N1L:~/github/CS01/qemu$ ./build/qemu-system-arm -kernel ../firmware/bin/tpm_test.elf -machine s32k3x8evb-q289 -nographic -d guest_errors -serial none -serial none -serial none -serial mon:stdio
+(venv) giovanni@DESKTOP-UVR7N1L:~/github/CS01/qemu$ ./build/qemu-system-arm -kernel ../firmware/bin/tpm_test.elf -machine s32k3x8evb-q289 -nographic -d guest_errors -serial none -serial none -serial none -serial mon:stdio
 QEMU 9.2.50 monitor - type 'help' for more information
 (qemu) (qemu) NVIC: Bad read offset 0xf94
 NVIC: Bad write offset 0xf94
@@ -8,26 +8,70 @@ s32k358_lpuart_write: Bad offset 0x14
 [INFO] Starting TPM Test
 s32k358_tpm_write: Locality requested, granting access
 [INFO] TPM access granted
+
+[TEST] Transport & framing negative tests
+(INFO) TPM: Transitioned from READY to RECV
+(INFO) TPM: tpmGo received, state=3, fifo_used=12
+(ERROR) TPM: Command header tag is not valid. Received 0xFFFF
+(INFO) TPM: Command completed, rc=0x1E, response size=10
+(INFO) TPM: Transitioned from READY to RECV
+(INFO) TPM: tpmGo received, state=3, fifo_used=11
+(INFO) TPM: Processing command 0xDEADBEEF (size=11, fifo=1)
+(ERROR) TPM: Unimplemented command
+(INFO) TPM: Command completed, rc=0x143, response size=10
+(INFO) TPM: Transitioned from READY to RECV
+(INFO) TPM: tpmGo received, state=3, fifo_used=1042
+(INFO) TPM: Processing command 0x0000017D (size=11, fifo=1032)
+(INFO) TPM: Command completed, rc=0x142, response size=10
+[TEST] Transport negative tests: DONE
 [TEST] TPM2_NV_DefineSpace: SKIPPED (not enabled)
 [TEST] TPM2_NV_WriteRead: SKIPPED (not enabled)
 [DBG] TPM2_Hash: Sending cmd (tag=0x8001, size=1042, code=0x0000017D)
 (INFO) TPM: Transitioned from READY to RECV
 (INFO) TPM: tpmGo received, state=3, fifo_used=1042
 (INFO) TPM: Processing command 0x0000017D (size=1042, fifo=1032)
-TPM2_Hash: Computing hash (alg=0x0000)
+TPM2_Hash: Computing hash (alg=0x000B)
+SHA-256 Test 1 (abc): PASS
+SHA-256 Test 2 (empty): PASS
+SHA-256 Test 3 (multi-block): PASS
+SHA-256 Test 4 (long message): PASS
+SHA-256 Test 5 (odd-length): PASS
+SHA-256 Test 6 (single block): PASS
+(INFO) TPM: Command completed, rc=0x0, response size=84
+[DBG] TPM2_Hash: Received rsp (tag=0x8001, size=84, rc=0x00000000)
+[DBG] TPM2_Hash: remaining=74 bytes
+[DBG] TPM2_Hash: Reading 74 bytes to out (out size=74)
+
+[TEST] Error handling tests
+[DBG] TPM2_Load: Sending cmd (tag=0x8001, size=846, code=0x00000157)
+(INFO) TPM: Transitioned from READY to RECV
+(INFO) TPM: tpmGo received, state=3, fifo_used=846
+(INFO) TPM: Processing command 0x00000157 (size=846, fifo=836)
+(INFO) TPM: Command completed, rc=0x18B, response size=10
+[DBG] TPM2_Load: Received rsp (tag=0x8001, size=10, rc=0x0000018B)
+[DBG] TPM2_Load: remaining=0 bytes
+[DBG] TPM2_Load: Error response, draining 0 bytes
+[TEST] Error G1 (bad handle): rc=0x0000018B (UNKNOWN_RC)
+[DBG] TPM2_Hash: Sending cmd (tag=0x8001, size=1042, code=0x0000017D)
+(INFO) TPM: Transitioned from READY to RECV
+(INFO) TPM: tpmGo received, state=3, fifo_used=1042
+(INFO) TPM: Processing command 0x0000017D (size=1042, fifo=1032)
+TPM2_Hash: Computing hash (alg=0x000B)
 (INFO) TPM: Command completed, rc=0x83, response size=10
 [DBG] TPM2_Hash: Received rsp (tag=0x8001, size=10, rc=0x00000083)
 [DBG] TPM2_Hash: remaining=0 bytes
 [DBG] TPM2_Hash: Error response, draining 0 bytes
+[TEST] Error G2 (empty hash data): rc=0x00000083 (TPM_RC_HASH)
+[TEST] Error handling tests: DONE
 [DBG] TPM2_Sign: Sending cmd (tag=0x8001, size=92, code=0x0000015D)
 (INFO) TPM: Transitioned from READY to RECV
 (INFO) TPM: tpmGo received, state=3, fifo_used=92
 (INFO) TPM: Processing command 0x0000015D (size=92, fifo=82)
 TPM2_Sign: Signing digest with key handle 0x80000000
-(INFO) TPM: Command completed, rc=0x83, response size=10
-[DBG] TPM2_Sign: Received rsp (tag=0x8001, size=10, rc=0x00000083)
-[DBG] TPM2_Sign: remaining=0 bytes
-[DBG] TPM2_Sign: Error response, draining 0 bytes
+(INFO) TPM: Command completed, rc=0x0, response size=272
+[DBG] TPM2_Sign: Received rsp (tag=0x8001, size=272, rc=0x00000000)
+[DBG] TPM2_Sign: remaining=262 bytes
+[DBG] TPM2_Sign: Reading 262 bytes to out (out size=262)
 [DBG] TPM2_VerifySignature: Sending cmd (tag=0x8001, size=310, code=0x00000177)
 (INFO) TPM: Transitioned from READY to RECV
 (INFO) TPM: tpmGo received, state=3, fifo_used=310
@@ -61,11 +105,10 @@ TPM2_RSA_Encrypt: RSA encryption with handle 0x80000000
 (INFO) TPM: tpmGo received, state=3, fifo_used=272
 (INFO) TPM: Processing command 0x00000159 (size=272, fifo=262)
 TPM2_RSA_Decrypt: RSA decryption with handle 0x80000000
-CryptDecrypt: Invalid data size 4 (must be multiple of 16)
-(INFO) TPM: Command completed, rc=0x84, response size=10
-[DBG] TPM2_RSA_Decrypt: Received rsp (tag=0x8001, size=10, rc=0x00000084)
-[DBG] TPM2_RSA_Decrypt: remaining=0 bytes
-[DBG] TPM2_RSA_Decrypt: Error response, draining 0 bytes
+(INFO) TPM: Command completed, rc=0x0, response size=268
+[DBG] TPM2_RSA_Decrypt: Received rsp (tag=0x8001, size=268, rc=0x00000000)
+[DBG] TPM2_RSA_Decrypt: remaining=258 bytes
+[DBG] TPM2_RSA_Decrypt: Reading 258 bytes to out (out size=258)
 
 ==================================================
 [SUITE] Key Management Tests
@@ -89,10 +132,27 @@ CryptDecrypt: Invalid data size 4 (must be multiple of 16)
 (INFO) TPM: Command completed, rc=0x0, response size=1677
 [DBG] TPM2_CreatePrimary_sessions: Received rsp (tag=0x8002, size=1677, rc=0x00000000)
 [TEST] TPM2_CreatePrimary with TPM_ST_SESSIONS: SUCCESS
-  Object handle: 0x80000001
+  Object handle: 0x80000002
   Name size: 34
+
+[TEST] CreatePrimary template match verification
+[TEST] CreatePrimary template match: DONE
+
+[TEST] Data size and boundary tests
+[DBG] TPM2_Hash: Sending cmd (tag=0x8001, size=1042, code=0x0000017D)
+(INFO) TPM: Transitioned from READY to RECV
+(INFO) TPM: tpmGo received, state=3, fifo_used=1042
+(INFO) TPM: Processing command 0x0000017D (size=1042, fifo=1032)
+TPM2_Hash: Computing hash (alg=0x000B)
+(INFO) TPM: Command completed, rc=0x83, response size=10
+[DBG] TPM2_Hash: Received rsp (tag=0x8001, size=10, rc=0x00000083)
+[DBG] TPM2_Hash: remaining=0 bytes
+[DBG] TPM2_Hash: Error response, draining 0 bytes
+DataSize H2: RSA modulus size != 256 bytes
+Expected: 256, got: 32
+[TEST] Data size tests: DONE
 [TEST] TPM2_Create: Creating RSA signing key under primary
-[TEST] TPM2_Create: parent handle = 0x80000000
+[TEST] TPM2_Create: parent handle = 0x80000001
 [DBG] TPM2_Create: Sending cmd (tag=0x8001, size=926, code=0x00000153)
 (INFO) TPM: Transitioned from READY to RECV
 (INFO) TPM: tpmGo received, state=3, fifo_used=926
@@ -101,9 +161,30 @@ CryptDecrypt: Invalid data size 4 (must be multiple of 16)
 [DBG] TPM2_Create: Received rsp (tag=0x8001, size=1942, rc=0x00000000)
 [DBG] TPM2_Create: remaining=1932 bytes
 [DBG] TPM2_Create: Reading 1932 bytes to out (out size=1932)
-[TEST] TPM2_Create: SUCCESS (private=328, public=56 bytes)
+[TEST] TPM2_Create: SUCCESS (private=360, public=56 bytes)
+
+[TEST] Create negative tests
+[DBG] TPM2_Create: Sending cmd (tag=0x8001, size=926, code=0x00000153)
+(INFO) TPM: Transitioned from READY to RECV
+(INFO) TPM: tpmGo received, state=3, fifo_used=926
+(INFO) TPM: Processing command 0x00000153 (size=926, fifo=916)
+(INFO) TPM: Command completed, rc=0x18B, response size=10
+[DBG] TPM2_Create: Received rsp (tag=0x8001, size=10, rc=0x0000018B)
+[DBG] TPM2_Create: remaining=0 bytes
+[DBG] TPM2_Create: Error response, draining 0 bytes
+[TEST] Create C1 (bad parent): rc=0x0000018B (UNKNOWN_RC)
+[DBG] TPM2_Create: Sending cmd (tag=0x8001, size=926, code=0x00000153)
+(INFO) TPM: Transitioned from READY to RECV
+(INFO) TPM: tpmGo received, state=3, fifo_used=926
+(INFO) TPM: Processing command 0x00000153 (size=926, fifo=916)
+(INFO) TPM: Command completed, rc=0x2C3, response size=10
+[DBG] TPM2_Create: Received rsp (tag=0x8001, size=10, rc=0x000002C3)
+[DBG] TPM2_Create: remaining=0 bytes
+[DBG] TPM2_Create: Error response, draining 0 bytes
+[TEST] Create C2 (null nameAlg): rc=0x000002C3 (UNKNOWN_RC)
+[TEST] Create negative tests: DONE
 [TEST] TPM2_Load: Loading created key into TPM
-[TEST] TPM2_Load: parent=0x80000000, private=328, public=56
+[TEST] TPM2_Load: parent=0x80000001, private=360, public=56
 [DBG] TPM2_Load: Sending cmd (tag=0x8001, size=846, code=0x00000157)
 (INFO) TPM: Transitioned from READY to RECV
 (INFO) TPM: tpmGo received, state=3, fifo_used=846
@@ -112,57 +193,220 @@ CryptDecrypt: Invalid data size 4 (must be multiple of 16)
 [DBG] TPM2_Load: Received rsp (tag=0x8001, size=50, rc=0x00000000)
 [DBG] TPM2_Load: remaining=40 bytes
 [DBG] TPM2_Load: Reading 40 bytes to out (out size=40)
-[TEST] TPM2_Load: SUCCESS (handle=0x80000003, name_size=34)
+[TEST] TPM2_Load: SUCCESS (handle=0x80000005, name_size=34)
 
 [TEST] TPM2_Load negative tests
 [DBG] TPM2_Load: Sending cmd (tag=0x8001, size=846, code=0x00000157)
 (INFO) TPM: Transitioned from READY to RECV
 (INFO) TPM: tpmGo received, state=3, fifo_used=846
 (INFO) TPM: Processing command 0x00000157 (size=846, fifo=836)
-(INFO) TPM: Command completed, rc=0x0, response size=50
-[DBG] TPM2_Load: Received rsp (tag=0x8001, size=50, rc=0x00000000)
-[DBG] TPM2_Load: remaining=40 bytes
-[DBG] TPM2_Load: Reading 40 bytes to out (out size=40)
-TPM2_Load negative (binding): should have failed
-Expected: != TPM_RC_SUCCESS, got: TPM_RC_SUCCESS
-[TEST] TPM2_Load negative (binding): rc=0x00000000 (TPM_RC_SUCCESS)
-[DBG] TPM2_Load: Sending cmd (tag=0x8001, size=846, code=0x00000157)
-(INFO) TPM: Transitioned from READY to RECV
-(INFO) TPM: tpmGo received, state=3, fifo_used=846
-(INFO) TPM: Processing command 0x00000157 (size=846, fifo=836)
-(INFO) TPM: Command completed, rc=0x0, response size=50
-[DBG] TPM2_Load: Received rsp (tag=0x8001, size=50, rc=0x00000000)
-[DBG] TPM2_Load: remaining=40 bytes
-[DBG] TPM2_Load: Reading 40 bytes to out (out size=40)
-TPM2_Load negative (attributes): should have failed
-Expected: != TPM_RC_SUCCESS, got: TPM_RC_SUCCESS
-[TEST] TPM2_Load negative (attributes): rc=0x00000000 (TPM_RC_SUCCESS)
-[DBG] TPM2_Load: Sending cmd (tag=0x8001, size=846, code=0x00000157)
-(INFO) TPM: Transitioned from READY to RECV
-(INFO) TPM: tpmGo received, state=3, fifo_used=846
-(INFO) TPM: Processing command 0x00000157 (size=846, fifo=836)
-(INFO) TPM: Command completed, rc=0x0, response size=50
-[DBG] TPM2_Load: Received rsp (tag=0x8001, size=50, rc=0x00000000)
-[DBG] TPM2_Load: remaining=40 bytes
-[DBG] TPM2_Load: Reading 40 bytes to out (out size=40)
-TPM2_Load negative (key size): should have failed
-Expected: != TPM_RC_SUCCESS, got: TPM_RC_SUCCESS
-[TEST] TPM2_Load negative (key size): rc=0x00000000 (TPM_RC_SUCCESS)
-[DBG] TPM2_Load: Sending cmd (tag=0x8001, size=846, code=0x00000157)
-(INFO) TPM: Transitioned from READY to RECV
-(INFO) TPM: tpmGo received, state=3, fifo_used=846
-(INFO) TPM: Processing command 0x00000157 (size=846, fifo=836)
-(INFO) TPM: Command completed, rc=0x1D5, response size=10
-[DBG] TPM2_Load: Received rsp (tag=0x8001, size=10, rc=0x000001D5)
+(INFO) TPM: Command completed, rc=0x1E2, response size=10
+[DBG] TPM2_Load: Received rsp (tag=0x8001, size=10, rc=0x000001E2)
 [DBG] TPM2_Load: remaining=0 bytes
 [DBG] TPM2_Load: Error response, draining 0 bytes
-[TEST] TPM2_Load negative (zero private): rc=0x000001D5 (UNKNOWN_RC)
+[TEST] TPM2_Load negative (binding): rc=0x000001E2 (UNKNOWN_RC)
+[DBG] TPM2_Load: Sending cmd (tag=0x8001, size=846, code=0x00000157)
+(INFO) TPM: Transitioned from READY to RECV
+(INFO) TPM: tpmGo received, state=3, fifo_used=846
+(INFO) TPM: Processing command 0x00000157 (size=846, fifo=836)
+(INFO) TPM: Command completed, rc=0x1E2, response size=10
+[DBG] TPM2_Load: Received rsp (tag=0x8001, size=10, rc=0x000001E2)
+[DBG] TPM2_Load: remaining=0 bytes
+[DBG] TPM2_Load: Error response, draining 0 bytes
+[TEST] TPM2_Load negative (attributes): rc=0x000001E2 (UNKNOWN_RC)
+[DBG] TPM2_Load: Sending cmd (tag=0x8001, size=846, code=0x00000157)
+(INFO) TPM: Transitioned from READY to RECV
+(INFO) TPM: tpmGo received, state=3, fifo_used=846
+(INFO) TPM: Processing command 0x00000157 (size=846, fifo=836)
+(INFO) TPM: Command completed, rc=0x119, response size=10
+[DBG] TPM2_Load: Received rsp (tag=0x8001, size=10, rc=0x00000119)
+[DBG] TPM2_Load: remaining=0 bytes
+[DBG] TPM2_Load: Error response, draining 0 bytes
+[TEST] TPM2_Load negative (key size): rc=0x00000119 (UNKNOWN_RC)
+[DBG] TPM2_Load: Sending cmd (tag=0x8001, size=846, code=0x00000157)
+(INFO) TPM: Transitioned from READY to RECV
+(INFO) TPM: tpmGo received, state=3, fifo_used=846
+(INFO) TPM: Processing command 0x00000157 (size=846, fifo=836)
+(INFO) TPM: Command completed, rc=0x119, response size=10
+[DBG] TPM2_Load: Received rsp (tag=0x8001, size=10, rc=0x00000119)
+[DBG] TPM2_Load: remaining=0 bytes
+[DBG] TPM2_Load: Error response, draining 0 bytes
+[TEST] TPM2_Load negative (zero private): rc=0x00000119 (UNKNOWN_RC)
 [TEST] TPM2_Load negative tests: DONE
+
+[TEST] Load private blob integrity test
+[DBG] TPM2_Load: Sending cmd (tag=0x8001, size=846, code=0x00000157)
+(INFO) TPM: Transitioned from READY to RECV
+(INFO) TPM: tpmGo received, state=3, fifo_used=846
+(INFO) TPM: Processing command 0x00000157 (size=846, fifo=836)
+(INFO) TPM: Command completed, rc=0x119, response size=10
+[DBG] TPM2_Load: Received rsp (tag=0x8001, size=10, rc=0x00000119)
+[DBG] TPM2_Load: remaining=0 bytes
+[DBG] TPM2_Load: Error response, draining 0 bytes
+[TEST] Load integrity (corrupt blob): rc=0x00000119 (UNKNOWN_RC)
+[TEST] Load private blob integrity: DONE
+[TEST] TPM2_ReadPublic: Reading public area of loaded key
+[DBG] TPM2_ReadPublic: Sending cmd (tag=0x8001, size=14, code=0x00000173)
+(INFO) TPM: Transitioned from READY to RECV
+(INFO) TPM: tpmGo received, state=3, fifo_used=14
+(INFO) TPM: Processing command 0x00000173 (size=14, fifo=4)
+TPM2_ReadPublic: Reading public area for handle 0x80000005
+TPM2_ReadPublic: Success, name size=34, qualifiedName size=34, public size=56
+(INFO) TPM: Command completed, rc=0x0, response size=536
+[DBG] TPM2_ReadPublic: Received rsp (tag=0x8001, size=536, rc=0x00000000)
+[DBG] TPM2_ReadPublic: remaining=526 bytes
+[DBG] TPM2_ReadPublic: Reading 526 bytes to out (out size=526)
+[TEST] TPM2_ReadPublic: SUCCESS (public=56, name=34, qname=34 bytes)
+
+[TEST] Sign integration tests
+[DBG] TPM2_Sign: Sending cmd (tag=0x8001, size=92, code=0x0000015D)
+(INFO) TPM: Transitioned from READY to RECV
+(INFO) TPM: tpmGo received, state=3, fifo_used=92
+(INFO) TPM: Processing command 0x0000015D (size=92, fifo=82)
+TPM2_Sign: Signing digest with key handle 0x80000005
+(INFO) TPM: Command completed, rc=0x0, response size=272
+[DBG] TPM2_Sign: Received rsp (tag=0x8001, size=272, rc=0x00000000)
+[DBG] TPM2_Sign: remaining=262 bytes
+[DBG] TPM2_Sign: Reading 262 bytes to out (out size=262)
+[TEST] Sign E1-E3: sig_size=32, sigAlg=0x0014
+[DBG] TPM2_Sign: Sending cmd (tag=0x8001, size=92, code=0x0000015D)
+(INFO) TPM: Transitioned from READY to RECV
+(INFO) TPM: tpmGo received, state=3, fifo_used=92
+(INFO) TPM: Processing command 0x0000015D (size=92, fifo=82)
+TPM2_Sign: Signing digest with key handle 0x80000005
+(INFO) TPM: Command completed, rc=0x83, response size=10
+[DBG] TPM2_Sign: Received rsp (tag=0x8001, size=10, rc=0x00000083)
+[DBG] TPM2_Sign: remaining=0 bytes
+[DBG] TPM2_Sign: Error response, draining 0 bytes
+[TEST] Sign E4 (bad hashAlg): rc=0x00000083 (TPM_RC_HASH)
+[DBG] TPM2_Sign: Sending cmd (tag=0x8001, size=92, code=0x0000015D)
+(INFO) TPM: Transitioned from READY to RECV
+(INFO) TPM: tpmGo received, state=3, fifo_used=92
+(INFO) TPM: Processing command 0x0000015D (size=92, fifo=82)
+TPM2_Sign: Signing digest with key handle 0x80000005
+(INFO) TPM: Command completed, rc=0x84, response size=10
+[DBG] TPM2_Sign: Received rsp (tag=0x8001, size=10, rc=0x00000084)
+[DBG] TPM2_Sign: remaining=0 bytes
+[DBG] TPM2_Sign: Error response, draining 0 bytes
+[TEST] Sign E5 (empty digest): rc=0x00000084 (TPM_RC_VALUE)
+[DBG] TPM2_Sign: Sending cmd (tag=0x8001, size=92, code=0x0000015D)
+(INFO) TPM: Transitioned from READY to RECV
+(INFO) TPM: tpmGo received, state=3, fifo_used=92
+(INFO) TPM: Processing command 0x0000015D (size=92, fifo=82)
+TPM2_Sign: Signing digest with key handle 0x80000005
+(INFO) TPM: Command completed, rc=0x0, response size=272
+[DBG] TPM2_Sign: Received rsp (tag=0x8001, size=272, rc=0x00000000)
+[DBG] TPM2_Sign: remaining=262 bytes
+[DBG] TPM2_Sign: Reading 262 bytes to out (out size=262)
+[TEST] Sign E6: sigAlg=0x0014, hashAlg=0x000B
+[DBG] TPM2_Sign: Sending cmd (tag=0x8001, size=92, code=0x0000015D)
+(INFO) TPM: Transitioned from READY to RECV
+(INFO) TPM: tpmGo received, state=3, fifo_used=92
+(INFO) TPM: Processing command 0x0000015D (size=92, fifo=82)
+TPM2_Sign: Signing digest with key handle 0x80000005
+(INFO) TPM: Command completed, rc=0x0, response size=272
+[DBG] TPM2_Sign: Received rsp (tag=0x8001, size=272, rc=0x00000000)
+[DBG] TPM2_Sign: remaining=262 bytes
+[DBG] TPM2_Sign: Reading 262 bytes to out (out size=262)
+[DBG] TPM2_VerifySignature: Sending cmd (tag=0x8001, size=310, code=0x00000177)
+(INFO) TPM: Transitioned from READY to RECV
+(INFO) TPM: tpmGo received, state=3, fifo_used=310
+(INFO) TPM: Processing command 0x00000177 (size=310, fifo=300)
+TPM2_VerifySignature: Verifying signature with key handle 0x80000005
+(INFO) TPM: Command completed, rc=0x9B, response size=10
+[DBG] TPM2_VerifySignature: Received rsp (tag=0x8001, size=10, rc=0x0000009B)
+[DBG] TPM2_VerifySignature: remaining=0 bytes
+[DBG] TPM2_VerifySignature: Error response, draining 0 bytes
+Sign E7: VerifySignature should succeed for valid signature
+Expected: TPM_RC_SUCCESS, got: TPM_RC_SIGNATURE
+[TEST] Sign E7 (roundtrip): rc=0x0000009B
+[DBG] TPM2_Sign: Sending cmd (tag=0x8001, size=92, code=0x0000015D)
+(INFO) TPM: Transitioned from READY to RECV
+(INFO) TPM: tpmGo received, state=3, fifo_used=92
+(INFO) TPM: Processing command 0x0000015D (size=92, fifo=82)
+TPM2_Sign: Signing digest with key handle 0x80000005
+(INFO) TPM: Command completed, rc=0x0, response size=272
+[DBG] TPM2_Sign: Received rsp (tag=0x8001, size=272, rc=0x00000000)
+[DBG] TPM2_Sign: remaining=262 bytes
+[DBG] TPM2_Sign: Reading 262 bytes to out (out size=262)
+[DBG] TPM2_VerifySignature: Sending cmd (tag=0x8001, size=310, code=0x00000177)
+(INFO) TPM: Transitioned from READY to RECV
+(INFO) TPM: tpmGo received, state=3, fifo_used=310
+(INFO) TPM: Processing command 0x00000177 (size=310, fifo=300)
+TPM2_VerifySignature: Verifying signature with key handle 0x80000005
+(INFO) TPM: Command completed, rc=0x9B, response size=10
+[DBG] TPM2_VerifySignature: Received rsp (tag=0x8001, size=10, rc=0x0000009B)
+[DBG] TPM2_VerifySignature: remaining=0 bytes
+[DBG] TPM2_VerifySignature: Error response, draining 0 bytes
+[TEST] Sign E8 (wrong digest): rc=0x0000009B (TPM_RC_SIGNATURE)
+[DBG] TPM2_Sign: Sending cmd (tag=0x8001, size=92, code=0x0000015D)
+(INFO) TPM: Transitioned from READY to RECV
+(INFO) TPM: tpmGo received, state=3, fifo_used=92
+(INFO) TPM: Processing command 0x0000015D (size=92, fifo=82)
+TPM2_Sign: Signing digest with key handle 0x80000005
+(INFO) TPM: Command completed, rc=0x0, response size=272
+[DBG] TPM2_Sign: Received rsp (tag=0x8001, size=272, rc=0x00000000)
+[DBG] TPM2_Sign: remaining=262 bytes
+[DBG] TPM2_Sign: Reading 262 bytes to out (out size=262)
+[DBG] TPM2_VerifySignature: Sending cmd (tag=0x8001, size=310, code=0x00000177)
+(INFO) TPM: Transitioned from READY to RECV
+(INFO) TPM: tpmGo received, state=3, fifo_used=310
+(INFO) TPM: Processing command 0x00000177 (size=310, fifo=300)
+TPM2_VerifySignature: Verifying signature with key handle 0x80000005
+(INFO) TPM: Command completed, rc=0x9B, response size=10
+[DBG] TPM2_VerifySignature: Received rsp (tag=0x8001, size=10, rc=0x0000009B)
+[DBG] TPM2_VerifySignature: remaining=0 bytes
+[DBG] TPM2_VerifySignature: Error response, draining 0 bytes
+[TEST] Sign E9 (corrupted sig): rc=0x0000009B (TPM_RC_SIGNATURE)
+[DBG] TPM2_Sign: Sending cmd (tag=0x8001, size=92, code=0x0000015D)
+(INFO) TPM: Transitioned from READY to RECV
+(INFO) TPM: tpmGo received, state=3, fifo_used=92
+(INFO) TPM: Processing command 0x0000015D (size=92, fifo=82)
+TPM2_Sign: Signing digest with key handle 0x80000005
+(INFO) TPM: Command completed, rc=0x0, response size=272
+[DBG] TPM2_Sign: Received rsp (tag=0x8001, size=272, rc=0x00000000)
+[DBG] TPM2_Sign: remaining=262 bytes
+[DBG] TPM2_Sign: Reading 262 bytes to out (out size=262)
+[TEST] Sign E10 (explicit hashAlg): rc=0x00000000
+[TEST] Sign integration tests: DONE
+
+[TEST] Workflow integration tests
+[DBG] TPM2_Sign: Sending cmd (tag=0x8001, size=92, code=0x0000015D)
+(INFO) TPM: Transitioned from READY to RECV
+(INFO) TPM: tpmGo received, state=3, fifo_used=92
+(INFO) TPM: Processing command 0x0000015D (size=92, fifo=82)
+TPM2_Sign: Signing digest with key handle 0x80000005
+(INFO) TPM: Command completed, rc=0x0, response size=272
+[DBG] TPM2_Sign: Received rsp (tag=0x8001, size=272, rc=0x00000000)
+[DBG] TPM2_Sign: remaining=262 bytes
+[DBG] TPM2_Sign: Reading 262 bytes to out (out size=262)
+[TEST] Workflow F1 (e2e sign): rc=0x00000000
+[DBG] TPM2_Load: Sending cmd (tag=0x8001, size=846, code=0x00000157)
+(INFO) TPM: Transitioned from READY to RECV
+(INFO) TPM: tpmGo received, state=3, fifo_used=846
+(INFO) TPM: Processing command 0x00000157 (size=846, fifo=836)
+(INFO) TPM: Command completed, rc=0x119, response size=10
+[DBG] TPM2_Load: Received rsp (tag=0x8001, size=10, rc=0x00000119)
+[DBG] TPM2_Load: remaining=0 bytes
+[DBG] TPM2_Load: Error response, draining 0 bytes
+[TEST] Workflow F2 (reuse protection): rc=0x00000119 (UNKNOWN_RC)
+[DBG] TPM2_Create: Sending cmd (tag=0x8001, size=926, code=0x00000153)
+(INFO) TPM: Transitioned from READY to RECV
+(INFO) TPM: tpmGo received, state=3, fifo_used=926
+(INFO) TPM: Processing command 0x00000153 (size=926, fifo=916)
+(INFO) TPM: Command completed, rc=0x119, response size=10
+[DBG] TPM2_Create: Received rsp (tag=0x8001, size=10, rc=0x00000119)
+[DBG] TPM2_Create: remaining=0 bytes
+[DBG] TPM2_Create: Error response, draining 0 bytes
+Workflow F3: second Create should succeed
+Expected: TPM_RC_SUCCESS, got: UNKNOWN_RC
+[TEST] Workflow integration tests: DONE
 ==================================================
 [SUITE] Key Management Tests Complete
 ==================================================
 
 Assert Report
-Total asserts: 47
+Total asserts: 98
 Failed asserts: 3
 Some tests failed!
+QEMU: Terminated
