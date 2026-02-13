@@ -4,9 +4,9 @@
 #include <string.h>
 #include <stdlib.h>
 
-/* Simplified key material used by the model to exercise crypto flows */
-static const uint8_t DEFAULT_RSA_KEY[TPM_MAX_KEY_SIZE] = {0x11};
-static const uint16_t DEFAULT_RSA_KEY_SIZE = 32; /* bytes */
+/* Fallback AES key for EncryptDecrypt2 when no symmetric key object
+ * is available.  RSA commands now resolve real key material from the
+ * loaded OBJECT via HandleToObject(). */
 static const uint8_t DEFAULT_AES_KEY[16] = {
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
     0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
@@ -198,6 +198,34 @@ TPM_RC TPM2_Sign(Sign_In *in, Sign_Out *out) {
                   "TPM2_Sign: Signing digest with key handle 0x%08X\n",
                   in->keyHandle);
 
+    /* Resolve the signing key from the handle */
+    OBJECT *signKey = HandleToObject(in->keyHandle);
+    if (signKey == NULL) {
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "TPM2_Sign: Handle 0x%08X not loaded\n",
+                      in->keyHandle);
+        return TPM_RCS_HANDLE;
+    }
+
+    /* The key must be an RSA signing key */
+    if (signKey->publicArea.type != TPM_ALG_RSA) {
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "TPM2_Sign: Handle 0x%08X is not an RSA key\n",
+                      in->keyHandle);
+        return TPM_RCS_TYPE;
+    }
+
+    /* Check sign_encrypt attribute */
+    if (!signKey->publicArea.objectAttributes.sign_encrypt) {
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "TPM2_Sign: Key 0x%08X does not have sign attribute\n",
+                      in->keyHandle);
+        return TPM_RC_ATTRIBUTES;
+    }
+
+    /* A restricted signing key must not sign externally-supplied data
+     * without a valid ticket, but our simplified model accepts it. */
+
     if (in->digest.size == 0 || in->digest.size > sizeof(in->digest.buffer)) {
         return TPM_RC_VALUE;
     }
@@ -207,13 +235,28 @@ TPM_RC TPM2_Sign(Sign_In *in, Sign_Out *out) {
         return TPM_RC_HASH;
     }
 
+    /* Use the actual private key material from the loaded object */
+    const uint8_t *privateKey = signKey->sensitive.sensitive.rsa.buffer;
+    uint16_t       keySize    = signKey->sensitive.sensitive.rsa.size;
+
+    if (keySize == 0) {
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "TPM2_Sign: Key 0x%08X has no private key material\n",
+                      in->keyHandle);
+        return TPM_RC_KEY;
+    }
+
+    qemu_log_mask(LOG_GUEST_ERROR,
+                  "TPM2_Sign: Using real key material (size=%u) from "
+                  "handle 0x%08X\n", keySize, in->keyHandle);
+
     CryptSignRSA_PSS_SHA256((const uint8_t *)in->digest.buffer, in->digest.size,
-                            DEFAULT_RSA_KEY, DEFAULT_RSA_KEY_SIZE,
+                            privateKey, keySize,
                             (uint8_t *)out->signature.signature.buffer);
 
     out->signature.sigAlg = TPM_ALG_RSASSA;
     out->signature.hashAlg = TPM_ALG_SHA256;
-    out->signature.signature.size = DEFAULT_RSA_KEY_SIZE;
+    out->signature.signature.size = keySize;
 
     return TPM_RC_SUCCESS;
 }
@@ -224,22 +267,50 @@ TPM_RC TPM2_VerifySignature(VerifySignature_In *in, VerifySignature_Out *out) {
         "TPM2_VerifySignature: Verifying signature with key handle 0x%08X\n",
         in->keyHandle);
 
+    /* Resolve the verification key from the handle */
+    OBJECT *verifyKey = HandleToObject(in->keyHandle);
+    if (verifyKey == NULL) {
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "TPM2_VerifySignature: Handle 0x%08X not loaded\n",
+                      in->keyHandle);
+        return TPM_RCS_HANDLE;
+    }
+
+    if (verifyKey->publicArea.type != TPM_ALG_RSA) {
+        return TPM_RCS_TYPE;
+    }
+
     if (in->digest.size == 0 || in->signature.signature.size == 0) {
         return TPM_RC_SIGNATURE;
     }
 
+    /* Use the actual public key material for verification */
+    const uint8_t *publicKey = verifyKey->publicArea.unique.rsa.buffer;
+    uint16_t       keySize   = verifyKey->publicArea.unique.rsa.size;
+
+    if (keySize == 0) {
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "TPM2_VerifySignature: Key 0x%08X has no public key "
+                      "material\n", in->keyHandle);
+        return TPM_RC_KEY;
+    }
+
+    qemu_log_mask(LOG_GUEST_ERROR,
+                  "TPM2_VerifySignature: Using real public key (size=%u) "
+                  "from handle 0x%08X\n", keySize, in->keyHandle);
+
     uint8_t ok = CryptVerifySignatureRSA_PSS_SHA256(
         (const uint8_t *)in->digest.buffer, (uint16_t)in->digest.size,
         (const uint8_t *)in->signature.signature.buffer,
-        (uint16_t)in->signature.signature.size, DEFAULT_RSA_KEY,
-        DEFAULT_RSA_KEY_SIZE);
+        (uint16_t)in->signature.signature.size, publicKey,
+        keySize);
 
     if (!ok) {
         return TPM_RC_SIGNATURE;
     }
 
     out->validation.tag = TPM_ST_NO_SESSIONS;
-    out->validation.hierarchy = TPM_RH_OWNER;
+    out->validation.hierarchy = verifyKey->hierarchy;
     out->validation.digest = in->digest;
 
     return TPM_RC_SUCCESS;
@@ -384,12 +455,40 @@ TPM_RC TPM2_RSA_Encrypt(RSA_Encrypt_In *in, RSA_Encrypt_Out *out) {
                   "TPM2_RSA_Encrypt: RSA encryption with handle 0x%08X\n",
                   in->keyHandle);
 
+    /* Resolve the encryption key from the handle */
+    OBJECT *encKey = HandleToObject(in->keyHandle);
+    if (encKey == NULL) {
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "TPM2_RSA_Encrypt: Handle 0x%08X not loaded\n",
+                      in->keyHandle);
+        return TPM_RCS_HANDLE;
+    }
+
+    if (encKey->publicArea.type != TPM_ALG_RSA) {
+        return TPM_RCS_TYPE;
+    }
+
+    /* RSA_Encrypt uses the PUBLIC key (anyone can encrypt) */
+    const uint8_t *publicKey = encKey->publicArea.unique.rsa.buffer;
+    uint16_t       keySize   = encKey->publicArea.unique.rsa.size;
+
+    if (keySize == 0) {
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "TPM2_RSA_Encrypt: Key 0x%08X has no public key "
+                      "material\n", in->keyHandle);
+        return TPM_RC_KEY;
+    }
+
     if (in->message.size == 0 || in->message.size > TPM_MAX_KEY_SIZE) {
         return TPM_RC_VALUE;
     }
 
+    qemu_log_mask(LOG_GUEST_ERROR,
+                  "TPM2_RSA_Encrypt: Using real public key (size=%u) "
+                  "from handle 0x%08X\n", keySize, in->keyHandle);
+
     TPM_RC crypt_rc = CryptRSAEncrypt(in->message.buffer, in->message.size,
-                                      DEFAULT_RSA_KEY, DEFAULT_RSA_KEY_SIZE,
+                                      publicKey, keySize,
                                       out->encrypted.buffer);
     if (crypt_rc != TPM_RC_SUCCESS) return crypt_rc;
     out->encrypted.size = in->message.size;
@@ -402,12 +501,48 @@ TPM_RC TPM2_RSA_Decrypt(RSA_Decrypt_In *in, RSA_Decrypt_Out *out) {
                   "TPM2_RSA_Decrypt: RSA decryption with handle 0x%08X\n",
                   in->keyHandle);
 
+    /* Resolve the decryption key from the handle */
+    OBJECT *decKey = HandleToObject(in->keyHandle);
+    if (decKey == NULL) {
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "TPM2_RSA_Decrypt: Handle 0x%08X not loaded\n",
+                      in->keyHandle);
+        return TPM_RCS_HANDLE;
+    }
+
+    if (decKey->publicArea.type != TPM_ALG_RSA) {
+        return TPM_RCS_TYPE;
+    }
+
+    /* Check decrypt attribute */
+    if (!decKey->publicArea.objectAttributes.decrypt) {
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "TPM2_RSA_Decrypt: Key 0x%08X does not have decrypt "
+                      "attribute\n", in->keyHandle);
+        return TPM_RC_ATTRIBUTES;
+    }
+
+    /* RSA_Decrypt uses the PRIVATE key */
+    const uint8_t *privateKey = decKey->sensitive.sensitive.rsa.buffer;
+    uint16_t       keySize    = decKey->sensitive.sensitive.rsa.size;
+
+    if (keySize == 0) {
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "TPM2_RSA_Decrypt: Key 0x%08X has no private key "
+                      "material\n", in->keyHandle);
+        return TPM_RC_KEY;
+    }
+
     if (in->encrypted.size == 0 || in->encrypted.size > TPM_MAX_KEY_SIZE) {
         return TPM_RC_VALUE;
     }
 
+    qemu_log_mask(LOG_GUEST_ERROR,
+                  "TPM2_RSA_Decrypt: Using real private key (size=%u) "
+                  "from handle 0x%08X\n", keySize, in->keyHandle);
+
     TPM_RC crypt_rc = CryptRSADecrypt(in->encrypted.buffer, in->encrypted.size,
-                                      DEFAULT_RSA_KEY, DEFAULT_RSA_KEY_SIZE,
+                                      privateKey, keySize,
                                       out->decrypted.buffer);
     if (crypt_rc != TPM_RC_SUCCESS) return crypt_rc;
     out->decrypted.size = in->encrypted.size;
