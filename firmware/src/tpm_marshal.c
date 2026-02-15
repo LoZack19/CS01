@@ -1,8 +1,9 @@
-/*
- * tpm_marshal.c - Firmware-side TPM marshaling functions.
+/**
+ * @file tpm_marshal.c
+ * @brief Canonical big-endian marshalling of TPMT_PUBLIC.
  *
- * Ported from qemu/hw/misc/tpm_marshal_tpm.c to produce byte-identical
- * output for Name computation.
+ * Ported from @c qemu/hw/misc/tpm_marshal_tpm.c to produce byte-identical
+ * output so that firmware-side Name computation matches the TPM device.
  */
 
 #include <stdint.h>
@@ -10,10 +11,11 @@
 #include "tpm_marshal.h"
 #include "tpm2_spec_protocol.h"
 
-/* -------------------------------------------------------------------
- * Big-endian marshaling helpers
- * ------------------------------------------------------------------- */
+/* ====================================================================== */
+/*  Big-endian marshalling helpers                                         */
+/* ====================================================================== */
 
+/** @brief Write a uint16 in big-endian and advance @p *buf. */
 static uint16_t marshal_uint16(uint16_t value, uint8_t **buf) {
     (*buf)[0] = (uint8_t)(value >> 8);
     (*buf)[1] = (uint8_t)(value & 0xFF);
@@ -21,6 +23,7 @@ static uint16_t marshal_uint16(uint16_t value, uint8_t **buf) {
     return 2;
 }
 
+/** @brief Write a uint32 in big-endian and advance @p *buf. */
 static uint16_t marshal_uint32(uint32_t value, uint8_t **buf) {
     (*buf)[0] = (uint8_t)(value >> 24);
     (*buf)[1] = (uint8_t)(value >> 16);
@@ -30,6 +33,7 @@ static uint16_t marshal_uint32(uint32_t value, uint8_t **buf) {
     return 4;
 }
 
+/** @brief Write a TPM2B-style size-prefixed buffer in big-endian. */
 static uint16_t marshal_uint16_buffer(uint16_t size, const uint8_t *data,
                                       uint8_t **buf) {
     uint16_t total = marshal_uint16(size, buf);
@@ -40,9 +44,9 @@ static uint16_t marshal_uint16_buffer(uint16_t size, const uint8_t *data,
     return total + size;
 }
 
-/* -------------------------------------------------------------------
- * Public API
- * ------------------------------------------------------------------- */
+/* ====================================================================== */
+/*  Public API                                                             */
+/* ====================================================================== */
 
 uint16_t TPMT_PUBLIC_Marshal(const TPMT_PUBLIC *publicArea, uint8_t *buffer) {
     uint8_t *ptr = buffer;

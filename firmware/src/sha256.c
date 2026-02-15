@@ -1,3 +1,12 @@
+/**
+ * @file sha256.c
+ * @brief SHA-256 implementation (FIPS 180-4).
+ *
+ * Self-contained; no platform or OS dependencies.
+ * The round constants @c k[] and initial hash values follow
+ * FIPS 180-4 §4.2.2 and §5.3.3 respectively.
+ */
+
 #include <stdint.h>
 #include <string.h>
 #include "sha256.h"
@@ -10,6 +19,7 @@
 #define SIG0(x)              (ROTRIGHT(x, 7) ^ ROTRIGHT(x, 18) ^ ((x) >> 3))
 #define SIG1(x)              (ROTRIGHT(x, 17) ^ ROTRIGHT(x, 19) ^ ((x) >> 10))
 
+/** @brief SHA-256 round constants (FIPS 180-4 §4.2.2). */
 static const uint32_t k[64] = {
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1,
     0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
@@ -23,6 +33,9 @@ static const uint32_t k[64] = {
     0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
     0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2};
 
+/**
+ * @brief Process one 512-bit block through the SHA-256 compression function.
+ */
 void sha256_transform(SHA256_CTX *ctx, const uint8_t data[]) {
     uint32_t a, b, c, d, e, f, g, h, i, j, t1, t2, m[64];
 

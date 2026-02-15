@@ -1,5 +1,19 @@
-/*
- * tpm_driver.c - Low-level TPM FIFO interface and command dispatch.
+/**
+ * @file tpm_driver.c
+ * @brief TPM FIFO driver — I/O primitives, control, and command dispatch.
+ *
+ * All TPM command wrappers are generated via three X-macros:
+ *   - @c TPM2_InOut(F):   input + output (e.g. Sign, Hash, Load)
+ *   - @c TPM2_In(F):      input only (e.g. Startup, NV_Write)
+ *   - @c TPM2_NoInOut(F): no input (e.g. GetTestResult)
+ *
+ * Each macro expands to a full function that:
+ *   1. Builds and sends the command header + input struct
+ *   2. Calls tpm_go()
+ *   3. Receives the response header
+ *   4. Reads the output struct (if any) or drains extra bytes
+ *
+ * @see tpm_driver.h for declarations and public API.
  */
 
 #include "tpm_platform.h"
@@ -12,21 +26,29 @@
  * ===========================================================================
  */
 
+/**
+ * @brief Busy-wait until TPM_STS.EXPECT is set.
+ * @return @c true if EXPECT is set, @c false otherwise.
+ */
 bool tpm_send_rdy(void) {
     return TPM_STS & TPM_STS_EXPECT;
 }
 
+/**
+ * @brief Busy-wait until TPM_STS.DATA_AVAIL is set.
+ * @return @c true if DATA_AVAIL is set, @c false otherwise.
+ */
 bool tpm_receive_rdy(void) {
     return TPM_STS & TPM_STS_DATA_AVAIL;
 }
 
 /**
  * @brief Send data into TPM
- * @param[in] data Data to be sent into the TPM
- * @param[in] size Amount of data to be sent
  *
  * @note This could be made more efficient by using burstSize instead of waiting
  *       on every byte.
+ *
+ * @see tpm_driver.h for parameter documentation.
  */
 void tpm_send(const void *data, size_t size) {
     for (size_t i = 0; i < size; i++) {
@@ -38,11 +60,11 @@ void tpm_send(const void *data, size_t size) {
 
 /**
  * @brief Receive data from TPM
- * @param[out] data Storage for the received data
- * @param[in] size Amount of data to retrieve
  *
  * @note This could be made more efficient by using burstSize instead of waiting
  *       on every byte.
+ *
+ * @see tpm_driver.h for parameter documentation.
  */
 void tpm_receive(void *data, size_t size) {
     for (size_t i = 0; i < size; i++) {
@@ -85,10 +107,12 @@ void tpm_go(void) {
  * ===========================================================================
  */
 
+/* documented in tpm_driver.h */
 size_t tpm_min_size(size_t a, size_t b) {
     return (a < b) ? a : b;
 }
 
+/* documented in tpm_driver.h */
 void tpm_drain_bytes(size_t size) {
     uint8_t sink[16];
     while (size > 0) {
@@ -105,6 +129,22 @@ void tpm_drain_bytes(size_t size) {
 
 #if defined(TPM_TEST_ENABLE_TRANSPORT_NEGATIVE) || \
     defined(TPM_TEST_ENABLE_ERROR_HANDLING)
+/**
+ * @brief Send a raw TPM command and return the response header.
+ *
+ * Builds a well-formed command header (tag + computed size + code),
+ * transmits the optional payload, triggers execution, and reads back
+ * the response header.  Any remaining response bytes are drained.
+ *
+ * Used by transport-negative and error-handling test suites to craft
+ * arbitrary command sequences.
+ *
+ * @param[in] tag           TPM_ST tag for the command header.
+ * @param[in] commandCode   TPM_CC command code.
+ * @param[in] payload       Pointer to payload bytes (may be @c NULL).
+ * @param[in] payload_size  Payload length in bytes.
+ * @return The received response header.
+ */
 tpm_rsp_header_t tpm_send_raw_command(uint16_t tag, uint32_t commandCode,
                                       const void *payload,
                                       size_t payload_size) {
@@ -197,7 +237,11 @@ void skip_auth_response_area(void) {
 }
 
 /* ===========================================================================
- * TPM2 command wrapper macros and instantiations
+ * TPM2 command wrapper macros (X-macro pattern)
+ *
+ * TPM2_InOut(F)  — generates  TPM_RC TPM2_F(F_In *in, F_Out *out)
+ * TPM2_In(F)     — generates  TPM_RC TPM2_F(F_In *in)
+ * TPM2_NoInOut(F)— generates  TPM_RC TPM2_F(F_Out *out)
  * ===========================================================================
  */
 

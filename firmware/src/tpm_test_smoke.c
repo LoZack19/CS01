@@ -1,15 +1,18 @@
-/*
- * tpm_test_smoke.c - Standalone command smoke tests (no shared state).
+/**
+ * @file tpm_test_smoke.c
+ * @brief Standalone command smoke tests (no shared state between tests).
  *
- * Contains:
- *   - GROUP A: Transport & framing negative tests  (verification S.1)
- *   - NV DefineSpace / WriteRead tests
- *   - Hash smoke test
- *   - Sign smoke test
- *   - VerifySignature smoke test
- *   - EncryptDecrypt2 smoke test
- *   - RSA Encrypt/Decrypt smoke test
- *   - GROUP G: Error handling tests  (verification S.9)
+ * Each test exercises a single TPM command in isolation and verifies
+ * the return code and basic output structure.
+ *
+ * Groups (mapped to verification properties):
+ *   - State machine startup / shutdown   (S.1)
+ *   - Transport & framing negative tests (S.2)
+ *   - NV DefineSpace / WriteRead
+ *   - Hash, Sign, VerifySignature, EncryptDecrypt2, RSA_Encrypt/Decrypt
+ *   - Error handling tests               (S.9)
+ *
+ * @see tpm_tests_config.h for compile-time enable/disable control.
  */
 
 #include "tpm_platform.h"
@@ -18,6 +21,18 @@
 #include "tpm2_spec_protocol.h"
 #include "tpm_tests_config.h"
 
+/* ====================================================================== */
+/*  State Machine Startup / Shutdown (S.1)                                 */
+/* ====================================================================== */
+
+/**
+ * @brief Verify the TPM state-machine startup sequence.
+ *
+ * Asserts that commands before Startup return TPM_RC_INITIALIZE, then
+ * performs Startup(CLEAR) + SelfTest + GetCapability + GetTestResult.
+ *
+ * @return true if Startup succeeded and the TPM is ready; false otherwise.
+ */
 bool TPM2_StateMachine_startup_test(void) {
     DBG_PRINT("\n[TEST] State machine startup test\n");
     bool ok = true;
@@ -81,6 +96,7 @@ bool TPM2_StateMachine_startup_test(void) {
     return ok;
 }
 
+/** @brief Perform TPM2_Shutdown(STATE) and verify success. */
 void TPM2_StateMachine_shutdown_test(void) {
     DBG_PRINT("\n[TEST] State machine shutdown test\n");
 
@@ -90,9 +106,16 @@ void TPM2_StateMachine_shutdown_test(void) {
            string_from_TPM_RC(TPM_RC_SUCCESS), string_from_TPM_RC(rc));
 }
 
-/* ===========================================================================
- * GROUP A: Transport & Framing Negative Tests  (verification S.1)
- * ===========================================================================
+/* ====================================================================== */
+/*  GROUP A: Transport & Framing Negative Tests (S.2)                      */
+/* ====================================================================== */
+
+/**
+ * @brief Verify that the TPM rejects malformed commands.
+ *
+ * A1 — invalid tag       → TPM_RC_BAD_TAG
+ * A2 — unknown CC        → TPM_RC_COMMAND_CODE
+ * A3 — short commandSize → TPM_RC_COMMAND_SIZE
  */
 #ifdef TPM_TEST_ENABLE_TRANSPORT_NEGATIVE
 void TPM2_Transport_negative_tests(void) {
@@ -144,11 +167,11 @@ void TPM2_Transport_negative_tests(void) {
 }
 #endif
 
-/* ===========================================================================
- * NV Tests
- * ===========================================================================
- */
+/* ====================================================================== */
+/*  NV Tests                                                               */
+/* ====================================================================== */
 
+/** @brief Smoke test: define a new NV index with OWNERWRITE | AUTHREAD. */
 #ifdef TPM_TEST_ENABLE_NV_DEFINE
 void TPM2_NV_DefineSpace_test(void) {
     TPM_RC res;
@@ -178,6 +201,7 @@ void TPM2_NV_DefineSpace_test(void) {
 }
 #endif
 
+/** @brief Smoke test: write 32 bytes to an NV index and read them back. */
 #ifdef TPM_TEST_ENABLE_NV_WRITE_READ
 void TPM2_NV_WriteRead_test(void) {
     TPM_RC res;
@@ -235,11 +259,11 @@ void TPM2_NV_WriteRead_test(void) {
 }
 #endif
 
-/* ===========================================================================
- * Hash Smoke Test
- * ===========================================================================
- */
+/* ====================================================================== */
+/*  Crypto Smoke Tests                                                     */
+/* ====================================================================== */
 
+/** @brief Hash 4 bytes with SHA-256 and verify a 32-byte digest is returned. */
 #ifdef TPM_TEST_ENABLE_HASH
 void TPM2_Hash_smoke_test(void) {
     Hash_In in = {0};
@@ -263,11 +287,7 @@ void TPM2_Hash_smoke_test(void) {
 }
 #endif
 
-/* ===========================================================================
- * Sign Smoke Test
- * ===========================================================================
- */
-
+/** @brief Sign a 4-byte digest with a transient key; verify marshalling. */
 #ifdef TPM_TEST_ENABLE_SIGN
 void TPM2_Sign_smoke_test(void) {
     Sign_In in = {0};
@@ -296,11 +316,7 @@ void TPM2_Sign_smoke_test(void) {
 }
 #endif
 
-/* ===========================================================================
- * VerifySignature Smoke Test
- * ===========================================================================
- */
-
+/** @brief Submit a VerifySignature command; verify marshalling sanity. */
 #ifdef TPM_TEST_ENABLE_VERIFY_SIGNATURE
 void TPM2_VerifySignature_smoke_test(void) {
     VerifySignature_In in = {0};
@@ -329,11 +345,7 @@ void TPM2_VerifySignature_smoke_test(void) {
 }
 #endif
 
-/* ===========================================================================
- * EncryptDecrypt2 Smoke Test
- * ===========================================================================
- */
-
+/** @brief Encrypt 16 bytes with AES-CFB; verify marshalling sanity. */
 #ifdef TPM_TEST_ENABLE_ENCRYPT_DECRYPT2
 void TPM2_EncryptDecrypt2_smoke_test(void) {
     EncryptDecrypt2_In in = {0};
@@ -376,11 +388,7 @@ void TPM2_EncryptDecrypt2_smoke_test(void) {
 }
 #endif
 
-/* ===========================================================================
- * RSA Encrypt/Decrypt Smoke Test
- * ===========================================================================
- */
-
+/** @brief RSA encrypt then decrypt a 4-byte message; verify round-trip. */
 #ifdef TPM_TEST_ENABLE_RSA_ENCRYPT_DECRYPT
 void TPM2_RSA_EncryptDecrypt_smoke_test(void) {
     RSA_Encrypt_In enc_in = {0};
@@ -420,11 +428,16 @@ void TPM2_RSA_EncryptDecrypt_smoke_test(void) {
 }
 #endif
 
-/* ===========================================================================
- * GROUP G: Error Handling Tests  (verification S.9)
- * ===========================================================================
- */
+/* ====================================================================== */
+/*  GROUP G: Error Handling Tests (S.9)                                    */
+/* ====================================================================== */
 
+/**
+ * @brief Verify that the TPM returns correct error codes for invalid inputs.
+ *
+ * G1 — TPM_RC_HANDLE for bad parent handle (via Load)
+ * G2 — TPM_RC_VALUE  for empty Hash digest
+ */
 #ifdef TPM_TEST_ENABLE_ERROR_HANDLING
 void TPM2_Error_handling_tests(void) {
     DBG_PRINT("\n[TEST] Error handling tests\n");

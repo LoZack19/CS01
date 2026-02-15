@@ -1,9 +1,16 @@
-/*
- * main.c - Entry point and top-level test orchestration.
+/**
+ * @file main.c
+ * @brief Entry point and top-level test orchestration for the TPM firmware.
  *
- * All test logic lives in:
- *   - tpm_test_smoke.c   (standalone command smoke tests)
- *   - tpm_test_keymgmt.c (key lifecycle & verification property tests)
+ * Execution flow:
+ *   1. main() initialises IntCtrl and LPUART3 for debug output.
+ *   2. tpm_test() requests TPM locality, runs the state-machine startup,
+ *      then dispatches enabled smoke tests (tpm_test_smoke.c) and the
+ *      key-management suite (tpm_test_keymgmt.c).
+ *   3. State-machine shutdown is performed last.
+ *   4. assert_report() prints pass/fail totals.
+ *
+ * Test selection is controlled at compile time by tpm_tests_config.h.
  */
 
 #include "tpm_platform.h"
@@ -48,9 +55,13 @@ void TPM2_RSA_EncryptDecrypt_smoke_test(void);
 /* ---- Key management suite declaration (tpm_test_keymgmt.c) ---- */
 void TPM2_KeyManagement_test_suite(void);
 
-/* ================================================================
- * tpm_test - top-level test orchestrator
- * ================================================================ */
+/**
+ * @brief Top-level test orchestrator.
+ *
+ * Requests TPM locality, runs Startup, dispatches all enabled test
+ * groups in order, then performs Shutdown.  If Startup fails, all
+ * subsequent tests are skipped.
+ */
 void tpm_test(void) {
     tpm_wait_access();
     Lpuart_Uart_Ip_SyncSend(LPUART_INSTANCE,
@@ -121,9 +132,12 @@ void tpm_test(void) {
     TPM2_StateMachine_shutdown_test();
 }
 
-/* ================================================================
- * main - hardware init, run tests, report results
- * ================================================================ */
+/**
+ * @brief Firmware entry point — hardware init, run tests, report results.
+ *
+ * Initialises the interrupt controller and LPUART3, then enters an
+ * infinite loop after printing the assertion summary.
+ */
 int main(void) {
     IntCtrl_Ip_Init(&IntCtrlConfig_0);
     IntCtrl_Ip_EnableIrq(LPUART3_IRQn);

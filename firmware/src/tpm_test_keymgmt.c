@@ -1,28 +1,24 @@
-/*
- * tpm_test_keymgmt.c - Key lifecycle tests and verification property groups.
+/**
+ * @file tpm_test_keymgmt.c
+ * @brief Key lifecycle tests and verification property groups.
  *
- * Contains:
- *   - Shared state for key management tests
- *   - TPM2_CreatePrimary test + with-sessions test
- *   - TPM2_Create test
- *   - TPM2_Load test + negative tests
- *   - TPM2_ReadPublic test
- *   - TPM2_ObjectChangeAuth test
- *   - GROUP B: CreatePrimary template match  (verification S.3)
- *   - GROUP C: Create negative tests         (verification S.4)
- *   - GROUP D: Load private blob integrity   (verification S.5)
- *   - GROUP E: Sign integration tests        (verification S.6)
- *       E1-E3: Basic sign, scheme fields, signature size
- *       E4: Invalid hashAlg
- *       E5: Empty digest rejection
- *       E6: Signature structure (sigAlg/hashAlg field values)
- *       E7: Sign->VerifySignature roundtrip
- *       E8: VerifySignature with wrong digest (negative)
- *       E9: VerifySignature with corrupted signature (negative)
- *       E10: Explicit SHA256 hashAlg scheme handling
- *   - GROUP F: Workflow integration tests    (verification S.8)
- *   - GROUP H: Data size tests               (verification S.10)
- *   - TPM2_KeyManagement_test_suite() orchestrator
+ * Exercises the full TPM 2.0 key management path and maps each group
+ * to its verification property (see docs/verification/verification.md):
+ *
+ * | Group | Test                          | Property |
+ * |-------|-------------------------------|----------|
+ * | A     | CreatePrimary / Create / Load  | S.3      |
+ * | B     | CreatePrimary template match    | S.3      |
+ * | C     | Create negative tests          | S.4      |
+ * | D     | Load private blob integrity    | S.5      |
+ * | E     | Sign integration (E1-E10)      | S.6      |
+ * | F     | Workflow integration (F1-F3)   | S.8      |
+ * | H     | Data size / boundary tests     | S.10     |
+ *
+ * Tests share state (handles, output structs) through file-scope
+ * variables guarded by per-test `#ifdef` blocks.
+ *
+ * @see TPM2_KeyManagement_test_suite() for the orchestrator.
  */
 
 #include "tpm_platform.h"
@@ -33,27 +29,27 @@
 #include "tpm_marshal.h"
 #include "sha256.h"
 
-/* ===========================================================================
- * Shared state for key management tests
- * ===========================================================================
- */
+/** @name Shared state for key management tests
+ *  File-scope variables that chain test outputs across the suite.
+ *  @{ */
 
 #ifdef TPM_TEST_ENABLE_CREATEPRIMARY
 static CreatePrimary_Out
-    g_create_primary_out; /* Output from TPM2_CreatePrimary */
+    g_create_primary_out; /**< Output from TPM2_CreatePrimary. */
 #endif
 
 #ifdef TPM_TEST_ENABLE_CREATE
-static Create_Out g_create_out; /* Output from TPM2_Create */
+static Create_Out g_create_out; /**< Output from TPM2_Create. */
 #endif
 
 #ifdef TPM_TEST_ENABLE_LOAD
-static Load_Out g_load_out; /* Output from TPM2_Load */
+static Load_Out g_load_out; /**< Output from TPM2_Load. */
 #endif
 
-static TPM_HANDLE g_parent_handle; /* Parent key handle (primary) */
-static bool g_key_created = false; /* Flag: key was created successfully */
-static bool g_key_loaded = false;  /* Flag: key was loaded successfully */
+static TPM_HANDLE g_parent_handle; /**< Parent key handle (primary). */
+static bool g_key_created = false; /**< Flag: key was created successfully. */
+static bool g_key_loaded = false;  /**< Flag: key was loaded successfully. */
+/** @} */
 
 /* ===========================================================================
  * TPM2_CreatePrimary Test
@@ -1075,6 +1071,12 @@ void TPM2_ObjectChangeAuth_test(void) {
  */
 #if defined(TPM_TEST_ENABLE_CREATEPRIMARY_TEMPLATE_MATCH) && \
     defined(TPM_TEST_ENABLE_CREATEPRIMARY)
+/**
+ * @brief Verify that the outPublic fields match the creation template (S.3).
+ *
+ * Checks type, nameAlg, objectAttributes, symmetric, scheme, keyBits,
+ * and exponent against the RSA-2048 template used in CreatePrimary.
+ */
 void TPM2_CreatePrimary_template_match_test(void) {
     DBG_PRINT("\n[TEST] CreatePrimary template match verification\n");
 
@@ -1130,6 +1132,12 @@ void TPM2_CreatePrimary_template_match_test(void) {
  */
 #if defined(TPM_TEST_ENABLE_CREATE_NEGATIVE) && \
     defined(TPM_TEST_ENABLE_CREATEPRIMARY)
+/**
+ * @brief Negative tests for TPM2_Create (S.4).
+ *
+ * - C1: invalid parent handle -> TPM_RC_VALUE expected.
+ * - C2: unsupported algorithm  -> TPM_RC_ASYMMETRIC expected.
+ */
 void TPM2_Create_negative_tests(void) {
     TPM_RC res;
 
@@ -1186,6 +1194,12 @@ void TPM2_Create_negative_tests(void) {
  */
 #if defined(TPM_TEST_ENABLE_LOAD_PRIVATE_INTEGRITY) && \
     defined(TPM_TEST_ENABLE_CREATE) && defined(TPM_TEST_ENABLE_LOAD)
+/**
+ * @brief Corrupt the private blob and verify that Load rejects it (S.5).
+ *
+ * Flips a byte in the TPM2B_PRIVATE buffer produced by Create and expects
+ * TPM2_Load to return an integrity-related error.
+ */
 void TPM2_Load_private_integrity_test(void) {
     TPM_RC res;
 
@@ -1232,6 +1246,14 @@ void TPM2_Load_private_integrity_test(void) {
  */
 #if defined(TPM_TEST_ENABLE_SIGN_INTEGRATION) && \
     defined(TPM_TEST_ENABLE_SIGN) && defined(TPM_TEST_ENABLE_LOAD)
+/**
+ * @brief Comprehensive sign / verify tests (S.6, sub-cases E1-E10).
+ *
+ * Covers basic signing, scheme fields, signature size, invalid hashAlg,
+ * empty digest rejection, signature structure, Sign->VerifySignature
+ * roundtrip, wrong-digest negative, corrupted-signature negative,
+ * and explicit SHA-256 scheme handling.
+ */
 void TPM2_Sign_integration_tests(void) {
     TPM_RC res;
 
@@ -1519,6 +1541,13 @@ void TPM2_Sign_integration_tests(void) {
 #if defined(TPM_TEST_ENABLE_WORKFLOW_INTEGRATION) && \
     defined(TPM_TEST_ENABLE_CREATEPRIMARY) &&        \
     defined(TPM_TEST_ENABLE_CREATE) && defined(TPM_TEST_ENABLE_LOAD)
+/**
+ * @brief End-to-end key workflow tests (S.8, sub-cases F1-F3).
+ *
+ * - F1: CreatePrimary -> Create -> Load -> Sign -> VerifySignature.
+ * - F2: ReadPublic returns consistent public area.
+ * - F3: FlushContext releases the transient object.
+ */
 void TPM2_Workflow_integration_tests(void) {
     TPM_RC res;
 
@@ -1657,6 +1686,12 @@ void TPM2_Workflow_integration_tests(void) {
  */
 #if defined(TPM_TEST_ENABLE_DATA_SIZES) && \
     defined(TPM_TEST_ENABLE_CREATEPRIMARY)
+/**
+ * @brief TPM2B size-field and boundary value tests (S.10).
+ *
+ * - H1: Hash with data.size = 0 (empty buffer).
+ * - H2: EncryptDecrypt2 with data close to block-size boundary.
+ */
 void TPM2_Data_size_tests(void) {
     DBG_PRINT("\n[TEST] Data size and boundary tests\n");
 

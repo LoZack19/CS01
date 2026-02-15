@@ -1,11 +1,26 @@
-/*
- * tpm_assert.c - Test assertion framework implementation.
+/**
+ * @file tpm_assert.c
+ * @brief Test assertion framework implementation.
+ *
+ * All diagnostic output is sent synchronously over LPUART3
+ * via Lpuart_Uart_Ip_SyncSend() so that the QEMU host console
+ * receives a deterministic, ordered stream.
  */
 
 #include "tpm_platform.h"
 #include "tpm_assert.h"
 
-/* ---- TPM_RC to string -------------------------------------------------- */
+/* ====================================================================== */
+/*  TPM_RC to string conversion                                            */
+/* ====================================================================== */
+
+/**
+ * @brief Map a TPM_RC value to its macro name.
+ *
+ * Several TPM_RC_* macros are modifiers or aliases that share integer
+ * values (e.g. TPM_RC_H, TPM_RC_P, TPM_RC_1, RC_VER1, TPM_RCS_*).
+ * Those cannot appear as distinct switch labels and are omitted here.
+ */
 
 const char *string_from_TPM_RC(TPM_RC rc) {
     switch (rc) {
