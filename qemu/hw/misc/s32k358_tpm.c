@@ -1,3 +1,22 @@
+/**
+ * @file s32k358_tpm.c
+ * @brief QEMU device model for the S32K358 on-chip TPM.
+ *
+ * Implements a memory-mapped TPM 2.0 device that exposes the
+ * standard FIFO interface (TCG PC Client TIS Section 6) at the base
+ * address configured in the board model.  The device processes
+ * commands sent by the guest firmware through a @c switch dispatch
+ * in @ref s32k358_tpm_process_input.
+ *
+ * Lifecycle (QOM):
+ *   - @ref s32k358_tpm_init      — FIFO creation, MMIO region setup.
+ *   - @ref s32k358_tpm_realize   — TPM global state and NV init.
+ *   - @ref s32k358_tpm_reset     — register + state-machine reset.
+ *
+ * @see s32k358_tpm.h         for register / field definitions.
+ * @see tpm_state_machine.c   for lifecycle command logic.
+ */
+
 #include "qemu/osdep.h"
 #include "qemu/module.h"
 #include "qemu/timer.h"
@@ -9,6 +28,17 @@
 #include "include/hw/misc/s32k358_tpm.h"
 #include "hw/misc/tpm_create_primary.h"
 
+/**
+ * @brief Unmarshal, dispatch, and respond to a single TPM command.
+ *
+ * Called when the state machine enters @c TPM_S_EXEC.  The function:
+ *   1. Unmarshals the command header from the input FIFO.
+ *   2. Validates tag, command size, and state-machine gate.
+ *   3. Dispatches to the appropriate TPM2_* implementation.
+ *   4. Sends the response (header + optional output) via the output FIFO.
+ *
+ * @param[in,out] s  Device state (FIFOs, registers, state machine).
+ */
 static void s32k358_tpm_process_input(S32k358TPMState *s) {
     tpm_cmd_header_t cmd_header;
     TPM_RC rc;
@@ -503,6 +533,18 @@ static void s32k358_tpm_process_input(S32k358TPMState *s) {
     }
 }
 
+/**
+ * @brief MMIO read callback for the TPM device.
+ *
+ * Handles reads from @c TPM_ACCESS, @c TPM_DATA_FIFO, and @c TPM_STS.
+ * Reading from the data FIFO pops a byte and updates burstCount /
+ * dataAvail accordingly.
+ *
+ * @param opaque  Pointer to @ref S32k358TPMState.
+ * @param offset  Register offset within the MMIO region.
+ * @param size    Access width (1/2/4 bytes).
+ * @return Register value (zero on invalid offset).
+ */
 static uint64_t s32k358_tpm_read(void *opaque, hwaddr offset, unsigned size) {
     S32k358TPMState *s = opaque;
     switch (offset) {
@@ -536,6 +578,20 @@ static uint64_t s32k358_tpm_read(void *opaque, hwaddr offset, unsigned size) {
     }
 }
 
+/**
+ * @brief MMIO write callback for the TPM device.
+ *
+ * Handles writes to @c TPM_ACCESS, @c TPM_DATA_FIFO, and @c TPM_STS.
+ * Key transitions:
+ *   - @c commandReady → resets FIFOs, enters READY state.
+ *   - @c tpmGo → enters EXEC, invokes @ref s32k358_tpm_process_input.
+ *   - Data FIFO writes push bytes into the input FIFO while in RECV state.
+ *
+ * @param opaque  Pointer to @ref S32k358TPMState.
+ * @param offset  Register offset within the MMIO region.
+ * @param value   Value written by the guest.
+ * @param size    Access width (1/2/4 bytes).
+ */
 static void s32k358_tpm_write(void *opaque, hwaddr offset, uint64_t value,
                               unsigned size) {
     S32k358TPMState *s = opaque;
@@ -655,6 +711,14 @@ static const MemoryRegionOps s32k358_tpm_ops = {
     .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
+/**
+ * @brief Reset all TPM registers and state to power-on defaults.
+ *
+ * Clears all TIS registers, resets both FIFOs, invokes
+ * @ref tpm_state_machine_reset, and transitions to @c TPM_S_IDLE.
+ *
+ * @param d  Parent @c DeviceState.
+ */
 static void s32k358_tpm_reset(DeviceState *d) {
     S32k358TPMState *s = S32K358_TPM(d);
 
@@ -683,6 +747,16 @@ static void s32k358_tpm_reset(DeviceState *d) {
     s->tpm_state = TPM_S_IDLE; /* Ready to do stuff */
 }
 
+/**
+ * @brief QOM realize — one-time hardware initialisation.
+ *
+ * Initialises the TPM global context (@c state_clear_data), zero-fills
+ * NV memory, calls @c NvInit, and binds the hierarchy module to the
+ * device state.
+ *
+ * @param dev   Device being realised.
+ * @param errp  Error propagation (unused in this implementation).
+ */
 static void s32k358_tpm_realize(DeviceState *dev, Error **errp) {
     S32k358TPMState *s = S32K358_TPM(dev);
 
@@ -705,6 +779,14 @@ static void s32k358_tpm_realize(DeviceState *dev, Error **errp) {
     tpm_hierarchy_set_state(s);
 }
 
+/**
+ * @brief QOM instance init — create FIFOs and MMIO region.
+ *
+ * Allocates the input and output FIFO buffers and registers the
+ * MMIO region with the system bus.
+ *
+ * @param obj  QOM object being initialised.
+ */
 static void s32k358_tpm_init(Object *obj) {
     S32k358TPMState *s = S32K358_TPM(obj);
     SysBusDevice *sbd = SYS_BUS_DEVICE(obj);
@@ -718,6 +800,12 @@ static void s32k358_tpm_init(Object *obj) {
     // sysbus_init_irq(sbd, &s->irq);
 }
 
+/**
+ * @brief QOM class init — wire up realize and reset callbacks.
+ *
+ * @param klass  Class being initialised.
+ * @param data   Unused.
+ */
 static void s32k358_tpm_class_init(ObjectClass *klass, void *data) {
     DeviceClass *dc = DEVICE_CLASS(klass);
     dc->realize = s32k358_tpm_realize;
@@ -733,6 +821,7 @@ static const TypeInfo s32k358_tpm_type_info = {
     .class_init = s32k358_tpm_class_init,
 };
 
+/** @brief Register the S32K358 TPM type with QOM. */
 static void s32k358_tpm_register_types(void) {
     type_register_static(&s32k358_tpm_type_info);
 }

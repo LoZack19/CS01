@@ -1,16 +1,17 @@
-/*
- * tpm_auth.c – Authorization area parsing for TPM commands.
+/**
+ * @file   tpm_auth.c
+ * @brief  Authorization-area parsing for TPM commands.
  *
- * This file provides simple authorization area parsing and response
- * marshaling for TPM_ST_SESSIONS commands. For an educational TPM with
- * default empty passwords, we parse the session area and verify the
- * sessionHandle is TPM_RS_PW (password authorization), but skip HMAC
- * validation.
+ * Provides simple authorization-area parsing and response marshaling
+ * for @c TPM_ST_SESSIONS commands.  For the educational TPM only
+ * password sessions (@c TPM_RS_PW) with empty passwords are supported;
+ * HMAC-based sessions are not implemented.
  *
- * Uses the standard MARSHAL/UNMARSHAL macros on __packed wire-format
- * structs (TPMS_AUTH_COMMAND_AREA / TPMS_AUTH_RESPONSE_AREA).
+ * Uses the standard MARSHAL / UNMARSHAL macros on @c __packed
+ * wire-format structs (@c TPMS_AUTH_COMMAND_AREA /
+ * @c TPMS_AUTH_RESPONSE_AREA).
  *
- * Reference: TPM 2.0 Part 1, Section 19 (Authorization)
+ * @see TPM 2.0 Part 1 Section 19 – Authorization
  */
 
 #include "hw/misc/s32k358_tpm.h"
@@ -18,14 +19,7 @@
 #include "hw/misc/tpm2_spec_protocol.h"
 #include "qemu/fifo8.h"
 
-/*
- * ParseAuthArea – Parse authorization area from command FIFO.
- *
- * Unmarshals a TPMS_AUTH_COMMAND_AREA (authSize + TPMS_AUTH_COMMAND)
- * and validates the session handle.
- *
- * Returns TPM_RC_SUCCESS if valid, error otherwise.
- */
+/* See tpm_create_primary.h for documentation. */
 TPM_RC ParseAuthArea(Fifo8 *fifo, TPMS_AUTH_COMMAND *authCmd) {
     TPMS_AUTH_COMMAND_AREA area;
 
@@ -48,11 +42,7 @@ TPM_RC ParseAuthArea(Fifo8 *fifo, TPMS_AUTH_COMMAND *authCmd) {
     return TPM_RC_SUCCESS;
 }
 
-/*
- * MarshalAuthResponse – Marshal authorization response area to output FIFO.
- *
- * Builds a TPMS_AUTH_RESPONSE_AREA with empty nonce/HMAC and marshals it.
- */
+/* See tpm_create_primary.h for documentation. */
 void MarshalAuthResponse(Fifo8 *fifo) {
     if (fifo == NULL) {
         return;

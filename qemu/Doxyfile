@@ -1,14 +1,17 @@
-# Doxyfile — TPM 2.0 Firmware Documentation
+# Doxyfile — QEMU TPM 2.0 Peripheral Documentation
 #
-# Generate with:   doxygen Doxyfile
+# Generate with:   cd qemu && doxygen Doxyfile
 # Output:          docs/doxygen/html/index.html
+#
+# Only the project-specific TPM files are documented here, not the
+# entire QEMU tree.
 
 #---------------------------------------------------------------------------
 # Project
 #---------------------------------------------------------------------------
-PROJECT_NAME           = "TPM 2.0 Firmware (S32K358)"
+PROJECT_NAME           = "QEMU TPM 2.0 Peripheral (S32K358)"
 PROJECT_NUMBER         = 1.0
-PROJECT_BRIEF          = "Verification firmware for the QEMU TPM 2.0 simulation peripheral"
+PROJECT_BRIEF          = "Simulation peripheral for the S32K358 TPM 2.0 device model"
 PROJECT_LOGO           =
 
 OUTPUT_DIRECTORY       = docs/doxygen
@@ -17,10 +20,29 @@ CREATE_SUBDIRS         = NO
 #---------------------------------------------------------------------------
 # Input
 #---------------------------------------------------------------------------
-INPUT                  = include src README.md
+INPUT                  = hw/misc/s32k358_tpm.c          \
+                         hw/misc/tpm_cmds.c             \
+                         hw/misc/tpm_load.c             \
+                         hw/misc/tpm_crypt.c            \
+                         hw/misc/tpm_marshal.c          \
+                         hw/misc/tpm_marshal_tpm.c      \
+                         hw/misc/tpm_auth.c             \
+                         hw/misc/tpm_object.c           \
+                         hw/misc/tpm_drbg.c             \
+                         hw/misc/tpm_hierarchy.c        \
+                         hw/misc/tpm_ticket.c           \
+                         hw/misc/tpm_support.c          \
+                         hw/misc/tpm_util.c             \
+                         hw/misc/NvStorage.c            \
+                         hw/misc/tpm_state_machine.c    \
+                         include/hw/misc/s32k358_tpm.h  \
+                         hw/misc/tpm_crypt.h            \
+                         include/hw/misc/tpm_create_primary.h  \
+                         include/hw/misc/tpm2_spec_protocol.h  \
+                         README.md
 FILE_PATTERNS          = *.c *.h *.md
-RECURSIVE              = YES
-EXCLUDE                = fakeinclude
+RECURSIVE              = NO
+EXCLUDE                =
 EXCLUDE_PATTERNS       =
 USE_MDFILE_AS_MAINPAGE = README.md
 INPUT_ENCODING         = UTF-8
@@ -85,11 +107,10 @@ GENERATE_LATEX         = NO
 ENABLE_PREPROCESSING   = YES
 MACRO_EXPANSION        = YES
 EXPAND_ONLY_PREDEF     = NO
-INCLUDE_PATH           = include fakeinclude
+INCLUDE_PATH           = include
 PREDEFINED             = \
-    __attribute__(x)=  \
-    ENABLE_TEST_SMOKE=1 \
-    ENABLE_TEST_KEY_MGMT=1
+    __attribute__(x)= \
+    __packed=
 
 #---------------------------------------------------------------------------
 # Dot / Call Graphs

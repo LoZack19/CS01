@@ -1,14 +1,12 @@
-/*
- * tpm_ticket.c – Creation-ticket computation for the TPM model.
- *
- * Class: Ticket
- * Functions: TicketComputeCreation
+/**
+ * @file   tpm_ticket.c
+ * @brief  Creation-ticket computation for the TPM model.
  *
  * A creation ticket is an HMAC over the object Name and the creation
- * hash, keyed with the hierarchy proof.  In this simplified model we
- * use SHA-256-based HMAC with a static hierarchy proof.
+ * hash, keyed with the hierarchy proof.  This simplified model uses
+ * HMAC-SHA-256 with a static all-zero hierarchy proof.
  *
- * Reference: ms-tpm-20-ref Ticket.c / Ticket_fp.h
+ * @see ms-tpm-20-ref Ticket.c / Ticket_fp.h
  */
 
 #include "hw/misc/s32k358_tpm.h"
@@ -16,16 +14,23 @@
 #include "hw/misc/tpm_crypt.h"
 #include <string.h>
 
-/* -----------------------------------------------------------------------
- * Simplified HMAC-SHA256
+/* ---- Internal helpers ------------------------------------------------ */
+
+#define HMAC_BLOCK_SIZE  64  /**< SHA-256 block size in bytes.  */
+#define HMAC_DIGEST_SIZE SHA256_DIGEST_SIZE /**< HMAC output size. */
+
+/**
+ * @brief Compute HMAC-SHA-256.
  *
- * HMAC(K,m) = H((K' ^ opad) || H((K' ^ ipad) || m))
- *   where K' = H(K) if |K| > block-size, else K zero-padded to block-size.
- * ----------------------------------------------------------------------- */
-
-#define HMAC_BLOCK_SIZE  64  /* SHA-256 block size */
-#define HMAC_DIGEST_SIZE SHA256_DIGEST_SIZE
-
+ * Implements RFC 2104:  
+ * HMAC(K,m) = H((K’ ^ opad) || H((K’ ^ ipad) || m))
+ *
+ * @param[in]  key      HMAC key.
+ * @param[in]  keyLen   Key length in bytes.
+ * @param[in]  data     Message data.
+ * @param[in]  dataLen  Message length in bytes.
+ * @param[out] mac      32-byte output digest.
+ */
 static void hmac_sha256(const BYTE *key, UINT16 keyLen,
                         const BYTE *data, UINT16 dataLen,
                         BYTE *mac)
@@ -69,23 +74,26 @@ static void hmac_sha256(const BYTE *key, UINT16 keyLen,
     SHA256_Calculate(outerBuf, HMAC_BLOCK_SIZE + HMAC_DIGEST_SIZE, mac);
 }
 
-/* -----------------------------------------------------------------------
- * Public API
- * ----------------------------------------------------------------------- */
+/* ---- Public API ------------------------------------------------------ */
 
-/*
- * TicketComputeCreation – Compute a TPMT_TK_CREATION for a newly created
- * primary object.
+/**
+ * @brief Compute a @c TPMT_TK_CREATION for a newly created primary.
  *
- * ticket.tag      = TPM_ST_CREATION
- * ticket.hierarchy = hierarchy
- * ticket.digest   = HMAC_hierarchyProof(name || creationHash)
+ * Fills:
+ * - @c ticket->tag       = @c TPM_ST_CREATION
+ * - @c ticket->hierarchy = @p hierarchy
+ * - @c ticket->digest    = HMAC_hierarchyProof( name || creationHash )
  *
- * In a full implementation the hierarchy proof is stored in NV and is
- * unique per hierarchy.  Here we use a fixed, all-zero proof for the
- * simplified model.
+ * @param[in]  hierarchy     Owning hierarchy.
+ * @param[in]  name          Object Name.
+ * @param[in]  creationHash  Hash of the creation data.
+ * @param[out] ticket        Computed creation ticket.
+ * @return @c TPM_RC_SUCCESS, or @c TPM_RC_FAILURE.
  *
- * Reference: ms-tpm-20-ref  Ticket_fp.h / Ticket.c
+ * @note The hierarchy proof is a fixed 32-byte zero buffer; a production
+ *       implementation would retrieve it from NV storage.
+ *
+ * @see ms-tpm-20-ref Ticket.c
  */
 TPM_RC TicketComputeCreation(TPMI_RH_HIERARCHY hierarchy,
                              TPM2B_NAME *name,

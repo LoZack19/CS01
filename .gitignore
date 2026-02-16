@@ -1,3 +1,4 @@
 .cache/
 venv/
 firmware/docs/
+qemu/docs/

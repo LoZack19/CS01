@@ -1,45 +1,60 @@
-/*
- * tpm_hierarchy.c – Hierarchy-related helpers for the TPM model.
+/**
+ * @file   tpm_hierarchy.c
+ * @brief  Hierarchy-related helpers for the TPM model.
  *
- * Class: Hierarchy
- * Functions: HierarchyGetPrimarySeed, HierarchyNormalizeHandle,
- *            EntityGetHierarchy
+ * Manages hierarchy seeds and handle normalization.  The TPM 2.0 spec
+ * defines four hierarchies (Owner, Endorsement, Platform, Null), each
+ * with its own primary seed.  Additional FW-limited and SVN-limited
+ * handles are mapped to their base hierarchy.
  *
- * Reference: ms-tpm-20-ref  Hierarchy.c, Entity.c
+ * @see ms-tpm-20-ref Hierarchy.c, Entity.c
+ * @see TPM 2.0 Part 1 Section 13 – Hierarchy
  */
 
 #include "hw/misc/s32k358_tpm.h"
 #include "hw/misc/tpm_create_primary.h"
 #include <string.h>
 
-/*
- * The S32k358TPMState stores per-hierarchy seeds.  To access them we
- * need a pointer to the device state.  In a QEMU device model we can
- * keep a module-level pointer that is set once during device realize.
+/**
+ * @brief Module-level pointer to the device state.
  *
- * This is set from the main device model file (s32k358_tpm.c) by
- * calling tpm_hierarchy_set_state().
+ * Set once from the device @c realize callback via
+ * @c tpm_hierarchy_set_state().  Provides access to
+ * per-hierarchy seeds stored in @c S32k358TPMState.
  */
 static S32k358TPMState *g_tpm_state;
 
+/**
+ * @brief Register the device state for hierarchy seed look-ups.
+ *
+ * Must be called exactly once from @c s32k358_tpm_realize().
+ *
+ * @param[in] s  Pointer to the device instance.
+ */
 void tpm_hierarchy_set_state(S32k358TPMState *s)
 {
     g_tpm_state = s;
 }
 
-/*
- * HierarchyGetPrimarySeed – Return the primary seed for a given hierarchy.
+/**
+ * @brief Return the primary seed for a given hierarchy.
  *
- * The hierarchy handle identifies which seed to use:
- *   TPM_RH_ENDORSEMENT => endorsement seed
- *   TPM_RH_PLATFORM    => platform seed
- *   TPM_RH_OWNER       => owner (storage) seed
- *   TPM_RH_NULL        => null seed
+ * Maps the hierarchy handle to the corresponding seed stored in
+ * @c S32k358TPMState.  FW-limited and SVN-limited handles are
+ * normalised to their base hierarchy first.
  *
- * FW-limited and SVN-limited hierarchy handles are normalised to their
- * base hierarchy first.
+ * | Handle               | Seed              |
+ * |----------------------|-------------------|
+ * | @c TPM_RH_ENDORSEMENT| endorsement_seed  |
+ * | @c TPM_RH_PLATFORM   | platform_seed     |
+ * | @c TPM_RH_OWNER      | owner_seed        |
+ * | @c TPM_RH_NULL       | null_seed         |
  *
- * Reference: ms-tpm-20-ref Hierarchy.c HierarchyGetPrimarySeed()
+ * @param[in]  hierarchy  Hierarchy handle.
+ * @param[out] seed       Receives the primary seed.
+ * @return @c TPM_RC_SUCCESS.
+ *
+ * @see ms-tpm-20-ref Hierarchy.c HierarchyGetPrimarySeed()
  */
 TPM_RC HierarchyGetPrimarySeed(TPM_HANDLE hierarchy, TPM2B_SEED *seed)
 {
@@ -85,11 +100,13 @@ TPM_RC HierarchyGetPrimarySeed(TPM_HANDLE hierarchy, TPM2B_SEED *seed)
     return TPM_RC_SUCCESS;
 }
 
-/*
- * HierarchyNormalizeHandle – Map FW-/SVN-limited hierarchy handles to
- * the corresponding base hierarchy.
+/**
+ * @brief Map FW-/SVN-limited hierarchy handles to their base hierarchy.
  *
- * Reference: ms-tpm-20-ref Hierarchy.c
+ * @param[in] handle  Raw hierarchy handle.
+ * @return Base hierarchy handle, or @p handle itself if already base.
+ *
+ * @see ms-tpm-20-ref Hierarchy.c
  */
 TPM_HANDLE HierarchyNormalizeHandle(TPM_HANDLE handle)
 {
@@ -125,17 +142,17 @@ TPM_HANDLE HierarchyNormalizeHandle(TPM_HANDLE handle)
     return handle;
 }
 
-/*
- * EntityGetHierarchy – Determine the hierarchy to which a handle belongs.
+/**
+ * @brief Determine the hierarchy to which a handle belongs.
  *
- * For permanent handles (0x40xxxxxx) we return the hierarchy itself
- * (or the normalised version for FW/SVN handles).
- * For transient objects (0x80xxxxxx) and persistent objects (0x81xxxxxx)
- * we return TPM_RH_OWNER by convention (in a real TPM the hierarchy
- * is stored inside the OBJECT).
- * NV indices (0x01xxxxxx) return TPM_RH_OWNER.
+ * - Permanent handles (@c 0x40xxxxxx): return the normalised hierarchy.
+ * - Transient / persistent objects: return @c TPM_RH_OWNER.
+ * - NV indices: return @c TPM_RH_OWNER.
  *
- * Reference: ms-tpm-20-ref Entity.c EntityGetHierarchy()
+ * @param[in] handle  TPM handle.
+ * @return Hierarchy handle.
+ *
+ * @see ms-tpm-20-ref Entity.c EntityGetHierarchy()
  */
 TPMI_RH_HIERARCHY EntityGetHierarchy(TPM_HANDLE handle)
 {

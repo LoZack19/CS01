@@ -1,17 +1,13 @@
-/*
- * tpm_object.c – Object management helpers for the TPM model.
+/**
+ * @file   tpm_object.c
+ * @brief  Object-management helpers for the TPM model.
  *
- * Class: Object Management
- * Functions: FindEmptyObjectSlot, ObjectSetLoadedAttributes,
- *            CreateChecks, AdjustAuthSize,
- *            PublicMarshalAndComputeName, FillInCreationData,
- *            CryptCreateObject
+ * Manages the transient-object slot table, performs object validation,
+ * Name computation, creation-data generation, and cryptographic key
+ * creation.
  *
- * Reference: ms-tpm-20-ref
- *   Object.c            (FindEmptyObjectSlot, PublicMarshalAndComputeName,
- *                         ObjectSetLoadedAttributes)
- *   Object_spt.c        (CreateChecks, FillInCreationData, AdjustAuthSize)
- *   CryptUtil.c          (CryptCreateObject)
+ * @see ms-tpm-20-ref Object.c, Object_spt.c, CryptUtil.c
+ * @see TPM 2.0 Part 1 Section 14 – Object Structures
  */
 
 #include "hw/misc/s32k358_tpm.h"
@@ -19,18 +15,20 @@
 #include "hw/misc/tpm_crypt.h"
 #include <string.h>
 
-/* -----------------------------------------------------------------------
- * Module-level object slot table
- * ----------------------------------------------------------------------- */
+/* ---- Module-level object slot table ---------------------------------- */
 
-static OBJECT s_objects[MAX_LOADED_OBJECTS];
-static BOOL s_objectSlotUsed[MAX_LOADED_OBJECTS];
+static OBJECT s_objects[MAX_LOADED_OBJECTS];      /**< Slot array. */
+static BOOL   s_objectSlotUsed[MAX_LOADED_OBJECTS]; /**< Occupancy bitmap. */
 
-/*
- * FindEmptyObjectSlot – Locate a free object slot and return a pointer
- * to it together with its handle.
+/**
+ * @brief Locate a free object slot and allocate it.
  *
- * Reference: ms-tpm-20-ref Object.c FindEmptyObjectSlot()
+ * @param[out] handle  Receives the transient handle
+ *                     (@c HR_TRANSIENT + index).  May be @c NULL.
+ * @return Pointer to the cleared @c OBJECT, or @c NULL if all slots
+ *         are occupied (@c TPM_RC_OBJECT_MEMORY).
+ *
+ * @see ms-tpm-20-ref Object.c FindEmptyObjectSlot()
  */
 OBJECT *FindEmptyObjectSlot(TPM_HANDLE *handle) {
     for (int i = 0; i < MAX_LOADED_OBJECTS; i++) {
@@ -47,12 +45,16 @@ OBJECT *FindEmptyObjectSlot(TPM_HANDLE *handle) {
     return NULL; /* no free slot → TPM_RC_OBJECT_MEMORY */
 }
 
-/*
- * HandleToObject – Resolve a transient handle to an OBJECT pointer.
+/**
+ * @brief Resolve a transient handle to an @c OBJECT pointer.
  *
- * Returns NULL for permanent handles or if the slot is not occupied.
+ * Returns @c NULL for permanent handles, out-of-range indices, or
+ * slots that are not fully initialised (Name.size == 0).
  *
- * Reference: ms-tpm-20-ref Object.c HandleToObject()
+ * @param[in] handle  Transient object handle.
+ * @return Pointer to the @c OBJECT, or @c NULL.
+ *
+ * @see ms-tpm-20-ref Object.c HandleToObject()
  */
 OBJECT *HandleToObject(TPMI_DH_OBJECT handle) {
     UINT32 index;
@@ -79,10 +81,14 @@ OBJECT *HandleToObject(TPMI_DH_OBJECT handle) {
     return &s_objects[index];
 }
 
-/*
- * ObjectIsParent – Return TRUE if the object has the isParent attribute.
+/**
+ * @brief Check whether an object has the @c isParent attribute.
  *
- * Reference: ms-tpm-20-ref Object_spt.c ObjectIsParent()
+ * @param[in] parentObject  Object to test (may be @c NULL).
+ * @retval TRUE  if the object is a parent (storage key).
+ * @retval FALSE otherwise.
+ *
+ * @see ms-tpm-20-ref Object_spt.c ObjectIsParent()
  */
 BOOL ObjectIsParent(OBJECT *parentObject) {
     if (parentObject == NULL) {
@@ -91,11 +97,16 @@ BOOL ObjectIsParent(OBJECT *parentObject) {
     return parentObject->attributes.isParent;
 }
 
-/*
- * ObjectSetLoadedAttributes – Set the attributes of an object that are
- * established at load-time (hierarchy, isParent, …).
+/**
+ * @brief Set load-time attributes (hierarchy, isParent) on an object.
  *
- * Reference: ms-tpm-20-ref Object.c ObjectSetLoadedAttributes()
+ * A "storage key" is detected when
+ * @c restricted && @c decrypt && !@c sign_encrypt.
+ *
+ * @param[in,out] object        Object whose attributes are set.
+ * @param[in]     parentHandle  Handle of the parent that loaded the object.
+ *
+ * @see ms-tpm-20-ref Object.c ObjectSetLoadedAttributes()
  */
 void ObjectSetLoadedAttributes(OBJECT *object, TPM_HANDLE parentHandle) {
     TPMA_OBJECT *attrs;
@@ -116,18 +127,23 @@ void ObjectSetLoadedAttributes(OBJECT *object, TPM_HANDLE parentHandle) {
     }
 }
 
-/* -----------------------------------------------------------------------
- * Validation helpers
- * ----------------------------------------------------------------------- */
+/* ---- Validation helpers ---------------------------------------------- */
 
-/*
- * CreateChecks – Validate the public-area template for object creation.
+/**
+ * @brief Validate the public-area template for object creation.
  *
- * This is a simplified version that checks the most basic constraints.
- * A full implementation would cover all the attribute-consistency rules
- * described in Part 1 of the TPM spec (§14.4).
+ * Checks basic constraints: non-NULL @c nameAlg, asymmetric key
+ * @c sensitiveDataOrigin consistency, etc.  A full implementation
+ * would cover all attribute-consistency rules from TPM 2.0 Part 1
+ * Section 14.4.
  *
- * Reference: ms-tpm-20-ref Object_spt.c CreateChecks()
+ * @param[in] parentObject     Parent object (unused in this model).
+ * @param[in] parentHandle     Parent handle (unused in this model).
+ * @param[in] publicArea       Template to validate.
+ * @param[in] sensitiveDataSize  Size of user-supplied sensitive data.
+ * @return @c TPM_RC_SUCCESS, or an error code.
+ *
+ * @see ms-tpm-20-ref Object_spt.c CreateChecks()
  */
 TPM_RC CreateChecks(OBJECT *parentObject, TPM_HANDLE parentHandle,
                     TPMT_PUBLIC *publicArea, uint32_t sensitiveDataSize) {
@@ -160,13 +176,16 @@ TPM_RC CreateChecks(OBJECT *parentObject, TPM_HANDLE parentHandle,
     return TPM_RC_SUCCESS;
 }
 
-/*
- * AdjustAuthSize – Make sure the authorization value size is compatible
- * with the name hash algorithm.
+/**
+ * @brief Verify that the auth-value size is compatible with the Name
+ *        hash algorithm.
  *
- * Returns TRUE (1) on success, FALSE (0) if the auth is too large.
+ * @param[in,out] auth     Authorization value (may be @c NULL).
+ * @param[in]     nameAlg  Name hash algorithm.
+ * @retval TRUE  Auth size is acceptable.
+ * @retval FALSE Auth is larger than the digest size.
  *
- * Reference: ms-tpm-20-ref Object_spt.c AdjustAuthSize()
+ * @see ms-tpm-20-ref Object_spt.c AdjustAuthSize()
  */
 BOOL AdjustAuthSize(TPM2B_AUTH *auth, TPMI_ALG_HASH nameAlg) {
     UINT16 digestSize;
@@ -196,21 +215,18 @@ BOOL AdjustAuthSize(TPM2B_AUTH *auth, TPMI_ALG_HASH nameAlg) {
     return TRUE;
 }
 
-/* -----------------------------------------------------------------------
- * Name computation
- * ----------------------------------------------------------------------- */
+/* ---- Name computation ------------------------------------------------ */
 
-/*
- * PublicMarshalAndComputeName – Serialize the TPMT_PUBLIC into a canonical
- * byte buffer and compute its Name (hash-alg‖H(marshaled public area)).
+/**
+ * @brief Marshal @c TPMT_PUBLIC and compute the object Name.
  *
- * In this simplified model we compute SHA-256 over the raw struct bytes
- * instead of performing proper TPM marshaling (which requires serialising
- * each field in big-endian order).  For deterministic primary-key
- * generation this is acceptable as long as the same "marshaling" is used
- * consistently.
+ * Name = nameAlg (2 bytes, big-endian) || H(marshaled public area).
  *
- * Reference: ms-tpm-20-ref Object.c PublicMarshalAndComputeName()
+ * @param[in]  publicArea  Public area to marshal.
+ * @param[out] name        Receives the computed Name.
+ * @return Pointer to @p name cast to @c TPM2B*.
+ *
+ * @see ms-tpm-20-ref Object.c PublicMarshalAndComputeName()
  */
 TPM2B *PublicMarshalAndComputeName(TPMT_PUBLIC *publicArea, TPM2B_NAME *name) {
     BYTE marshalBuf[sizeof(TPMT_PUBLIC)];
@@ -242,19 +258,22 @@ TPM2B *PublicMarshalAndComputeName(TPMT_PUBLIC *publicArea, TPM2B_NAME *name) {
     return (TPM2B *)name;
 }
 
-/* -----------------------------------------------------------------------
- * Creation data & object creation
- * ----------------------------------------------------------------------- */
+/* ---- Creation data & object creation --------------------------------- */
 
-/*
- * FillInCreationData – Populate creation-data output structures.
+/**
+ * @brief Populate creation-data output structures.
  *
- * The creation data records the state of the TPM at the time of object
- * creation (parent info, PCR digest, locality, outside-info, …).
- * In this simplified model we fill in the required fields with minimal
- * but correct values.
+ * Records the TPM state at object-creation time.  In this simplified
+ * model a minimal blob of `parentHandle || outsideInfo` is produced.
  *
- * Reference: ms-tpm-20-ref Object_spt.c FillInCreationData()
+ * @param[in]  parentHandle  Handle of the parent.
+ * @param[in]  nameAlg       Hash algorithm for creation hash.
+ * @param[in]  creationPCR   PCR selection (unused).
+ * @param[in]  outsideInfo   Caller-supplied data.
+ * @param[out] outCreation   Receives the serialised creation data.
+ * @param[out] creationHash  Receives H(creation data).
+ *
+ * @see ms-tpm-20-ref Object_spt.c FillInCreationData()
  */
 void FillInCreationData(TPM_HANDLE parentHandle, TPMI_ALG_HASH nameAlg,
                         TPML_PCR_SELECTION *creationPCR,
@@ -305,19 +324,26 @@ void FillInCreationData(TPM_HANDLE parentHandle, TPMI_ALG_HASH nameAlg,
     }
 }
 
-/*
- * CryptCreateObject – Create the cryptographic material for a new object.
+/**
+ * @brief Create cryptographic material for a new object.
  *
- * For RSA keys a key-pair must be generated; for symmetric keys a secret
- * key is created.  In this simplified model we:
- *   1. Set the sensitive type.
- *   2. Copy the user-auth value.
- *   3. Generate key material with the provided RAND_STATE (or the global
- *      RNG when rand is NULL).
- *   4. Compute the public unique value.
- *   5. Generate a seed value and compute the Name.
+ * Steps performed:
+ * 1. Set @c sensitiveType.
+ * 2. Copy user auth.
+ * 3. Generate key material via provided @p rand (or global RNG).
+ * 4. Compute the public unique value.
+ * 5. Generate a seed value.
+ * 6. Compute the Name from the public area.
  *
- * Reference: ms-tpm-20-ref CryptUtil.c CryptCreateObject()
+ * @param[in,out] object           Object to populate.
+ * @param[in]     sensitiveCreate  User-supplied sensitive creation data.
+ * @param[in]     rand             DRBG state; @c NULL to use the global RNG.
+ * @return @c TPM_RC_SUCCESS, or @c TPM_RC_FAILURE.
+ *
+ * @note Only @c TPM_ALG_RSA is fully supported.  Other algorithm types
+ *       receive a generic random secret key.
+ *
+ * @see ms-tpm-20-ref CryptUtil.c CryptCreateObject()
  */
 TPM_RC CryptCreateObject(OBJECT *object, TPMS_SENSITIVE_CREATE *sensitiveCreate,
                          RAND_STATE *rand) {

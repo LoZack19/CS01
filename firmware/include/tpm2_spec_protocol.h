@@ -1,24 +1,21 @@
 /**
- * @file tpm2_spec_protocol.h
- * @brief Complete TPM 2.0 type system, constants, and command I/O structures.
+ * @file   tpm2_spec_protocol.h
+ * @brief  TPM 2.0 protocol constants, types, and wire structures.
  *
- * This header is the **single source of truth** for all TPM protocol
- * definitions used by both the firmware and the QEMU device model.
- * Firmware includes this header directly; the QEMU copy is generated
- * from it during the build.
+ * This is the canonical source; the firmware copy at
+ * @c firmware/include/tpm2_spec_protocol.h is generated during the
+ * build.  All edits must be made here.
  *
- * Organisation follows the TPM 2.0 spec structure:
- *   - §1 Constants  — size limits, return codes, handles, algorithms
- *   - §2 Macros     — marshal/unmarshal, attribute access helpers
- *   - §3 Basic Types — primitive and secondary typedefs
- *   - §4 Complex Types — hash, signature, symmetric, RSA, PCR, NV,
- *                         key/object, auth, DRBG, command headers, state
- *   - §5 Command I/O — per-command *_In / *_Out structures
- *   - §6 Function Prototypes — TPM command entry points
+ * The file is organised into six sections matching the TPM 2.0
+ * specification:
+ *  -# Constants (return codes, algorithm IDs, handle ranges, …)
+ *  -# Macros   (attribute tests, marshaling helpers)
+ *  -# Basic Types (integral typedefs)
+ *  -# Complex Types (structures, unions, TPM2B buffers)
+ *  -# Command I/O structures (packed request/response headers)
+ *  -# Function prototypes (command dispatcher, NV, driver)
  *
- * @note Uses @c __packed to match TCG wire layout.
- * @note The firmware uses **native** endianness for MMIO transfers
- *       (intentional simplification; see project spec §3.1.2).
+ * @see TPM 2.0 Part 2 – Structures
  */
 #ifndef TPM2_SPEC_PROTOCOL_H
 #define TPM2_SPEC_PROTOCOL_H
@@ -27,20 +24,13 @@
 #include <stddef.h>
 #include "fifo8.h"
 
-/** @cond INTERNAL */
 #define __packed __attribute__((packed))
-/** @endcond */
 
-/* ====================================================================== */
-/** @defgroup tpm2_constants §1 Constants
- *  Size limits, return codes, handles, command codes, algorithms.
+/** @name Section 1 – Constants
  *  @{ */
-/* ====================================================================== */
 
-/* ---- Size configuration ------------------------------------------------ */
-
-/** @name Cryptographic size limits */
-/** @{ */
+// Size Configuration
+/* Cryptographic Primitives */
 #define SHA256_DIGEST_SIZE      32
 #define TPM_MAX_KEY_SIZE        256
 #define TPM_MAX_DATA_SIZE       256
@@ -49,10 +39,7 @@
 #define TPM_MAX_MAX_BUFFER_SIZE 1024 /* Implementation-defined max buffer */
 #define RSA_PRIVATE_SIZE        256  /* Supports up to RSA-2048 keys */
 #define MAX_PRIVATE_SIZE        (sizeof(TPMT_SENSITIVE) + SHA256_DIGEST_SIZE + 16)
-/** @} */  /* Cryptographic size limits */
-
-/** @name DRBG (Deterministic Random Bit Generator) parameters */
-/** @{ */
+/* DRBG (Deterministic Random Bit Generator) */
 #define DRBG_SEED_SIZE_BYTES      256
 #define DRBG_SEED_SIZE_WORDS      (DRBG_SEED_SIZE_BYTES / sizeof(uint64_t))
 #define AES_MAX_KEY_SIZE_BITS     256
@@ -66,26 +53,17 @@
 #define DRBG_KEY_SIZE_BYTES       (DRBG_KEY_SIZE_WORDS * RADIX_BYTES)
 #define DRBG_IV_SIZE_WORDS        BITS_TO_CRYPT_WORDS(DRBG_IV_SIZE_BITS)
 #define DRBG_IV_SIZE_BYTES        (DRBG_IV_SIZE_WORDS * RADIX_BYTES)
-/** @} */  /* DRBG */
-
-/** @name Key lifecycle management limits */
-/** @{ */
+/* Key Lifecycle Management */
 #define MAX_SYM_DATA     128
 #define LABEL_MAX_BUFFER 32
 #define HASH_COUNT       5 /* Implementation-defined; TODO: check */
-/** @} */  /* Key lifecycle */
-
-/** @name PCR configuration */
-/** @{ */
+/* PCRs: minimal implementation provides 24 PCR registers (0..23). */
 #define TPM_PCR_COUNT      24
 #define PLATFORM_PCR       (TPM_PCR_COUNT - 1)
 #define IMPLEMENTATION_PCR (TPM_PCR_COUNT - 1)
 #define PCR_SELECT_MAX     ((IMPLEMENTATION_PCR + 7) / 8) /* in bytes */
 #define PCR_SELECT_MIN     ((PLATFORM_PCR + 7) / 8)       /* in bytes */
-/** @} */  /* PCR configuration */
-
-/** @name NV memory limits and index types */
-/** @{ */
+/* NV Memory */
 #define MAX_NV_INDEX_SIZE  512
 #define MAX_NV_BUFFER_SIZE 128
 
@@ -95,10 +73,7 @@
 #define TPM_NT_EXTEND   0x4
 #define TPM_NT_PIN_FAIL 0x8
 #define TPM_NT_PIN_PASS 0x9
-/** @} */  /* NV memory */
 
-/** @name TPM_RC — Response codes (TCG Part 2, Table 16) */
-/** @{ */
 // TPM_RC
 #define TPM_RC_SUCCESS          (TPM_RC)0x000
 #define TPM_RC_H                (TPM_RC)(0x000) /* Error due to handle */
@@ -145,10 +120,7 @@
 #define TPM_RC_BINDING          (TPM_RC)(RC_FMT1 + 0x022)
 #define TPM_RCS_BINDING         (TPM_RC)(RC_FMT1 + 0x022)
 #define TPM_RC_SEQUENCE         (TPM_RC)(RC_FMT1 + 0x023)
-/** @} */  /* TPM_RC */
 
-/** @name TPM_RC parameter/handle modifiers */
-/** @{ */
 // TPM_RC Modifiers
 #define RC_NV_DefineSpace_authHandle (TPM_RC_H + TPM_RC_1)
 #define RC_NV_DefineSpace_auth       (TPM_RC_P + TPM_RC_1)
@@ -161,18 +133,12 @@
 #define RC_Load_parentHandle         (TPM_RC_H + TPM_RC_1)
 #define RC_Load_inPrivate            (TPM_RC_P + TPM_RC_1)
 #define RC_Load_inPublic             (TPM_RC_P + TPM_RC_2)
-/** @} */  /* TPM_RC modifiers */
 
-/** @name TPM_ST — Structure tags */
-/** @{ */
 // TPM_ST
 #define TPM_ST_NO_SESSIONS 0x8001
 #define TPM_ST_SESSIONS    0x8002
 #define TPM_ST_CREATION    0x8021
-/** @} */  /* TPM_ST */
 
-/** @name TPM_HANDLE — Well-known handles and NV index range */
-/** @{ */
 // TPM_HANDLE
 #define TPM_RH_OWNER                0x40000001
 #define TPM_RH_NULL                 0x40000007
@@ -192,16 +158,10 @@
 #define HR_NV_INDEX                 (TPM_HT_NV_INDEX << HR_SHIFT)
 #define NV_INDEX_FIRST              (HR_NV_INDEX + 0)
 #define NV_INDEX_LAST               (NV_INDEX_FIRST + 0x00FFFFFF)
-/** @} */  /* TPM_HANDLE */
 
-/** @name Authorization pseudo-handles */
-/** @{ */
 // Authorization
 #define TPM_RS_PW 0x40000009 /* Password authorization pseudo-handle */
-/** @} */  /* Authorization */
 
-/** @name TPM_CC — Command codes */
-/** @{ */
 // TPM_CC
 #define TPM_CC_Startup           0x00000144
 #define TPM_CC_Shutdown          0x00000145
@@ -227,10 +187,7 @@
 #define TPM_CC_Create        0x00000153
 #define TPM_CC_Load          0x00000157
 #define TPM_CC_ReadPublic    0x00000173
-/** @} */  /* TPM_CC */
 
-/** @name TPM_ALG_ID — Algorithm identifiers */
-/** @{ */
 // TPMI_ALG_HASH
 #define TPM_ALG_RSA      0x0001
 #define TPM_ALG_TDES     0x0003
@@ -248,10 +205,7 @@
 #define TPM_ALG_CFB      0x0043
 #define TPM_ALG_ECB      0x0044
 #define TPM_ALG_OFB      0x0045
-/** @} */  /* TPM_ALG_ID */
 
-/** @name Label / reset-default constants */
-/** @{ */
 // Label context strings
 #define PRIMARY_OBJECT_CREATION "PRIMARY"
 
@@ -268,23 +222,16 @@
     (TPM2B_AUTH) {         \
         0                  \
     }
-/** @} */  /* Label / reset-default */
-/** @} */  /* tpm2_constants §1 */
 
-/* ====================================================================== */
-/** @defgroup tpm2_macros §2 Macros
- *  Marshal/unmarshal helpers and attribute-access utilities.
+/** @} */
+
+/** @name Section 2 – Macros
  *  @{ */
-/* ====================================================================== */
 
-/** @name MARSHAL / UNMARSHAL — byte-stream serialisation via Fifo8 */
-/** @{ */
+// Marshalling and Unmarshalling
 #define UNMARSHAL(data, fifo) unmarshal(data, sizeof(*(data)), fifo)
 #define MARSHAL(fifo, data)   marshal(fifo, data, sizeof(*(data)))
-/** @} */  /* MARSHAL / UNMARSHAL */
 
-/** @name Attribute-access helpers */
-/** @{ */
 // Access to bitfields
 #define IS_ATTRIBUTE(a, type, b)    ((a.b) != 0)
 #define SET_ATTRIBUTE(a, type, b)   (a.b = SET)
@@ -296,17 +243,13 @@
 #define IsNvCounterIndex(attributes) (GET_TPM_NT(attributes) == TPM_NT_COUNTER)
 #define IsNvBitsIndex(attributes)    (GET_TPM_NT(attributes) == TPM_NT_BITS)
 #define IsNvExtendIndex(attributes)  (GET_TPM_NT(attributes) == TPM_NT_EXTEND)
-/** @} */  /* Attribute-access helpers */
-/** @} */  /* tpm2_macros §2 */
 
-/* ====================================================================== */
-/** @defgroup tpm2_basic_types §3 Basic Types
- *  Primitive typedefs, secondary typedefs, and specialisations.
+/** @} */
+
+/** @name Section 3 – Basic Types
  *  @{ */
-/* ====================================================================== */
 
-/** @name §3.1 Primitive Types */
-/** @{ */
+/* Subsection #3.1: Primitive Types */
 
 #define SET   TRUE
 #define CLEAR FALSE
@@ -318,10 +261,6 @@ typedef uint32_t UINT32;
 typedef uint64_t UINT64;
 typedef uint64_t crypt_uword_t;
 typedef BYTE TPMI_YES_NO;
-/** @} */  /* §3.1 */
-
-/** @name §3.2 Secondary Types */
-/** @{ */
 
 /* Subsection #3.2: Secondary Types*/
 
@@ -373,10 +312,6 @@ typedef UINT32 TPM_CAP;
 #define TPMA_PERMANENT_IN_LOCKOUT    (1U << 9)
 
 #define TPMA_MODES_FIPS_140_2 (1U << 0)
-/** @} */  /* §3.2 */
-
-/** @name §3.3 Specialisations of Secondary Types */
-/** @{ */
 
 /* Subsection #3.3: Specializations of Secondary Types*/
 typedef TPM_ST TPMI_ST_COMMAND_TAG;
@@ -397,163 +332,127 @@ typedef TPM_ALG_ID TPMI_ALG_PUBLIC;
 typedef TPM_ALG_ID TPMI_ALG_RSA_SCHEME;
 
 typedef TPM_KEY_BITS TPMI_RSA_KEY_BITS;
-/** @} */  /* §3.3 */
-/** @} */  /* tpm2_basic_types §3 */
 
-/* ====================================================================== */
-/** @defgroup tpm2_complex_types §4 Complex Types
- *  Compound structures used in TPM commands and responses.
+/** @} */
+
+/** @name Section 4 – Complex Types
  *  @{ */
-/* ====================================================================== */
 
-/** @name §4.1 Hash and Digest Types */
-/** @{ */
+/* Subsection #4.1: Hash and Digest Types */
 
-/** @brief Hash algorithm union — currently SHA-256 only. */
 typedef union __packed {
-    BYTE sha256[SHA256_DIGEST_SIZE]; /**< SHA-256 digest value (32 bytes). */
+    BYTE sha256[SHA256_DIGEST_SIZE];
 } TPMU_HA;
 
-/** @brief Generic sized buffer (TPM 2.0 Part 2, Table 79). */
+// Generic TPM2B structure (variable-sized byte buffer)
 typedef struct __packed {
-    UINT16 size;                 /**< Number of valid octets. */
-    BYTE buffer[sizeof(TPMU_HA)]; /**< Data payload. */
+    UINT16 size;
+    BYTE buffer[sizeof(TPMU_HA)];
 } TPM2B;
 
-/** @brief Sized buffer for generic data (TPM 2.0 Part 2, Table 87). */
 typedef struct __packed {
-    UINT16 size;                     /**< Octet count of valid data. */
-    BYTE data[TPM_MAX_DATA_SIZE];    /**< Data payload (max 256 bytes). */
+    UINT16 size;
+    BYTE data[TPM_MAX_DATA_SIZE]; // Max data size for simplicity
 } TPM2B_DATA;
 
-/** @brief Sized buffer for a signature blob (up to RSA-2048). */
 typedef struct __packed {
-    UINT16 size;                           /**< Signature length in octets. */
-    BYTE buffer[TPM_MAX_SIGNATURE_SIZE];   /**< Raw signature bytes. */
+    UINT16 size;
+    BYTE buffer[TPM_MAX_SIGNATURE_SIZE]; // Max signature size (supports
+                                         // RSA-2048 signatures)
 } TPM2B_SIGNATURE;
 
-/** @brief Sized buffer for a symmetric or asymmetric key. */
 typedef struct __packed {
-    UINT16 size;                      /**< Key length in octets. */
-    BYTE buffer[TPM_MAX_KEY_SIZE];    /**< Raw key material. */
+    UINT16 size;
+    BYTE buffer[TPM_MAX_KEY_SIZE]; // Max key size
 } TPM2B_KEY;
 
-/** @brief Hash value with algorithm identifier (TCG Part 2, Table 80). */
 typedef struct {
-    TPMI_ALG_HASH hashAlg; /**< Algorithm of this digest. */
-    TPMU_HA digest;        /**< Digest value. */
+    TPMI_ALG_HASH hashAlg;
+    TPMU_HA digest;
 } TPMT_HA;
 
-/** @brief Name union — either a digest or a handle. */
 typedef union __packed {
-    TPMT_HA digest;        /**< Digest-based name. */
-    TPM_HANDLE handle;     /**< Handle-based name. */
+    TPMT_HA digest;
+    TPM_HANDLE handle;
 } TPMU_NAME;
 
-/** @brief Sized message digest (TPM 2.0 Part 2, Table 83). */
 typedef struct __packed {
-    UINT16 size;                   /**< Digest length in octets. */
-    BYTE buffer[sizeof(TPMU_HA)];  /**< Digest payload. */
+    UINT16 size;
+    BYTE buffer[sizeof(TPMU_HA)];
 } TPM2B_DIGEST;
 
-/** @brief Alias: authorisation value is a digest. */
 typedef TPM2B_DIGEST TPM2B_AUTH;
 
-/** @brief Sized Name buffer (for object or NV Names). */
 typedef struct __packed {
-    UINT16 size;                     /**< Name length in octets. */
-    BYTE buffer[sizeof(TPMU_NAME)];  /**< Serialised Name. */
+    UINT16 size;
+    BYTE buffer[sizeof(TPMU_NAME)];
 } TPM2B_NAME;
-/** @} */  /* §4.1 */
 
-/** @name §4.2 Signature and Ticket Types */
-/** @{ */
+/* Subsection #4.2: Signature and Ticket Types */
 
-/** @brief Signature scheme descriptor (algorithm + hash). */
 typedef struct __packed {
-    TPMI_ALG_SIG_SCHEME scheme;  /**< Signature algorithm (e.g. RSASSA, RSAPSS). */
-    TPMI_ALG_HASH hashAlg;       /**< Hash algorithm to use with scheme. */
+    TPMI_ALG_SIG_SCHEME scheme;
+    TPMI_ALG_HASH hashAlg;
 } TPMT_SIG_SCHEME;
 
-/** @brief Hash-check validation ticket (TCG Part 2, Table 91). */
 typedef struct __packed {
-    TPM_ST tag;               /**< TPM_ST_HASHCHECK or TPM_ST_CREATION. */
-    TPM_HANDLE hierarchy;     /**< Hierarchy that produced this ticket. */
-    TPM2B_DIGEST digest;      /**< Ticket digest value. */
+    TPM_ST tag;
+    TPM_HANDLE hierarchy;
+    TPM2B_DIGEST digest;
 } TPMT_TK_HASHCHECK;
 
-/** @brief Alias: verified ticket has the same layout. */
 typedef TPMT_TK_HASHCHECK TPMT_TK_VERIFIED;
-
-/** @brief Alias: creation ticket has the same layout. */
 typedef TPMT_TK_HASHCHECK TPMT_TK_CREATION;
 
-/** @brief Signature output structure (algorithm + hash + blob). */
 typedef struct __packed {
-    TPMI_ALG_SIG_SCHEME sigAlg;     /**< Signature algorithm used. */
-    TPMI_ALG_HASH hashAlg;          /**< Hash algorithm used. */
-    TPM2B_SIGNATURE signature;      /**< Raw signature data. */
+    TPMI_ALG_SIG_SCHEME sigAlg;
+    TPMI_ALG_HASH hashAlg;
+    TPM2B_SIGNATURE signature;
 } TPMT_SIGNATURE;
-/** @} */  /* §4.2 */
 
-/** @name §4.3 Symmetric Encryption Types */
-/** @{ */
+/* Subsection #4.3: Symmetric Encryption Types */
 
-/** @brief Symmetric algorithm descriptor (algorithm + key size + mode). */
 typedef struct __packed {
-    TPMI_ALG_SYM_OBJECT algorithm; /**< Symmetric algorithm (e.g. TPM_ALG_AES). */
-    TPMU_SYM_KEY_BITS keyBits;     /**< Key size in bits. */
-    TPMU_SYM_MODE mode;            /**< Chaining mode (ECB, CBC, CFB, etc.). */
+    TPMI_ALG_SYM_OBJECT algorithm; // TPM_ALG_* algorithm (AES, SM4, etc.)
+    TPMU_SYM_KEY_BITS keyBits;     // Key size in bits (per algorithm)
+    TPMU_SYM_MODE mode;            // Mode selector (ECB, CBC, CFB, OFB, CTR)
 } TPMT_SYM_DEF_OBJECT;
 
-/** @brief Sized IV buffer for symmetric encryption (AES block size). */
 typedef struct __packed {
-    UINT16 size;                       /**< IV length in octets. */
-    BYTE buffer[TPM_MAX_IV_SIZE];      /**< IV data. */
+    UINT16 size;
+    BYTE buffer[TPM_MAX_IV_SIZE]; // Max IV size for AES
 } TPM2B_IV;
 
-/** @brief Large sized buffer for symmetric operations. */
 typedef struct __packed {
-    UINT16 size;                              /**< Data length in octets. */
-    BYTE buffer[TPM_MAX_MAX_BUFFER_SIZE];     /**< Data payload (up to 1024). */
+    UINT16 size;
+    BYTE buffer[TPM_MAX_MAX_BUFFER_SIZE]; // Larger buffer for symmetric
+                                          // operations
 } TPM2B_MAX_BUFFER;
-/** @} */  /* §4.3 */
 
-/** @name §4.4 Asymmetric (RSA) Types */
-/** @{ */
+/* Subsection #4.4: Asymmetric (RSA) Types */
 
-/** @brief Sized RSA public key buffer (up to 2048-bit key). */
 typedef struct __packed {
-    UINT16 size;                       /**< Modulus length in octets. */
-    BYTE buffer[TPM_MAX_KEY_SIZE];     /**< Raw modulus bytes. */
+    UINT16 size;
+    BYTE buffer[TPM_MAX_KEY_SIZE];
 } TPM2B_PUBLIC_KEY_RSA;
 
-/** @brief Sized RSA private key buffer (private exponent). */
 typedef struct __packed {
-    UINT16 size;                       /**< Private key length in octets. */
-    BYTE buffer[RSA_PRIVATE_SIZE];     /**< Raw private key material. */
+    UINT16 size;
+    BYTE buffer[RSA_PRIVATE_SIZE];
 } TPM2B_PRIVATE_KEY_RSA;
-/** @} */  /* §4.4 */
 
-/** @name §4.5 PCR Types */
-/** @{ */
+/* Subsection #4.5: PCR Types */
 
-/** @brief Single PCR bank selection (hash alg + bitmask). */
 typedef struct __packed {
-    TPMI_ALG_HASH hash;              /**< Hash algorithm for this bank. */
-    UINT8 sizeofSelect;              /**< Number of octets in @c pcrSelect. */
-    BYTE pcrSelect[PCR_SELECT_MAX];  /**< Bitmask of selected PCRs. */
+    TPMI_ALG_HASH hash;
+    UINT8 sizeofSelect; /* lower bound PCR_SELECT_MIN */
+    BYTE pcrSelect[PCR_SELECT_MAX];
 } TPMS_PCR_SELECTION;
 
-/** @brief List of PCR bank selections. */
 typedef struct __packed {
-    UINT32 count;                               /**< Number of selections. */
-    TPMS_PCR_SELECTION pcrSelections[HASH_COUNT]; /**< Array of selections. */
+    UINT32 count;
+    TPMS_PCR_SELECTION pcrSelections[HASH_COUNT];
 } TPML_PCR_SELECTION;
-/** @} */  /* §4.5 */
-
-/** @name §4.6 NV Memory Types */
-/** @{ */
 
 /* Subsection #4.6: NV Memory Types */
 
@@ -568,7 +467,6 @@ typedef struct __packed {
     BYTE buffer[MAX_NV_BUFFER_SIZE];
 } TPM2B_MAX_NV_BUFFER;
 
-/** @brief TPMA_NV — NV index attribute bitfield (TCG Part 2, Table 204). */
 typedef struct __packed {
     UINT32 PPWRITE : 1;
     UINT32 OWNERWRITE : 1;
@@ -596,7 +494,6 @@ typedef struct __packed {
     UINT32 READ_STCLEAR : 1;
 } TPMA_NV;
 
-/** @brief TPMA_OBJECT — Object attribute bitfield (TCG Part 2, Table 31). */
 typedef struct __packed {
     UINT32 Reserved0 : 1; /* Shall be 0*/
     UINT32 fixedTPM : 1;
@@ -618,289 +515,254 @@ typedef struct __packed {
     UINT32 Reserved3 : 12;
 } TPMA_OBJECT;
 
-/** @brief NV public area — index metadata (TCG Part 2, Table 207). */
 typedef struct __packed {
-    TPMI_RH_NV_LEGACY_INDEX nvIndex;  /**< NV index handle. */
-    TPMI_ALG_HASH nameAlg;            /**< Hash algorithm for Name computation. */
-    TPMA_NV attributes;               /**< Access and type attributes. */
-    TPM2B_DIGEST authPolicy;          /**< Optional authorization policy digest. */
-    UINT16 dataSize;                  /**< Maximum data size (≤ MAX_NV_INDEX_SIZE). */
+    TPMI_RH_NV_LEGACY_INDEX nvIndex;
+    TPMI_ALG_HASH nameAlg;
+    TPMA_NV attributes;
+    TPM2B_DIGEST authPolicy;
+    UINT16 dataSize; // {:MAX_NV_INDEX_SIZE}
 } TPMS_NV_PUBLIC;
 
-/** @brief Sized NV public area for marshalling. */
 typedef struct __packed {
-    UINT16 size;                 /**< Marshalled size of @c nvPublic. */
-    TPMS_NV_PUBLIC nvPublic;     /**< NV index public metadata. */
+    UINT16 size; // needs validation against actual size
+    TPMS_NV_PUBLIC nvPublic;
 } TPM2B_NV_PUBLIC;
 
-/** @brief Internal NV index object (public + auth). */
 typedef struct __packed {
-    TPMS_NV_PUBLIC publicArea;   /**< Public metadata. */
-    TPM2B_AUTH authValue;        /**< Authorization value for this index. */
+    TPMS_NV_PUBLIC publicArea;
+    TPM2B_AUTH authValue;
 } NV_INDEX;
 
-/** @brief NV entry header for storage serialisation. */
 typedef struct __packed {
-    UINT32 size;            /**< Total entry size in bytes. */
-    TPM_HANDLE handle;      /**< NV index handle. */
+    UINT32 size;
+    TPM_HANDLE handle;
 } NV_ENTRY_HEADER;
-/** @} */  /* §4.6 */
 
-/** @name §4.7 Key and Object Types */
-/** @{ */
+/* Subsection #4.7: Key and Object Types */
 
-/** @brief Sized creation data buffer (opaque metadata blob). */
 typedef struct __packed {
-    UINT16 size;                            /**< Length of creation data. */
-    BYTE buffer[TPM_MAX_MAX_BUFFER_SIZE];   /**< Serialised creation metadata. */
+    UINT16 size;
+    BYTE buffer[TPM_MAX_MAX_BUFFER_SIZE];
 } TPM2B_CREATION_DATA;
 
-/** @brief Sized label buffer (max 32 bytes). */
 typedef struct __packed {
-    UINT16 size;                     /**< Label length in octets. */
-    BYTE buffer[LABEL_MAX_BUFFER];   /**< Label string data. */
+    UINT16 size;
+    BYTE buffer[LABEL_MAX_BUFFER];
 } TPM2B_LABEL;
 
-/** @brief Key derivation parameters (label + context). */
 typedef struct __packed {
-    TPM2B_LABEL label;     /**< Derivation label (e.g. "PRIMARY"). */
-    TPM2B_LABEL context;   /**< Derivation context. */
+    TPM2B_LABEL label;
+    TPM2B_LABEL context;
 } TPMS_DERIVE;
 
-/** @brief Union for initial sensitive data (create vs. derive). */
 typedef union __packed {
-    BYTE create[MAX_SYM_DATA]; /**< User-supplied sensitive data. */
-    TPMS_DERIVE derive;        /**< Derivation parameters. */
+    BYTE create[MAX_SYM_DATA];
+    TPMS_DERIVE derive;
 } TPMU_SENSITIVE_CREATE;
 
-/** @brief Internal sized buffer for sensitive data. */
 typedef struct __packed {
-    UINT16 size;                                  /**< Data length. */
-    BYTE buffer[sizeof(TPMU_SENSITIVE_CREATE)];    /**< Payload. */
+    UINT16 size;
+    BYTE buffer[sizeof(TPMU_SENSITIVE_CREATE)];
 } _TPM2B_SENSITIVE_DATA_BUFFER;
 
-/** @brief Sized sensitive data buffer with dual-view access. */
 typedef union __packed {
-    _TPM2B_SENSITIVE_DATA_BUFFER t;  /**< Typed view. */
-    _TPM2B_SENSITIVE_DATA_BUFFER b;  /**< Buffer view. */
+    _TPM2B_SENSITIVE_DATA_BUFFER t;
+    _TPM2B_SENSITIVE_DATA_BUFFER b;
     struct {
-        UINT16 size;                                /**< Data length. */
-        BYTE buffer[sizeof(TPMU_SENSITIVE_CREATE)];  /**< Payload. */
+        UINT16 size;
+        BYTE buffer[sizeof(TPMU_SENSITIVE_CREATE)];
     };
 } TPM2B_SENSITIVE_DATA;
 
-/** @brief Sensitive creation parameters (auth + data). */
 typedef struct __packed {
-    TPM2B_AUTH userAuth;           /**< Initial authorization value. */
-    TPM2B_SENSITIVE_DATA data;     /**< Initial sensitive data or derivation params. */
+    TPM2B_AUTH userAuth;
+    TPM2B_SENSITIVE_DATA data;
 } TPMS_SENSITIVE_CREATE;
 
-/** @brief Sized sensitive creation structure for marshalling. */
 typedef struct __packed {
-    UINT16 size;                         /**< Marshalled size. */
-    TPMS_SENSITIVE_CREATE sensitive;      /**< Creation-sensitive content. */
+    UINT16 size;
+    TPMS_SENSITIVE_CREATE sensitive;
 } TPM2B_SENSITIVE_CREATE;
 
-/** @brief Hash scheme details (single hash algorithm). */
 typedef struct __packed {
-    TPMI_ALG_HASH hashAlg;  /**< Hash algorithm for this scheme. */
+    TPMI_ALG_HASH hashAlg;
 } TPMS_SCHEME_HASH;
 
-/** @brief Asymmetric scheme union (currently hash-only). */
 typedef union __packed {
-    TPMS_SCHEME_HASH anySig;  /**< Generic signing scheme details. */
+    TPMS_SCHEME_HASH anySig;
 } TPMU_ASYM_SCHEME;
 
-/** @brief RSA scheme selector (scheme + hash details). */
 typedef struct __packed {
-    TPMI_ALG_RSA_SCHEME scheme;   /**< RSA scheme (RSASSA, RSAPSS, NULL). */
-    TPMU_ASYM_SCHEME details;     /**< Scheme-specific parameters. */
+    TPMI_ALG_RSA_SCHEME scheme;
+    TPMU_ASYM_SCHEME details;
 } TPMT_RSA_SCHEME;
 
-/** @brief RSA algorithm parameters (symmetric, scheme, key bits, exponent). */
 typedef struct __packed {
-    TPMT_SYM_DEF_OBJECT symmetric;  /**< Inner symmetric algorithm (for storage keys). */
-    TPMT_RSA_SCHEME scheme;         /**< RSA signing/encryption scheme. */
-    TPMI_RSA_KEY_BITS keyBits;      /**< Key size in bits (e.g. 2048). */
-    UINT32 exponent;                /**< Public exponent (0 = default 65537). */
+    TPMT_SYM_DEF_OBJECT symmetric;
+    TPMT_RSA_SCHEME scheme;
+    TPMI_RSA_KEY_BITS keyBits;
+    UINT32 exponent;
 } TPMS_RSA_PARAMS;
 
-/** @brief Public parameters union — keyed on TPMI_ALG_PUBLIC type. */
 typedef struct __packed {
-    TPMS_RSA_PARAMS rsaDetail;  /**< RSA-specific parameters. */
+    // TPMS_KEYDHASH_PARAMS keyedHashDetail;
+    // TPMS_SYMCIPHER_PARAMS symDetail;
+    TPMS_RSA_PARAMS rsaDetail;
+    // TPMS_ECC_PARAMS eccDetail;
+    // TPMS_ASYM_PARAMS asymDetail;
 } TPMU_PUBLIC_PARAMS;
 
-/** @brief Public unique data union — keyed on TPMI_ALG_PUBLIC type. */
 typedef struct __packed {
-    TPM2B_DIGEST keyedHash;        /**< Keyed-hash unique data. */
-    TPM2B_DIGEST sym;              /**< Symmetric unique data. */
-    TPM2B_PUBLIC_KEY_RSA rsa;      /**< RSA public modulus. */
-    TPMS_DERIVE derive;            /**< Derivation values. */
+    TPM2B_DIGEST keyedHash;
+    TPM2B_DIGEST sym;
+    TPM2B_PUBLIC_KEY_RSA rsa;
+    // TPMS_ECC_POINT ecc;
+    TPMS_DERIVE derive;
 } TPMU_PUBLIC_ID;
 
-/** @brief Public area of a TPM object (TCG Part 2, Table 195). */
 typedef struct __packed {
-    TPMI_ALG_PUBLIC type;            /**< Algorithm type (TPM_ALG_RSA, etc.). */
-    TPMI_ALG_HASH nameAlg;           /**< Hash algorithm for Name computation. */
-    TPMA_OBJECT objectAttributes;    /**< Object attribute flags. */
-    TPM2B_DIGEST authPolicy;         /**< Optional authorization policy. */
-    TPMU_PUBLIC_PARAMS parameters;   /**< Algorithm-specific parameters. */
-    TPMU_PUBLIC_ID unique;           /**< Unique identifier (public key). */
+    TPMI_ALG_PUBLIC type;
+    TPMI_ALG_HASH nameAlg;
+    TPMA_OBJECT objectAttributes;
+    TPM2B_DIGEST authPolicy;
+    TPMU_PUBLIC_PARAMS parameters; /*[type]*/
+    TPMU_PUBLIC_ID unique;         /*[type]*/
 } TPMT_PUBLIC;
 
-/** @brief Sized public area for wire marshalling. */
 typedef struct __packed {
-    UINT16 size;                /**< Marshalled size of publicArea. */
-    TPMT_PUBLIC publicArea;     /**< The public area content. */
+    UINT16 size;
+    TPMT_PUBLIC publicArea;
 } TPM2B_PUBLIC;
 
-/** @brief Sized seed buffer (hierarchy seed). */
 typedef struct __packed {
-    uint16_t size;             /**< Seed length in octets. */
-    uint8_t buffer[64];        /**< Seed data. */
+    uint16_t size;
+    uint8_t buffer[64];
 } TPM2B_SEED;
 
-/** @brief Internal object attribute flags (QEMU device model). */
 typedef struct __packed {
-    unsigned publicOnly : 1;        /**< Object has no sensitive area. */
-    unsigned epsHierarchy : 1;      /**< Belongs to Endorsement hierarchy. */
-    unsigned ppsHierarchy : 1;      /**< Belongs to Platform hierarchy. */
-    unsigned spsHierarchy : 1;      /**< Belongs to Storage (Owner) hierarchy. */
-    unsigned evict : 1;             /**< Persistent (evict) object. */
-    unsigned primary : 1;           /**< Primary object. */
-    unsigned temporary : 1;         /**< Temporary object. */
-    unsigned stClear : 1;           /**< Cleared on TPM2_Startup(CLEAR). */
-    unsigned hmacSeq : 1;           /**< HMAC sequence object. */
-    unsigned hashSeq : 1;           /**< Hash sequence object. */
-    unsigned eventSeq : 1;          /**< Event sequence object. */
-    unsigned ticketSafe : 1;        /**< Safe for ticket generation. */
-    unsigned firstBlock : 1;        /**< First block flag (symmetric). */
-    unsigned isParent : 1;          /**< Can be a parent for TPM2_Create. */
-    unsigned not_used_14 : 1;       /**< Reserved. */
-    unsigned occupied : 1;          /**< Slot is in use. */
-    unsigned derivation : 1;        /**< Derived object. */
-    unsigned external : 1;          /**< Externally loaded object. */
+    unsigned publicOnly : 1;
+    unsigned epsHierarchy : 1;
+    unsigned ppsHierarchy : 1;
+    unsigned spsHierarchy : 1;
+    unsigned evict : 1;
+    unsigned primary : 1;
+    unsigned temporary : 1;
+    unsigned stClear : 1;
+    unsigned hmacSeq : 1;
+    unsigned hashSeq : 1;
+    unsigned eventSeq : 1;
+    unsigned ticketSafe : 1;
+    unsigned firstBlock : 1;
+    unsigned isParent : 1;
+    unsigned not_used_14 : 1;
+    unsigned occupied : 1;
+    unsigned derivation : 1;
+    unsigned external : 1;
 } OBJECT_ATTRIBUTES;
 
-/** @brief Union of sensitive material keyed on algorithm type. */
 typedef union __packed {
-    TPM2B_PRIVATE_KEY_RSA rsa;  /**< RSA private exponent. */
+    TPM2B_PRIVATE_KEY_RSA rsa;
+    // TPM2B_ECC_PARAMETER ecc;
+    // TPM2B_SENSITIVE_DATA bits;
+    // TPM2B_SYM_KEY sym;
+    // TPM2B_PRIVATE_VENDOR_SPECIFIC any;
 } TPMU_SENSITIVE_COMPOSITE;
 
-/** @brief Sensitive area of a TPM object (TCG Part 2, Table 201). */
 typedef struct __packed {
-    TPMI_ALG_PUBLIC sensitiveType;       /**< Algorithm type (must match public). */
-    TPM2B_AUTH authValue;                /**< Object authorization value. */
-    TPM2B_DIGEST seedValue;              /**< Seed for derived objects. */
-    TPMU_SENSITIVE_COMPOSITE sensitive;   /**< Algorithm-specific private material. */
+    TPMI_ALG_PUBLIC sensitiveType;
+    TPM2B_AUTH authValue;
+    TPM2B_DIGEST seedValue;
+    TPMU_SENSITIVE_COMPOSITE sensitive;
 } TPMT_SENSITIVE;
 
-/** @brief Internal sized buffer for private blob (encrypted sensitive). */
 typedef struct __packed {
-    UINT16 size;           /**< Blob length. */
-    BYTE buffer[sizeof(TPMT_SENSITIVE) + SHA256_DIGEST_SIZE + 16]; /**< Payload. */
+    UINT16 size;
+    BYTE buffer[sizeof(TPMT_SENSITIVE) + SHA256_DIGEST_SIZE + 16];
 } _TPM2B_PRIVATE_BUFFER;
 
-/** @brief Sized private blob with dual-view access. */
 typedef union {
-    _TPM2B_PRIVATE_BUFFER b;  /**< Buffer view. */
+    _TPM2B_PRIVATE_BUFFER b;
     struct {
-        UINT16 size;          /**< Blob length. */
-        BYTE buffer[sizeof(TPMT_SENSITIVE) + SHA256_DIGEST_SIZE + 16]; /**< Payload. */
+        UINT16 size;
+        BYTE buffer[sizeof(TPMT_SENSITIVE) + SHA256_DIGEST_SIZE + 16];
     };
 } TPM2B_PRIVATE;
 
-/** @brief Complete TPM object (public + sensitive + metadata). */
 typedef struct __packed {
-    OBJECT_ATTRIBUTES attributes;    /**< Internal object flags. */
-    TPMT_PUBLIC publicArea;          /**< Public area. */
-    TPMT_SENSITIVE sensitive;        /**< Sensitive (private) area. */
-    TPM2B_NAME qualifiedName;        /**< Qualified Name (full hierarchy chain). */
-    TPMI_DH_OBJECT evictHandle;      /**< Persistent handle (0 if transient). */
-    TPM2B_NAME name;                 /**< Name: nameAlg || Hash(TPMT_PUBLIC). */
-    TPMI_RH_HIERARCHY hierarchy;     /**< Owning hierarchy handle. */
+    OBJECT_ATTRIBUTES attributes;
+    TPMT_PUBLIC publicArea;
+    TPMT_SENSITIVE sensitive;
+    TPM2B_NAME qualifiedName;
+    TPMI_DH_OBJECT evictHandle;
+    TPM2B_NAME name;
+    TPMI_RH_HIERARCHY hierarchy;
 } OBJECT;
-/** @} */  /* §4.7 */
 
-/** @name §4.8 Authorization Types */
-/** @{ */
+/* Subsection #4.8: Authorization Types */
 
-/**
- * @brief Authorization area in a command (after parameters).
+/*
+ * Authorization structures for TPM_ST_SESSIONS commands.
  *
- * Used with TPM_ST_SESSIONS commands for password-based
- * authorisation.  Reference: TPM 2.0 Part 1, Table 75.
+ * TPMS_AUTH_COMMAND – Authorization area in command (after parameters).
+ * TPMS_AUTH_RESPONSE – Authorization area in response (after parameters).
+ *
+ * Reference: TPM 2.0 Part 1, Tables 75-76 (Authorization)
  */
 typedef struct __packed {
-    UINT32 sessionHandle;    /**< Session handle (TPM_RS_PW for password). */
-    TPM2B_DIGEST nonce;      /**< Caller nonce (empty for password auth). */
-    BYTE sessionAttributes;  /**< Session attribute flags. */
-    TPM2B_AUTH hmac;          /**< Password or HMAC value. */
+    UINT32 sessionHandle;   /* TPM_RS_PW for password sessions */
+    TPM2B_DIGEST nonce;     /* Empty for password auth */
+    BYTE sessionAttributes; /* Session attribute bits */
+    TPM2B_AUTH hmac;        /* Password or HMAC */
 } TPMS_AUTH_COMMAND;
 
-/**
- * @brief Authorization area in a response (after parameters).
- *
- * Reference: TPM 2.0 Part 1, Table 76.
- */
 typedef struct __packed {
-    TPM2B_DIGEST nonce;      /**< TPM nonce (empty for password auth). */
-    BYTE sessionAttributes;  /**< Session attribute flags. */
-    TPM2B_AUTH hmac;          /**< Response HMAC (empty for password auth). */
+    TPM2B_DIGEST nonce;     /* Empty for password auth */
+    BYTE sessionAttributes; /* Session attribute bits */
+    TPM2B_AUTH hmac;        /* Empty for password auth */
 } TPMS_AUTH_RESPONSE;
 
-/** @brief Wire-format command auth area (size prefix + content). */
+/*
+ * Wire-format auth areas (authSize prefix + content).
+ * Used with MARSHAL/UNMARSHAL — no manual byte encoding needed.
+ */
 typedef struct __packed {
-    UINT32 authSize;              /**< Size of the following auth structure. */
-    TPMS_AUTH_COMMAND auth;       /**< Authorization content. */
+    UINT32 authSize; /* sizeof(TPMS_AUTH_COMMAND) */
+    TPMS_AUTH_COMMAND auth;
 } TPMS_AUTH_COMMAND_AREA;
 
-/** @brief Wire-format response auth area (size prefix + content). */
 typedef struct __packed {
-    UINT32 authSize;              /**< Size of the following auth structure. */
-    TPMS_AUTH_RESPONSE auth;      /**< Authorization response content. */
+    UINT32 authSize; /* sizeof(TPMS_AUTH_RESPONSE) */
+    TPMS_AUTH_RESPONSE auth;
 } TPMS_AUTH_RESPONSE_AREA;
-/** @} */  /* §4.8 */
 
-/** @name §4.9 DRBG (Random Number Generator) Types */
-/** @{ */
+/* Subsection #4.9: DRBG (Random Number Generator) Types */
 
-/** @brief DRBG symmetric key (AES-256). */
 typedef union {
-    BYTE bytes[DRBG_KEY_SIZE_BYTES];        /**< Byte-level access. */
-    crypt_uword_t words[DRBG_KEY_SIZE_WORDS]; /**< Word-level access. */
+    BYTE bytes[DRBG_KEY_SIZE_BYTES];
+    crypt_uword_t words[DRBG_KEY_SIZE_WORDS];
 } DRBG_KEY;
 
-/** @brief DRBG initialisation vector (128-bit AES block). */
 typedef union {
-    BYTE bytes[DRBG_IV_SIZE_BYTES];        /**< Byte-level access. */
-    crypt_uword_t words[DRBG_IV_SIZE_WORDS]; /**< Word-level access. */
+    BYTE bytes[DRBG_IV_SIZE_BYTES];
+    crypt_uword_t words[DRBG_IV_SIZE_WORDS];
 } DRBG_IV;
 
-/** @brief DRBG seed material. */
 typedef union {
-    BYTE bytes[DRBG_SEED_SIZE_BYTES];        /**< Byte-level access. */
-    crypt_uword_t words[DRBG_SEED_SIZE_WORDS]; /**< Word-level access. */
+    BYTE bytes[DRBG_SEED_SIZE_BYTES];
+    crypt_uword_t words[DRBG_SEED_SIZE_WORDS];
 } DRBG_SEED;
 
-/** @brief DRBG internal state (CTR_DRBG). */
 typedef struct __packed {
-    UINT64 reseedCounter;   /**< Reseed counter. */
-    UINT32 magic;           /**< Magic number for validity check. */
-    DRBG_SEED seed;         /**< Current seed value. */
-    UINT32 lastValue[4];    /**< Last generated block. */
+    UINT64 reseedCounter;
+    UINT32 magic;
+    DRBG_SEED seed;
+    UINT32 lastValue[4];
 } DRBG_STATE;
 
-/** @brief Alias: random state is a DRBG state. */
 typedef DRBG_STATE RAND_STATE;
-/** @} */  /* §4.9 */
-
-/** @name §4.10 Command and Response Headers */
-/** @{ */
 
 /* Subsection #4.10: Command and Response Headers */
 
-/** @brief Command header sent by firmware to the TPM (§3.1 Transport). */
 // Command Header
 typedef struct __packed {
     TPMI_ST_COMMAND_TAG tag;
@@ -908,21 +770,15 @@ typedef struct __packed {
     TPM_CC commandCode;
 } tpm_cmd_header_t;
 
-/** @brief Response header received from the TPM (§3.1 Transport). */
 // Response Header
 typedef struct __packed {
     TPM_ST tag;
     UINT32 responseSize;
     TPM_RC responseCode;
 } tpm_rsp_header_t;
-/** @} */  /* §4.10 */
-
-/** @name §4.11 TPM State Data */
-/** @{ */
 
 /* Subsection #4.11: TPM State Data */
 
-/** @brief Persistent state surviving TPM2_Shutdown(STATE) / Startup(STATE). */
 typedef struct __packed {
     /* Hierarchy Control */
     BOOL shEnable;
@@ -936,406 +792,341 @@ typedef struct __packed {
     BYTE pcr_sha256[TPM_PCR_COUNT][SHA256_DIGEST_SIZE];
     /* ACT (empty) */
 } state_clear_data;
-/** @} */  /* §4.11 */
-/** @} */  /* tpm2_complex_types §4 */
 
-/* ====================================================================== */
-/** @defgroup tpm2_cmd_io §5 Command I/O Structures
- *  Per-command input and output structures for marshal/unmarshal.
+/** @} */
+
+/** @name Section 5 – Command I/O Structures
  *  @{ */
-/* ====================================================================== */
 
-/** @name §5.1 Random Number Generation & State Machine Commands */
-/** @{ */
+/* Subsection #5.1: Random Number Generation Commands */
 
-/** @brief Input for TPM2_Startup. */
+/** @brief Input for TPM2_Startup — specifies CLEAR or STATE restart. */
 typedef struct __packed {
-    TPM_SU startupType;  /**< TPM_SU_CLEAR or TPM_SU_STATE. */
+    TPM_SU startupType; /**< @c TPM_SU_CLEAR or @c TPM_SU_STATE. */
 } Startup_In;
 
-/** @brief Input for TPM2_Shutdown. */
+/** @brief Input for TPM2_Shutdown — specifies CLEAR or STATE save. */
 typedef struct __packed {
-    TPM_SU shutdownType;  /**< TPM_SU_CLEAR or TPM_SU_STATE. */
+    TPM_SU shutdownType; /**< @c TPM_SU_CLEAR or @c TPM_SU_STATE. */
 } Shutdown_In;
 
 /** @brief Input for TPM2_SelfTest. */
 typedef struct __packed {
-    TPMI_YES_NO fullTest;  /**< YES for full test, NO for incremental. */
+    TPMI_YES_NO fullTest; /**< 1 = full test; 0 = incremental. */
 } SelfTest_In;
 
 /** @brief Input for TPM2_GetCapability. */
 typedef struct __packed {
-    TPM_CAP capability;     /**< Category of capability (e.g. TPM_CAP_TPM_PROPERTIES). */
-    TPM_PT property;        /**< Starting property tag. */
-    UINT32 propertyCount;   /**< Maximum number of properties to return. */
+    TPM_CAP capability;   /**< Capability group (e.g. TPM_CAP_TPM_PROPERTIES). */
+    TPM_PT property;      /**< First property to query. */
+    UINT32 propertyCount; /**< Max number of properties to return. */
 } GetCapability_In;
 
-/** @brief Output for TPM2_GetCapability (single property). */
+/** @brief Output for TPM2_GetCapability (simplified single-property). */
 typedef struct __packed {
-    TPMI_YES_NO moreData;  /**< YES if more data is available. */
-    TPM_PT property;       /**< Property tag returned. */
-    UINT32 value;          /**< Property value. */
+    TPMI_YES_NO moreData; /**< Non-zero if more data is available. */
+    TPM_PT property;      /**< Returned property tag. */
+    UINT32 value;         /**< Returned property value. */
 } GetCapability_Out;
 
 /** @brief Output for TPM2_GetTestResult. */
 typedef struct __packed {
-    TPM2B_MAX_BUFFER outData;  /**< Test result data. */
-    TPM_RC testResult;         /**< Test result code. */
+    TPM2B_MAX_BUFFER outData;   /**< Diagnostic data (empty in this impl). */
+    TPM_RC testResult;          /**< Self-test result code. */
 } GetTestResult_Out;
 
 /** @brief Input for TPM2_FieldUpgradeData. */
 typedef struct __packed {
-    TPM2B_MAX_BUFFER fuData;  /**< Firmware upgrade data block. */
+    TPM2B_MAX_BUFFER fuData; /**< Firmware upgrade data block. */
 } FieldUpgradeData_In;
 
-/** @brief Input for TPM2_GetRandom. */
+// GetRandom
 typedef struct __packed {
-    UINT16 bytesRequested;  /**< Number of random octets to generate. */
+    UINT16 bytesRequested;
 } GetRandom_In;
 
-/** @brief Output for TPM2_GetRandom. */
 typedef struct __packed {
-    TPM2B_DIGEST randomBytes;  /**< Generated random data. */
+    TPM2B_DIGEST randomBytes;
 } GetRandom_Out;
-/** @} */  /* §5.1 */
 
-/** @name §5.2 NV Memory Commands */
-/** @{ */
+/* Subsection #5.2: NV Memory Commands */
 
-/** @brief Input for TPM2_NV_DefineSpace. */
+// NV_DefineSpace
 typedef struct __packed {
-    TPMI_RH_PROVISION authHandle; /**< Authorising handle (Owner/Platform). */
-    TPM2B_AUTH auth;              /**< Authorization value for the new index. */
-    TPM2B_NV_PUBLIC publicInfo;   /**< NV index public metadata. */
+    TPMI_RH_PROVISION authHandle;
+    TPM2B_AUTH auth;
+    TPM2B_NV_PUBLIC publicInfo;
 } NV_DefineSpace_In;
 
-/** @brief Input for TPM2_NV_Write. */
+// NV_Write
 typedef struct __packed {
-    TPMI_RH_NV_AUTH authHandle;    /**< Authorization handle. */
-    TPMI_RH_NV_INDEX nvIndex;      /**< NV index to write. */
-    TPM2B_MAX_NV_BUFFER data;      /**< Data to write. */
-    UINT16 offset;                 /**< Byte offset within the NV index. */
+    TPMI_RH_NV_AUTH authHandle;
+    TPMI_RH_NV_INDEX nvIndex;
+    TPM2B_MAX_NV_BUFFER data;
+    UINT16 offset;
 } NV_Write_In;
 
-/** @brief Input for TPM2_NV_Read. */
+// NV_Read
 typedef struct __packed {
-    TPMI_RH_NV_AUTH authHandle;    /**< Authorization handle. */
-    TPMI_RH_NV_INDEX nvIndex;      /**< NV index to read. */
-    UINT16 size;                   /**< Number of octets to read. */
-    UINT16 offset;                 /**< Byte offset within the NV index. */
+    TPMI_RH_NV_AUTH authHandle;
+    TPMI_RH_NV_INDEX nvIndex;
+    UINT16 size;
+    UINT16 offset;
 } NV_Read_In;
 
-/** @brief Output for TPM2_NV_Read. */
 typedef struct __packed {
-    TPM2B_MAX_NV_BUFFER data;      /**< Data read from NV. */
+    TPM2B_MAX_NV_BUFFER data;
 } NV_Read_Out;
-/** @} */  /* §5.2 */
 
-/** @name §5.3 Cryptographic Commands */
-/** @{ */
+/* Subsection #5.3: Cryptographic Commands */
 
-/** @brief Input for TPM2_Sign (TPM 2.0 Part 3, Table 109). */
+// Sign
 typedef struct __packed {
-    TPM_HANDLE keyHandle;            /**< Handle of the signing key. */
-    TPMT_SIG_SCHEME inScheme;        /**< Signing scheme selector. */
-    TPM2B_DIGEST digest;             /**< Digest to be signed. */
-    TPMT_TK_HASHCHECK validation;    /**< Optional hash-check ticket. */
+    TPM_HANDLE keyHandle;
+    TPMT_SIG_SCHEME inScheme;
+    TPM2B_DIGEST digest;
+    TPMT_TK_HASHCHECK validation;
 } Sign_In;
 
-/** @brief Output for TPM2_Sign. */
 typedef struct __packed {
-    TPMT_SIGNATURE signature;        /**< Resulting signature. */
+    TPMT_SIGNATURE signature;
 } Sign_Out;
 
-/** @brief Input for TPM2_VerifySignature. */
+// VerifySignature
 typedef struct __packed {
-    TPM_HANDLE keyHandle;            /**< Handle of the verification key. */
-    TPM2B_DIGEST digest;             /**< Digest that was signed. */
-    TPMT_SIGNATURE signature;        /**< Signature to verify. */
+    TPM_HANDLE keyHandle;
+    TPM2B_DIGEST digest;
+    TPMT_SIGNATURE signature;
 } VerifySignature_In;
 
-/** @brief Output for TPM2_VerifySignature. */
 typedef struct __packed {
-    TPMT_TK_VERIFIED validation;     /**< Validation ticket on success. */
+    TPMT_TK_VERIFIED validation;
 } VerifySignature_Out;
 
-/** @brief Input for TPM2_Hash. */
+// Hash
 typedef struct __packed {
-    TPM2B_MAX_BUFFER data;           /**< Data to hash. */
-    TPMI_ALG_HASH hashAlg;           /**< Hash algorithm to use. */
-    TPMI_RH_HIERARCHY hierarchy;     /**< Hierarchy for the ticket. */
+    TPM2B_MAX_BUFFER data;
+    TPMI_ALG_HASH hashAlg;
+    TPMI_RH_HIERARCHY hierarchy;
 } Hash_In;
 
-/** @brief Output for TPM2_Hash. */
 typedef struct __packed {
-    TPM2B_DIGEST digest;             /**< Resulting digest. */
-    TPMT_TK_HASHCHECK validation;    /**< Hash-check ticket. */
+    TPM2B_DIGEST digest;
+    TPMT_TK_HASHCHECK validation;
 } Hash_Out;
 
-/** @brief Input for TPM2_EncryptDecrypt2. */
+// EncryptDecrypt2
 typedef struct __packed {
-    TPMI_DH_OBJECT keyHandle;        /**< Symmetric key handle. */
-    TPMI_YES_NO decrypt;             /**< NO = encrypt, YES = decrypt. */
-    TPMI_ALG_CIPHER_MODE mode;       /**< Cipher mode (ECB, CBC, CFB, etc.). */
-    TPM2B_IV ivIn;                   /**< Input initialisation vector. */
-    TPM2B_MAX_BUFFER inData;         /**< Plaintext or ciphertext. */
+    TPMI_DH_OBJECT keyHandle;  // Symmetric key handle
+    TPMI_YES_NO decrypt;       // 0=encrypt, 1=decrypt
+    TPMI_ALG_CIPHER_MODE mode; // Mode selector (ECB, CBC, CFB, OFB, CTR)
+    TPM2B_IV ivIn;             // Input IV (for chaining modes)
+    TPM2B_MAX_BUFFER inData;   // Data to encrypt/decrypt
 } EncryptDecrypt2_In;
 
-/** @brief Output for TPM2_EncryptDecrypt2. */
 typedef struct __packed {
-    TPM2B_MAX_BUFFER outData;        /**< Encrypted or decrypted result. */
-    TPM2B_IV ivOut;                  /**< Output IV (for chaining). */
+    TPM2B_MAX_BUFFER outData; // Encrypted/decrypted data
+    TPM2B_IV ivOut;           // Output IV (for chaining modes)
 } EncryptDecrypt2_Out;
 
-/** @brief Input for TPM2_RSA_Encrypt. */
+// RSA_Encrypt
 typedef struct __packed {
-    TPM_HANDLE keyHandle;            /**< Public key handle. */
-    TPM2B_PUBLIC_KEY_RSA message;    /**< Plaintext message. */
+    TPM_HANDLE keyHandle;
+    TPM2B_PUBLIC_KEY_RSA message;
 } RSA_Encrypt_In;
 
-/** @brief Output for TPM2_RSA_Encrypt. */
 typedef struct __packed {
-    TPM2B_PUBLIC_KEY_RSA encrypted;  /**< Ciphertext. */
+    TPM2B_PUBLIC_KEY_RSA encrypted;
 } RSA_Encrypt_Out;
 
-/** @brief Input for TPM2_RSA_Decrypt. */
+// RSA_Decrypt
 typedef struct __packed {
-    TPM_HANDLE keyHandle;            /**< Private key handle. */
-    TPM2B_PUBLIC_KEY_RSA encrypted;  /**< Ciphertext to decrypt. */
+    TPM_HANDLE keyHandle;
+    TPM2B_PUBLIC_KEY_RSA encrypted;
 } RSA_Decrypt_In;
 
-/** @brief Output for TPM2_RSA_Decrypt. */
 typedef struct __packed {
-    TPM2B_PUBLIC_KEY_RSA decrypted;  /**< Recovered plaintext. */
+    TPM2B_PUBLIC_KEY_RSA decrypted;
 } RSA_Decrypt_Out;
-/** @} */  /* §5.3 */
 
-/** @name §5.4 Key Lifecycle Management Commands */
-/** @{ */
+/* Subsection #5.4: Key Lifecycle Management Commands */
 
-/** @brief Input for TPM2_CreatePrimary (TPM 2.0 Part 3, Table 174). */
+// CreatePrimary
+
 typedef struct __packed {
-    TPMI_RH_HIERARCHY primaryHandle;    /**< Hierarchy (Owner/Endorsement/Platform). */
-    TPM2B_SENSITIVE_CREATE inSensitive; /**< Initial sensitive data. */
-    TPM2B_PUBLIC inPublic;              /**< Public template. */
-    TPM2B_DATA outsideInfo;             /**< External linkage data. */
-    TPML_PCR_SELECTION creationPCR;     /**< PCR selection for creation data. */
+    TPMI_RH_HIERARCHY primaryHandle;
+    TPM2B_SENSITIVE_CREATE inSensitive;
+    TPM2B_PUBLIC inPublic;
+    TPM2B_DATA outsideInfo;
+    TPML_PCR_SELECTION creationPCR;
 } CreatePrimary_In;
 
-/** @brief Output for TPM2_CreatePrimary (TPM 2.0 Part 3, Table 175). */
 typedef struct __packed {
-    TPM_HANDLE objectHandle;            /**< Transient handle of the new primary. */
-    TPM2B_PUBLIC outPublic;             /**< Public area of the created object. */
-    TPM2B_CREATION_DATA creationData;   /**< Creation metadata. */
-    TPM2B_DIGEST creationHash;          /**< Hash of creationData. */
-    TPMT_TK_CREATION creationTicket;    /**< Validation ticket. */
-    TPM2B_NAME name;                    /**< Name of the created object. */
+    TPM_HANDLE objectHandle;
+    TPM2B_PUBLIC outPublic;
+    TPM2B_CREATION_DATA creationData;
+    TPM2B_DIGEST creationHash;
+    TPMT_TK_CREATION creationTicket;
+    TPM2B_NAME name;
 } CreatePrimary_Out;
 
-/** @brief Input for TPM2_Create (TPM 2.0 Part 3, Table 18). */
+// Create (TPM2_Create – creates an object under a parent but does NOT load it)
+
 typedef struct __packed {
-    TPMI_DH_OBJECT parentHandle;        /**< Loaded parent key handle. */
-    TPM2B_SENSITIVE_CREATE inSensitive; /**< Initial sensitive data. */
-    TPM2B_PUBLIC inPublic;              /**< Public template. */
-    TPM2B_DATA outsideInfo;             /**< External linkage data. */
-    TPML_PCR_SELECTION creationPCR;     /**< PCR selection for creation data. */
+    TPMI_DH_OBJECT parentHandle;
+    TPM2B_SENSITIVE_CREATE inSensitive;
+    TPM2B_PUBLIC inPublic;
+    TPM2B_DATA outsideInfo;
+    TPML_PCR_SELECTION creationPCR;
 } Create_In;
 
-/** @brief Output for TPM2_Create (TPM 2.0 Part 3, Table 19). */
 typedef struct __packed {
-    TPM2B_PRIVATE outPrivate;           /**< Encrypted private portion. */
-    TPM2B_PUBLIC outPublic;             /**< Public area. */
-    TPM2B_CREATION_DATA creationData;   /**< Creation metadata. */
-    TPM2B_DIGEST creationHash;          /**< Hash of creationData. */
-    TPMT_TK_CREATION creationTicket;    /**< Validation ticket. */
+    TPM2B_PRIVATE outPrivate;
+    TPM2B_PUBLIC outPublic;
+    TPM2B_CREATION_DATA creationData;
+    TPM2B_DIGEST creationHash;
+    TPMT_TK_CREATION creationTicket;
 } Create_Out;
 
-/** @brief Input for TPM2_Load (TPM 2.0 Part 3, Table 20). */
+// Load (TPM2_Load – loads a key created by TPM2_Create)
+
 typedef struct __packed {
-    TPMI_DH_OBJECT parentHandle;  /**< Parent key handle. */
-    TPM2B_PRIVATE inPrivate;      /**< Private portion (from TPM2_Create). */
-    TPM2B_PUBLIC inPublic;        /**< Public portion (from TPM2_Create). */
+    TPMI_DH_OBJECT parentHandle;
+    TPM2B_PRIVATE inPrivate;
+    TPM2B_PUBLIC inPublic;
 } Load_In;
 
-/** @brief Output for TPM2_Load (TPM 2.0 Part 3, Table 21). */
 typedef struct __packed {
-    TPM_HANDLE objectHandle;      /**< Transient handle (0x80xxxxxx). */
-    TPM2B_NAME name;              /**< Name of the loaded object. */
+    TPM_HANDLE objectHandle;
+    TPM2B_NAME name;
 } Load_Out;
 
-/** @brief Input for TPM2_ReadPublic (TPM 2.0 Part 3, Table 24). */
+// ReadPublic (TPM2_ReadPublic – reads the public area of a loaded object)
+
 typedef struct __packed {
-    TPMI_DH_OBJECT objectHandle;  /**< Handle of the loaded object. */
+    TPMI_DH_OBJECT objectHandle;
 } ReadPublic_In;
 
-/** @brief Output for TPM2_ReadPublic (TPM 2.0 Part 3, Table 25). */
 typedef struct __packed {
-    TPM2B_PUBLIC outPublic;       /**< Public area of the object. */
-    TPM2B_NAME name;              /**< Object Name. */
-    TPM2B_NAME qualifiedName;     /**< Qualified Name (hierarchy chain). */
+    TPM2B_PUBLIC outPublic;
+    TPM2B_NAME name;
+    TPM2B_NAME qualifiedName;
 } ReadPublic_Out;
-/** @} */  /* §5.4 */
-/** @} */  /* tpm2_cmd_io §5 */
 
-/* ====================================================================== */
-/** @defgroup tpm2_prototypes §6 Function Prototypes
- *  Entry points used by the QEMU device model and firmware test harness.
+/** @} */
+
+/** @name Section 6 – Function Prototypes
  *  @{ */
-/* ====================================================================== */
 
-/** @name §6.1 Marshalling and Unmarshalling */
-/** @{ */
+/* Subsection 6.1: Marshalling / Unmarshalling */
 
-/**
- * @brief Unmarshal (deserialise) @p size bytes from FIFO into @p data.
- *
- * @param[out] data  Destination buffer.
- * @param[in]  size  Number of bytes to read.
- * @param[in]  fifo  Source FIFO.
- */
+/** @brief Unmarshal @p size bytes from @p fifo into @p data. */
 void unmarshal(void *data, size_t size, Fifo8 *fifo);
-
-/**
- * @brief Marshal (serialise) @p size bytes from @p data into FIFO.
- *
- * @param[in] fifo  Destination FIFO.
- * @param[in] data  Source buffer.
- * @param[in] size  Number of bytes to write.
- */
+/** @brief Marshal @p size bytes of @p data into @p fifo. */
 void marshal(Fifo8 *fifo, const void *data, size_t size);
-/** @} */  /* §6.1 */
 
-/** @name §6.2 NV Helper Functions */
-/** @{ */
+/* Subsection 6.2: Helper Functions */
 
-/**
- * @brief Look up an NV index by handle.
- *
- * @param[in]  nvHandle  NV index handle to search for.
- * @param[out] locator   Receives the internal NV reference (may be NULL).
- * @return Pointer to the NV_INDEX if found; NULL otherwise.
- */
+/* ---- NV Storage ---- */
+
+/** @brief Look up an NV index and return its descriptor. */
 NV_INDEX *NvGetIndexInfo(TPM_HANDLE nvHandle, NV_REF *locator);
-
-/**
- * @brief Check write-access permissions for an NV index.
- *
- * @param authHandle  Authorization handle.
- * @param nvHandle    Target NV index.
- * @param attributes  NV index attributes.
- * @return TPM_RC_SUCCESS if permitted; error code otherwise.
- */
+/** @brief Validate write access to an NV index. */
 TPM_RC NvWriteAccessChecks(TPM_HANDLE authHandle, TPM_HANDLE nvHandle,
                            TPMA_NV attributes);
-
-/**
- * @brief Write data to an NV index.
- *
- * @param nvIndex  NV index object.
- * @param offset   Byte offset within the index.
- * @param size     Number of bytes to write.
- * @param data     Source data.
- * @return TPM_RC_SUCCESS on success; error code otherwise.
- */
+/** @brief Write data to an NV index’s data area. */
 TPM_RC NvWriteIndexData(NV_INDEX *nvIndex, UINT32 offset, UINT32 size,
                         void *data);
-
-/**
- * @brief Check read-access permissions for an NV index.
- *
- * @param authHandle  Authorization handle.
- * @param nvHandle    Target NV index.
- * @param attributes  NV index attributes.
- * @return TPM_RC_SUCCESS if permitted; error code otherwise.
- */
+/** @brief Validate read access to an NV index. */
 TPM_RC NvReadAccessChecks(TPM_HANDLE authHandle, TPM_HANDLE nvHandle,
                           TPMA_NV attributes);
-
-/**
- * @brief Read data from an NV index.
- *
- * @param nvIndex  NV index object.
- * @param locator  Internal NV reference.
- * @param offset   Byte offset.
- * @param size     Number of octets to read.
- * @param data     Destination buffer.
- */
+/** @brief Read data bytes from an NV index’s data area. */
 void NvGetIndexData(NV_INDEX *nvIndex, NV_REF locator, UINT32 offset,
                     UINT16 size, void *data);
 
-/**
- * @brief Define a new NV index with full validation.
- *
- * @param authHandle       Authorisation handle.
- * @param auth             Auth value for the new index.
- * @param publicInfo       NV public metadata.
- * @param blameAuthHandle  Error modifier for authHandle.
- * @param blameAuth        Error modifier for auth.
- * @param blamePublic      Error modifier for publicInfo.
- * @return TPM_RC_SUCCESS on success; error code otherwise.
- */
+/** @brief Define a new NV index with full attribute checks. */
 TPM_RC NvDefineSpace(TPMI_RH_PROVISION authHandle, TPM2B_AUTH *auth,
                      TPMS_NV_PUBLIC *publicInfo, TPM_RC blameAuthHandle,
                      TPM_RC blameAuth, TPM_RC blamePublic);
+/** @brief Connect TPM device memory to the NV storage module. */
+BOOL NvInit(void *memory, size_t size, state_clear_data *tpm_saved_state);
+
+/** @name State Machine Helpers
+ *  Functions implemented in @ref tpm_state_machine.c.
+ *  @{ */
+struct S32k358TPMState;
+
+/** @brief Reset all state-machine flags to power-on defaults. */
+void tpm_state_machine_reset(struct S32k358TPMState *s);
 
 /**
- * @brief Initialise the volatile NV storage subsystem.
- *
- * @param memory          Backing memory for NV data.
- * @param size            Size of the backing memory in bytes.
- * @param tpm_saved_state Pointer to TPM saved state (for reset).
- * @return TRUE on success; FALSE on failure.
+ * @brief Check whether @p cc is allowed in the current TPM mode.
+ * @param[in,out] s      Device state.
+ * @param[in]     cc     Command code to check.
+ * @param[out]    rc_out Receives the rejection code on failure.
+ * @return @c true if the command may proceed.
  */
-BOOL NvInit(void *memory, size_t size, state_clear_data *tpm_saved_state);
-/** @} */  /* §6.2 */
+bool tpm_command_allowed_in_current_mode(struct S32k358TPMState *s, TPM_CC cc,
+                                         TPM_RC *rc_out);
 
-/** @name State Machine Helpers\n *  Functions implemented in @ref tpm_state_machine.c.\n *  @{ */\nstruct S32k358TPMState;\n\n/** @brief Reset all state-machine flags to power-on defaults. */\nvoid tpm_state_machine_reset(struct S32k358TPMState *s);\n\n/**\n * @brief Check whether @p cc is allowed in the current TPM mode.\n * @param[out] rc_out  Receives the rejection code on failure.\n * @return @c true if the command may proceed.\n */\nbool tpm_command_allowed_in_current_mode(struct S32k358TPMState *s, TPM_CC cc,\n                                         TPM_RC *rc_out);\n\n/** @brief State-machine Startup handler. */\nTPM_RC TPM2_Startup_SM(struct S32k358TPMState *s, Startup_In *in);\n/** @brief State-machine Shutdown handler. */\nTPM_RC TPM2_Shutdown_SM(struct S32k358TPMState *s, Shutdown_In *in);\n/** @brief State-machine SelfTest handler. */\nTPM_RC TPM2_SelfTest_SM(struct S32k358TPMState *s, SelfTest_In *in);\n/** @brief State-machine GetTestResult handler. */\nTPM_RC TPM2_GetTestResult_SM(struct S32k358TPMState *s, GetTestResult_Out *out);\n/** @brief State-machine GetCapability handler. */\nTPM_RC TPM2_GetCapability_SM(struct S32k358TPMState *s, GetCapability_In *in,\n                             GetCapability_Out *out);\n/** @brief State-machine FieldUpgradeStart handler. */\nTPM_RC TPM2_FieldUpgradeStart_SM(struct S32k358TPMState *s);\n/** @brief State-machine FieldUpgradeData handler. */\nTPM_RC TPM2_FieldUpgradeData_SM(struct S32k358TPMState *s,\n                                FieldUpgradeData_In *in);\n/** @} */
+/** @brief State-machine Startup handler. */
+TPM_RC TPM2_Startup_SM(struct S32k358TPMState *s, Startup_In *in);
+/** @brief State-machine Shutdown handler. */
+TPM_RC TPM2_Shutdown_SM(struct S32k358TPMState *s, Shutdown_In *in);
+/** @brief State-machine SelfTest handler. */
+TPM_RC TPM2_SelfTest_SM(struct S32k358TPMState *s, SelfTest_In *in);
+/** @brief State-machine GetTestResult handler. */
+TPM_RC TPM2_GetTestResult_SM(struct S32k358TPMState *s, GetTestResult_Out *out);
+/** @brief State-machine GetCapability handler. */
+TPM_RC TPM2_GetCapability_SM(struct S32k358TPMState *s, GetCapability_In *in,
+                             GetCapability_Out *out);
+/** @brief State-machine FieldUpgradeStart handler. */
+TPM_RC TPM2_FieldUpgradeStart_SM(struct S32k358TPMState *s);
+/** @brief State-machine FieldUpgradeData handler. */
+TPM_RC TPM2_FieldUpgradeData_SM(struct S32k358TPMState *s,
+                                FieldUpgradeData_In *in);
+/** @} */
 
-/** @name §6.3 TPM Command Entry Points */
-/** @{ */
+/* Subsection 6.3: TPM Commands */
 
-/** @brief Generate random bytes. */
+/** @brief Generate random bytes (Spec Section 5.1). */
 TPM_RC TPM2_GetRandom(GetRandom_In *in, GetRandom_Out *out);
 
-/** @brief Sign a digest with a loaded key. */
+/* ---- Cryptographic Primitives ---- */
+
+/** @brief Sign data using a loaded key (Spec Section 5.5). */
 TPM_RC TPM2_Sign(Sign_In *in, Sign_Out *out);
-
-/** @brief Verify a signature against a public key. */
+/** @brief Verify a signature against a loaded key (Spec Section 5.5). */
 TPM_RC TPM2_VerifySignature(VerifySignature_In *in, VerifySignature_Out *out);
-
-/** @brief Compute a hash of the supplied data. */
+/** @brief Compute a hash of the supplied data (Spec Section 5.3). */
 TPM_RC TPM2_Hash(Hash_In *in, Hash_Out *out);
-
-/** @brief Symmetric encrypt or decrypt. */
+/** @brief Symmetric encrypt/decrypt using a loaded key (Spec Section 5.6). */
 TPM_RC TPM2_EncryptDecrypt2(EncryptDecrypt2_In *in, EncryptDecrypt2_Out *out);
-
-/** @brief RSA-OAEP encrypt. */
+/** @brief RSA encryption using a loaded public key. */
 TPM_RC TPM2_RSA_Encrypt(RSA_Encrypt_In *in, RSA_Encrypt_Out *out);
-
-/** @brief RSA-OAEP decrypt. */
+/** @brief RSA decryption using a loaded private key. */
 TPM_RC TPM2_RSA_Decrypt(RSA_Decrypt_In *in, RSA_Decrypt_Out *out);
 
-/** @brief Create a primary key under a hierarchy. */
+/* ---- Key Lifecycle Management ---- */
+
+/** @brief Create a primary key from a hierarchy seed (Spec Section 5.4). */
 TPM_RC TPM2_CreatePrimary(CreatePrimary_In *in, CreatePrimary_Out *out);
-
-/** @brief Create a child key object (not loaded). */
+/** @brief Create a child key under a loaded parent (Spec Section 5.4). */
 TPM_RC TPM2_Create(Create_In *in, Create_Out *out);
-
-/** @brief Load a key created by TPM2_Create. */
+/** @brief Load a key-pair into a transient object slot (Spec Section 5.4). */
 TPM_RC TPM2_Load(Load_In *in, Load_Out *out);
-
-/** @brief Read the public area of a loaded object. */
+/** @brief Read the public area of a loaded object (Spec Section 5.4). */
 TPM_RC TPM2_ReadPublic(ReadPublic_In *in, ReadPublic_Out *out);
 
-/** @brief Define a new NV index. */
+/* ---- NV Memory ---- */
+
+/** @brief Define a new NV index (Spec Section 5.2). */
 TPM_RC TPM2_NV_DefineSpace(NV_DefineSpace_In *in);
-
-/** @brief Write data to an NV index. */
+/** @brief Write data to a defined NV index (Spec Section 5.2). */
 TPM_RC TPM2_NV_Write(NV_Write_In *in);
-
-/** @brief Read data from an NV index. */
+/** @brief Read data from a defined NV index (Spec Section 5.2). */
 TPM_RC TPM2_NV_Read(NV_Read_In *in, NV_Read_Out *out);
-/** @} */  /* §6.3 */
-/** @} */  /* tpm2_prototypes §6 */
+
+/** @} */
 
 #endif /* TPM2_SPEC_PROTOCOL_H */

@@ -1,16 +1,18 @@
-/*
- * tpm_load.c – TPM2_Load command and support functions.
+/**
+ * @file tpm_load.c
+ * @brief TPM2_Load command and private-blob wrapping (Spec Part 3, Section 5.4).
  *
- * Functions:
- *   PrivateToSensitive  – unwrap a TPM2B_PRIVATE blob into TPMT_SENSITIVE
- *   SensitiveToPrivate  – wrap a TPMT_SENSITIVE into a TPM2B_PRIVATE blob
- *   ObjectLoad          – validate and install a non-primary object
- *   TPM2_Load           – TPM2_Load command handler
+ * Provides functions to wrap and unwrap @c TPMT_SENSITIVE into a
+ * @c TPM2B_PRIVATE blob, validate and install non-primary objects,
+ * and implement the TPM2_Load command handler.
  *
- * Reference: ms-tpm-20-ref
- *   Object_spt.c  (PrivateToSensitive, SensitiveToPrivate)
- *   Object.c      (ObjectLoad)
- *   Load.c        (TPM2_Load)
+ *   - @ref PrivateToSensitive  — unwrap a TPM2B_PRIVATE blob.
+ *   - @ref SensitiveToPrivate  — wrap a TPMT_SENSITIVE into a blob.
+ *   - @ref ObjectLoad          — validate and install a loaded object.
+ *   - @ref TPM2_Load           — TPM2_Load command handler.
+ *
+ * @see tpm_object.c  for object-slot management.
+ * @see ms-tpm-20-ref Object_spt.c, Object.c, Load.c
  */
 
 #include "hw/misc/s32k358_tpm.h"
@@ -18,20 +20,26 @@
 #include "hw/misc/tpm_crypt.h"
 #include <string.h>
 
-/* -----------------------------------------------------------------------
- * PrivateToSensitive – Unwrap an input TPM2B_PRIVATE area.
+/* ---- Private blob handling ------------------------------------------- */
+
+/**
+ * @brief Unwrap a @c TPM2B_PRIVATE blob into @c TPMT_SENSITIVE.
  *
- * In a full TPM implementation this function:
- *   1. Checks the HMAC integrity of the private area.
- *   2. Decrypts the private buffer using the parent's symmetric key.
- *   3. Unmarshals the resulting TPMT_SENSITIVE.
+ * In a full TPM this involves HMAC integrity checking and symmetric
+ * decryption.  In this simplified model the blob is a raw copy of
+ * @c TPMT_SENSITIVE followed by a SHA-256 integrity digest.  The
+ * integrity digest binds the private blob to the public area (via
+ * the Name) so that tampering is detected at load time.
  *
- * In this simplified model the private blob is just a raw copy of
- * TPMT_SENSITIVE (produced by SensitiveToPrivate), so we memcpy it
- * back.
+ * @param[in]  inPrivate  Wrapped private blob.
+ * @param[in]  name       Object Name (used for integrity check).
+ * @param[in]  parent     Parent object (unused in simplified model).
+ * @param[in]  nameAlg    Name hash algorithm (unused in simplified model).
+ * @param[out] sensitive  Recovered TPMT_SENSITIVE on success.
+ * @return TPM_RC_SUCCESS, TPM_RCS_SIZE, or TPM_RCS_BINDING.
  *
- * Reference: ms-tpm-20-ref Object_spt.c PrivateToSensitive()
- * ----------------------------------------------------------------------- */
+ * @see ms-tpm-20-ref Object_spt.c PrivateToSensitive()
+ */
 TPM_RC PrivateToSensitive(TPM2B *inPrivate, TPM2B *name,
                           OBJECT *parent, TPM_ALG_ID nameAlg,
                           TPMT_SENSITIVE *sensitive)
@@ -84,14 +92,22 @@ TPM_RC PrivateToSensitive(TPM2B *inPrivate, TPM2B *name,
     return TPM_RC_SUCCESS;
 }
 
-/* -----------------------------------------------------------------------
- * SensitiveToPrivate – Wrap a TPMT_SENSITIVE into a TPM2B_PRIVATE blob.
+/**
+ * @brief Wrap a @c TPMT_SENSITIVE into a @c TPM2B_PRIVATE blob.
  *
- * In the full spec this marshals + encrypts + HMACs the sensitive data.
- * In our simplified model we just copy the raw TPMT_SENSITIVE bytes.
+ * Stores the raw sensitive bytes followed by a SHA-256 integrity
+ * digest computed over @c Name || sensitive.  This binds the private
+ * blob to the public area so that tampering with either is detected
+ * at load time.
  *
- * Reference: ms-tpm-20-ref Object_spt.c SensitiveToPrivate()
- * ----------------------------------------------------------------------- */
+ * @param[in]  sensitive   Sensitive area to wrap.
+ * @param[in]  name        Object Name (included in integrity hash).
+ * @param[in]  parent      Parent object (unused in simplified model).
+ * @param[in]  nameAlg     Name hash algorithm (unused).
+ * @param[out] outPrivate  Output private blob.
+ *
+ * @see ms-tpm-20-ref Object_spt.c SensitiveToPrivate()
+ */
 void SensitiveToPrivate(TPMT_SENSITIVE *sensitive, TPM2B_NAME *name,
                         OBJECT *parent, TPM_ALG_ID nameAlg,
                         TPM2B_PRIVATE *outPrivate)
@@ -132,22 +148,24 @@ void SensitiveToPrivate(TPMT_SENSITIVE *sensitive, TPM2B_NAME *name,
     outPrivate->size = copySize + SHA256_DIGEST_SIZE;
 }
 
-/* -----------------------------------------------------------------------
- * ObjectLoad – Common function to load a non-primary object.
+/**
+ * @brief Validate and install a non-primary object into a slot.
  *
- * A loaded object has its public area validated (unless nameAlg is
- * TPM_ALG_NULL).  If a sensitive part is loaded, it is verified to
- * be correct and if both public and sensitive parts are loaded, then
- * the cryptographic binding between the objects is validated.
+ * Copies the public and sensitive areas into the object, performs
+ * attribute-consistency checks, computes the Name, and marks the
+ * slot as occupied.
  *
- * In this simplified model we:
- *   1. Copy the public area into the object slot.
- *   2. Copy the sensitive area (if present).
- *   3. Compute the object Name from the public area.
- *   4. Mark the slot as in use.
+ * @param[in,out] object       Target object slot.
+ * @param[in]     parent       Parent object (unused in simplified model).
+ * @param[in]     publicArea   Public template.
+ * @param[in]     sensitive    Sensitive area (may be @c NULL for public-only).
+ * @param[in]     blamePublic  RC modifier for public-area errors.
+ * @param[in]     blameSensitive RC modifier for sensitive-area errors.
+ * @param[out]    name         Computed object Name (if not @c NULL).
+ * @return TPM_RC_SUCCESS or validation error.
  *
- * Reference: ms-tpm-20-ref Object.c ObjectLoad()
- * ----------------------------------------------------------------------- */
+ * @see ms-tpm-20-ref Object.c ObjectLoad()
+ */
 TPM_RC ObjectLoad(OBJECT *object, OBJECT *parent,
                   TPMT_PUBLIC *publicArea, TPMT_SENSITIVE *sensitive,
                   TPM_RC blamePublic, TPM_RC blameSensitive,
@@ -219,11 +237,19 @@ TPM_RC ObjectLoad(OBJECT *object, OBJECT *parent,
     return TPM_RC_SUCCESS;
 }
 
-/* -----------------------------------------------------------------------
- * TPM2_Load – Load an ordinary or temporary object.
+/**
+ * @brief Load a child object into a transient slot (Spec Part 3, Section 5.4).
  *
- * Reference: ms-tpm-20-ref Load.c TPM2_Load()
- * ----------------------------------------------------------------------- */
+ * Allocates a slot, unwraps the private blob via
+ * @ref PrivateToSensitive, validates the object via
+ * @ref ObjectLoad, and sets loaded attributes.
+ *
+ * @param[in]  in   Parent handle, public area, and private blob.
+ * @param[out] out  Assigned transient handle and computed Name.
+ * @return TPM_RC_SUCCESS or load-specific error.
+ *
+ * @see ms-tpm-20-ref Load.c TPM2_Load()
+ */
 TPM_RC TPM2_Load(Load_In *in, Load_Out *out)
 {
     TPM_RC         result = TPM_RC_SUCCESS;

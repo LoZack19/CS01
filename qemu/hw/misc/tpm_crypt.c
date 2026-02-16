@@ -1,16 +1,45 @@
+/**
+ * @file tpm_crypt.c
+ * @brief Native cryptographic primitives for the TPM model.
+ *
+ * All crypto is implemented without external libraries (Spec Section 3.2):
+ *
+ *   - **RNG**: @ref CryptRandomGenerate — stdlib-based random bytes.
+ *   - **SHA-256**: @ref SHA256_Calculate — FIPS 180-4 compliant hash.
+ *   - **RSA-PSS**: @ref CryptSignRSA_PSS_SHA256 /
+ *     @ref CryptVerifySignatureRSA_PSS_SHA256 — simplified PSS padding
+ *     with XOR-based key simulation.
+ *   - **RSA Encrypt/Decrypt**: @ref CryptRSAEncrypt /
+ *     @ref CryptRSADecrypt — XOR-based simulation.
+ *   - **AES**: ECB, CBC, CFB, OFB, CTR mode wrappers using a full
+ *     AES-128/192/256 software implementation.
+ *   - **PKCS#7**: @ref PKCS7_Pad / @ref PKCS7_Unpad.
+ *
+ * @note The RSA primitives use a simplified XOR-based simulation
+ *       (not real modular arithmetic).  This is by design — the model
+ *       is educational and not intended for production cryptography.
+ *
+ * @see tpm_crypt.h    for the public API declarations.
+ * @see tpm_cmds.c     for the command handlers that call these primitives.
+ */
+
 #include "hw/misc/s32k358_tpm.h"
 #include "hw/misc/tpm_crypt.h"
 #include <string.h>
 #include <stdlib.h>
 
-/* RNG */
+/* ---- Random Number Generation ---------------------------------------- */
+
+/* See tpm_crypt.h for documentation. */
 void CryptRandomGenerate(UINT16 size, BYTE *buffer) {
     for (UINT16 i = 0; i < size; i++) {
         buffer[i] = rand() % 0x100;
     }
 }
 
-/* SHA-256 implementation (moved from tpm_cmds.c) */
+/* ---- SHA-256 --------------------------------------------------------- */
+
+/** @brief SHA-256 round constants (FIPS 180-4 Section 4.2.2). */
 static const uint32_t K[64] = {
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
     0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
@@ -22,6 +51,7 @@ static const uint32_t K[64] = {
     0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
 };
 
+/** @brief SHA-256 initial hash values (FIPS 180-4 Section 5.3.3). */
 static const uint32_t H0[8] = {
     0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
     0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
@@ -71,6 +101,7 @@ static void sha256_compress(uint32_t state[8], const BYTE block[64]) {
     state[4] += e; state[5] += f; state[6] += g; state[7] += h;
 }
 
+/* See tpm_crypt.h for documentation. */
 void SHA256_Calculate(const BYTE *data, size_t dataSize, BYTE *digest) {
     uint32_t state[8];
     BYTE block[64];
@@ -104,6 +135,9 @@ void SHA256_Calculate(const BYTE *data, size_t dataSize, BYTE *digest) {
     for (i = 0; i < 8; i++) { word_to_bytes(state[i], &digest[i * 4]); }
 }
 
+/**
+ * @brief Run the SHA-256 known-answer tests and log results.
+ */
 void test_sha256_implementation(void) {
     BYTE result[32];
     BYTE test1[] = "abc";
@@ -161,7 +195,9 @@ void test_sha256_implementation(void) {
     qemu_log_mask(LOG_GUEST_ERROR, "SHA-256 Test 6 (single block): %s\n", memcmp(result, expected6, 32) == 0 ? "PASS" : "FAIL");
 }
 
-/* RSA-PSS helpers (simplified) */
+/* ---- RSA-PSS (simplified simulation) --------------------------------- */
+
+/* See tpm_crypt.h for documentation. */
 void RSA_PSS_Pad(const BYTE *hash, UINT16 hashSize, BYTE *padded, UINT16 paddedSize) {
     memset(padded, 0, paddedSize);
     padded[0] = 0x00; padded[1] = 0x01;
@@ -171,6 +207,7 @@ void RSA_PSS_Pad(const BYTE *hash, UINT16 hashSize, BYTE *padded, UINT16 paddedS
     padded[paddedSize - 1] = 0xBC;
 }
 
+/* See tpm_crypt.h for documentation. */
 void RSA_Private_Encrypt(const BYTE *input, UINT16 inputSize,
                          const BYTE *privateKey, UINT16 keySize,
                          BYTE *output) {
@@ -182,6 +219,7 @@ void RSA_Private_Encrypt(const BYTE *input, UINT16 inputSize,
     }
 }
 
+/* See tpm_crypt.h for documentation. */
 void CryptSignRSA_PSS_SHA256(const BYTE *data, UINT16 dataSize,
                              const BYTE *privateKey, UINT16 keySize,
                              BYTE *signature) {
@@ -193,6 +231,7 @@ void CryptSignRSA_PSS_SHA256(const BYTE *data, UINT16 dataSize,
     RSA_Private_Encrypt(padded, signatureSize, privateKey, keySize, signature);
 }
 
+/* See tpm_crypt.h for documentation. */
 UINT8 CryptVerifySignatureRSA_PSS_SHA256(const BYTE *data, UINT16 dataSize,
                                          const BYTE *signature, UINT16 sigSize,
                                          const BYTE *publicKey, UINT16 keySize) {
@@ -212,7 +251,9 @@ UINT8 CryptVerifySignatureRSA_PSS_SHA256(const BYTE *data, UINT16 dataSize,
     return 1;
 }
 
-/* AES helpers and simple ECB/CBC/CFB/OFB/CTR wrappers */
+/* ---- AES implementation ---------------------------------------------- */
+
+/** @brief AES S-Box (FIPS 197 Section 5.1.1). */
 static const BYTE AES_SBOX[256] = {
     0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76,
     0xca, 0x82, 0xc9, 0x7d, 0xfa, 0x59, 0x47, 0xf0, 0xad, 0xd4, 0xa2, 0xaf, 0x9c, 0xa4, 0x72, 0xc0,
@@ -232,6 +273,7 @@ static const BYTE AES_SBOX[256] = {
     0x8c, 0xa1, 0x89, 0x0d, 0xbf, 0xe6, 0x42, 0x68, 0x41, 0x99, 0x2d, 0x0f, 0xb0, 0x54, 0xbb, 0x16
 };
 
+/** @brief AES inverse S-Box (FIPS 197 Section 5.3.2). */
 static const BYTE AES_INV_SBOX[256] = {
     0x52, 0x09, 0x6a, 0xd5, 0x30, 0x36, 0xa5, 0x38, 0xbf, 0x40, 0xa3, 0x9e, 0x81, 0xf3, 0xd7, 0xfb,
     0x7c, 0xe3, 0x39, 0x82, 0x9b, 0x2f, 0xff, 0x87, 0x34, 0x8e, 0x43, 0x44, 0xc4, 0xde, 0xe9, 0xcb,
@@ -324,7 +366,19 @@ static void AES_DecryptBlock(const BYTE *ciphertext, const BYTE *roundKeys, UINT
     AES_InvShiftRows(state); AES_InvSubBytes(state); AES_AddRoundKey(state, roundKeys); memcpy(plaintext, state, 16);
 }
 
-/* Mode helpers (no padding) */
+/* ---- AES mode wrappers (no padding) ---------------------------------- */
+
+/**
+ * @brief AES-CBC encryption.
+ *
+ * @param[in]  plaintext  Input (must be block-aligned).
+ * @param[in]  dataSize   Data length.
+ * @param[in]  key        AES key.
+ * @param[in]  keySize    Key length (16 / 24 / 32).
+ * @param[in]  iv         Initialisation vector (16 bytes).
+ * @param[out] ciphertext Output buffer.
+ * @param[out] ivOut      Updated IV after last block.
+ */
 static void AES_CBC_Encrypt(const BYTE *plaintext, size_t dataSize, const BYTE *key, UINT16 keySize,
                             const BYTE *iv, BYTE *ciphertext, BYTE *ivOut) {
     UINT16 numRounds = (keySize == 16) ? 10 : (keySize == 24) ? 12 : 14;
@@ -487,6 +541,16 @@ static void AES_CTR_Process(const BYTE *input, size_t dataSize, const BYTE *key,
     memcpy(ivOut, counter, 16);
 }
 
+/**
+ * @brief AES-ECB encrypt + PKCS#7 padding.
+ *
+ * @param[in]  data       Plaintext.
+ * @param[in]  dataSize   Plaintext length.
+ * @param[in]  key        AES key.
+ * @param[in]  keySize    Key length.
+ * @param[out] encrypted  Output ciphertext.
+ * @return TPM_RC_SUCCESS or TPM_RC_VALUE.
+ */
 TPM_RC CryptEncrypt(const BYTE *data, UINT16 dataSize, const BYTE *key, UINT16 keySize, BYTE *encrypted) {
     if (keySize != 16 && keySize != 24 && keySize != 32) { qemu_log_mask(LOG_GUEST_ERROR, "CryptEncrypt: Invalid AES key size %u\n", keySize); return TPM_RC_VALUE; }
     UINT16 numRounds = (keySize == 16) ? 10 : (keySize == 24) ? 12 : 14;
@@ -497,6 +561,16 @@ TPM_RC CryptEncrypt(const BYTE *data, UINT16 dataSize, const BYTE *key, UINT16 k
     return TPM_RC_SUCCESS;
 }
 
+/**
+ * @brief AES-ECB decrypt + PKCS#7 unpadding.
+ *
+ * @param[in]  encrypted  Ciphertext (must be block-aligned).
+ * @param[in]  dataSize   Ciphertext length.
+ * @param[in]  key        AES key.
+ * @param[in]  keySize    Key length.
+ * @param[out] decrypted  Output plaintext.
+ * @return TPM_RC_SUCCESS or TPM_RC_VALUE.
+ */
 TPM_RC CryptDecrypt(const BYTE *encrypted, UINT16 dataSize, const BYTE *key, UINT16 keySize, BYTE *decrypted) {
     if (keySize != 16 && keySize != 24 && keySize != 32) { qemu_log_mask(LOG_GUEST_ERROR, "CryptDecrypt: Invalid AES key size %u\n", keySize); return TPM_RC_VALUE; }
     if (dataSize % 16 != 0) { qemu_log_mask(LOG_GUEST_ERROR, "CryptDecrypt: Invalid data size %u (must be multiple of 16)\n", dataSize); return TPM_RC_VALUE; }
@@ -508,8 +582,18 @@ TPM_RC CryptDecrypt(const BYTE *encrypted, UINT16 dataSize, const BYTE *key, UIN
     return TPM_RC_SUCCESS;
 }
 
-/* Simplified RSA encryption/decryption using the XOR-based simulation.
- * RSA_Private_Encrypt is self-inverse, so the same function serves both. */
+/* ---- Simplified RSA encrypt/decrypt ---------------------------------- */
+
+/**
+ * @brief RSA public-key encryption (XOR-based simulation).
+ *
+ * @param[in]  data      Plaintext.
+ * @param[in]  dataSize  Plaintext length.
+ * @param[in]  key       Public key material.
+ * @param[in]  keySize   Key length.
+ * @param[out] out       Ciphertext.
+ * @return TPM_RC_SUCCESS or TPM_RC_VALUE.
+ */
 TPM_RC CryptRSAEncrypt(const BYTE *data, UINT16 dataSize,
                         const BYTE *key, UINT16 keySize, BYTE *out) {
     if (data == NULL || out == NULL || dataSize == 0) {
@@ -519,6 +603,16 @@ TPM_RC CryptRSAEncrypt(const BYTE *data, UINT16 dataSize,
     return TPM_RC_SUCCESS;
 }
 
+/**
+ * @brief RSA private-key decryption (XOR-based simulation).
+ *
+ * @param[in]  data      Ciphertext.
+ * @param[in]  dataSize  Ciphertext length.
+ * @param[in]  key       Private key material.
+ * @param[in]  keySize   Key length.
+ * @param[out] out       Recovered plaintext.
+ * @return TPM_RC_SUCCESS or TPM_RC_VALUE.
+ */
 TPM_RC CryptRSADecrypt(const BYTE *data, UINT16 dataSize,
                         const BYTE *key, UINT16 keySize, BYTE *out) {
     if (data == NULL || out == NULL || dataSize == 0) {
@@ -528,7 +622,16 @@ TPM_RC CryptRSADecrypt(const BYTE *data, UINT16 dataSize,
     return TPM_RC_SUCCESS;
 }
 
-/* Minimal PKCS#7 helpers (block=16) */
+/* ---- PKCS#7 padding helpers ------------------------------------------ */
+
+/**
+ * @brief Apply PKCS#7 padding (block size = 16).
+ *
+ * @param[in]  data      Input data.
+ * @param[in]  dataSize  Input length.
+ * @param[out] out       Padded output.
+ * @return Padded output length.
+ */
 UINT16 PKCS7_Pad(const BYTE *data, UINT16 dataSize, BYTE *out) {
     memcpy(out, data, dataSize);
     UINT8 pad = 16 - (dataSize % 16);
@@ -537,6 +640,14 @@ UINT16 PKCS7_Pad(const BYTE *data, UINT16 dataSize, BYTE *out) {
     return dataSize + pad;
 }
 
+/**
+ * @brief Remove PKCS#7 padding and validate.
+ *
+ * @param[in]  data      Padded data.
+ * @param[in]  dataSize  Padded length (must be a multiple of 16).
+ * @param[out] out       Unpadded output.
+ * @return Unpadded length, or 0 on invalid padding.
+ */
 UINT16 PKCS7_Unpad(const BYTE *data, UINT16 dataSize, BYTE *out) {
     if (dataSize == 0 || dataSize % 16 != 0) { return 0; }
     memcpy(out, data, dataSize);

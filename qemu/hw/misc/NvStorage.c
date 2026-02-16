@@ -1,15 +1,32 @@
+/**
+ * @file   NvStorage.c
+ * @brief  Volatile NV-memory implementation for the QEMU TPM model.
+ *
+ * Provides a linked-list-based NV index store backed by a contiguous
+ * memory region supplied by the device model.  Supports
+ * @c TPM2_NV_DefineSpace, @c TPM2_NV_Write, and @c TPM2_NV_Read
+ * operations with attribute-based access control.
+ *
+ * @note All NV data is volatile; it persists only while the QEMU
+ *       process is running.
+ *
+ * @see TPM 2.0 Part 2 Section NV Structures
+ * @see ms-tpm-20-ref NvDynamic.c
+ */
+
 #include <pthread.h>
 #include "include/hw/misc/s32k358_tpm.h"
 
+/** @brief NV memory backing store and synchronisation. */
 typedef struct {
-    void *memory;
-    size_t size;
-    pthread_mutex_t lock;
+    void           *memory; /**< Base pointer (from device model). */
+    size_t          size;   /**< Total capacity in bytes. */
+    pthread_mutex_t lock;   /**< Guards concurrent access. */
 } NvMemorySpace;
 
-state_clear_data *gc;
-NV_INDEX cachedNvIndex;
-NV_REF cachedNvRef;
+static state_clear_data *gc;       /**< Saved TPM state across reboots. */
+static NV_INDEX cachedNvIndex;     /**< Cached last-looked-up NV index. */
+static NV_REF   cachedNvRef;       /**< NV offset of @c cachedNvIndex. */
 
 NvMemorySpace nvmem = {
     .memory = NULL,
@@ -88,6 +105,7 @@ int NvWrite(void *src, uint32_t addr, size_t size)
     return size;
 }
 
+/** @brief Return the maximum NV counter value (stub, always 0). */
 static
 UINT64 NvReadMaxCount(void) {
     return 0;
@@ -346,20 +364,13 @@ BOOL NvIndexIsDefined(TPM_HANDLE nvHandle) {
     return (NvFindHandle(nvHandle) != 0);
 }
 
+/** @brief Return digest size for @p nameAlg (stub, always 0). */
 static
 UINT16 CryptHashGetDigestSize(TPMI_ALG_HASH nameAlg) {
     return 0;
 }
 
-/**
- * @brief Defines a new Non-Volatile (NV) Index and reserves space for its data.
- * @param[in] auth Authorization token
- * @param[in] publicInfo A template for an area to create
- * @param[in] blameAuthHandle Return value if AuthHandle is invalid
- * @param[in] blameAuth Return value if Auth is invalid
- * @param[in] blamePublic Return value if publicInfo is invalid
- * @return Response code
- */
+/* Define a new NV index — see header for full docs. */
 TPM_RC NvDefineSpace(
     TPMI_RH_PROVISION authHandle,
     TPM2B_AUTH* auth,
@@ -504,7 +515,7 @@ TPM_RC NvDefineSpace(
 /**
  * @brief Writes the attributes of an index to NV
  * @param[in] locator Reference to the entry header (size field)
- * @param[in] attributs Attributes to write to the index
+ * @param[in] attributes Attributes to write to the index
  * @return Response code
  */
 static TPM_RC NvWriteNvIndexAttributes(NV_REF locator, TPMA_NV attributes)

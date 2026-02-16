@@ -1,18 +1,25 @@
-/*
- * tpm_util.c – Utility helpers for the TPM model.
+/**
+ * @file   tpm_util.c
+ * @brief  Utility helpers for the TPM model.
  *
- * Class: Utility
- * Functions: MemorySet, RcSafeAddToResult
+ * Provides low-level utility functions (memory fill, return-code
+ * composition) used across the TPM implementation.
+ *
+ * @see ms-tpm-20-ref Memory.c, ResponseCodeProcessing.c
  */
 
 #include "hw/misc/s32k358_tpm.h"
 #include "hw/misc/tpm_create_primary.h"
 #include <string.h>
 
-/*
- * MemorySet – Wrapper around memset.
+/**
+ * @brief  Wrapper around @c memset with a @c NULL guard.
  *
- * Reference: ms-tpm-20-ref Memory.c MemorySet()
+ * @param[out] dest  Destination buffer (may be @c NULL).
+ * @param[in]  val   Fill byte value.
+ * @param[in]  size  Number of bytes to fill.
+ *
+ * @see ms-tpm-20-ref Memory.c MemorySet()
  */
 void MemorySet(void *dest, int val, size_t size)
 {
@@ -21,15 +28,20 @@ void MemorySet(void *dest, int val, size_t size)
     }
 }
 
-/*
- * RcSafeAddToResult – Combine a base return code with a modifier.
+/**
+ * @brief Combine a base return code with a parameter/handle modifier.
  *
- * In the real reference the modifier encodes which parameter or handle
- * caused the failure so that the caller can produce a fully-qualified
- * return code.  The operation is a simple OR because the modifier bits
- * never overlap with the base-error bits for FMT1 return codes.
+ * For FMT1 errors (@c RC_FMT1 bit set) the modifier encodes the
+ * parameter or handle index that caused the failure.  The modifier
+ * bits never overlap the base-error bits, so the combination is an
+ * addition.
  *
- * Reference: ms-tpm-20-ref ResponseCodeProcessing.c RcSafeAddToResult()
+ * @param[in] result    Base return code.
+ * @param[in] modifier  Parameter/handle modifier (e.g. @c TPM_RC_P +
+ *                      @c TPM_RC_1).
+ * @return Fully-qualified return code.
+ *
+ * @see ms-tpm-20-ref ResponseCodeProcessing.c RcSafeAddToResult()
  */
 TPM_RC RcSafeAddToResult(TPM_RC result, TPM_RC modifier)
 {

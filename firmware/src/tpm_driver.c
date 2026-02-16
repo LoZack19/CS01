@@ -129,22 +129,7 @@ void tpm_drain_bytes(size_t size) {
 
 #if defined(TPM_TEST_ENABLE_TRANSPORT_NEGATIVE) || \
     defined(TPM_TEST_ENABLE_ERROR_HANDLING)
-/**
- * @brief Send a raw TPM command and return the response header.
- *
- * Builds a well-formed command header (tag + computed size + code),
- * transmits the optional payload, triggers execution, and reads back
- * the response header.  Any remaining response bytes are drained.
- *
- * Used by transport-negative and error-handling test suites to craft
- * arbitrary command sequences.
- *
- * @param[in] tag           TPM_ST tag for the command header.
- * @param[in] commandCode   TPM_CC command code.
- * @param[in] payload       Pointer to payload bytes (may be @c NULL).
- * @param[in] payload_size  Payload length in bytes.
- * @return The received response header.
- */
+/* See tpm_driver.h for documentation. */
 tpm_rsp_header_t tpm_send_raw_command(uint16_t tag, uint32_t commandCode,
                                       const void *payload,
                                       size_t payload_size) {

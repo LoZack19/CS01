@@ -1,7 +1,21 @@
-/*
- * NOTE: This header is the source for the generated copy at
- * firmware/include/tpm2_spec_protocol.h. The firmware copy is generated
- * during the build; edit this file in qemu/include/hw/misc instead.
+/**
+ * @file   tpm2_spec_protocol.h
+ * @brief  TPM 2.0 protocol constants, types, and wire structures.
+ *
+ * This is the canonical source; the firmware copy at
+ * @c firmware/include/tpm2_spec_protocol.h is generated during the
+ * build.  All edits must be made here.
+ *
+ * The file is organised into six sections matching the TPM 2.0
+ * specification:
+ *  -# Constants (return codes, algorithm IDs, handle ranges, …)
+ *  -# Macros   (attribute tests, marshaling helpers)
+ *  -# Basic Types (integral typedefs)
+ *  -# Complex Types (structures, unions, TPM2B buffers)
+ *  -# Command I/O structures (packed request/response headers)
+ *  -# Function prototypes (command dispatcher, NV, driver)
+ *
+ * @see TPM 2.0 Part 2 – Structures
  */
 #ifndef TPM2_SPEC_PROTOCOL_H
 #define TPM2_SPEC_PROTOCOL_H
@@ -12,7 +26,8 @@
 
 #define __packed __attribute__((packed))
 
-/* Section #1: Constants */
+/** @name Section 1 – Constants
+ *  @{ */
 
 // Size Configuration
 /* Cryptographic Primitives */
@@ -208,7 +223,10 @@
         0                  \
     }
 
-/* Section #2: Macros */
+/** @} */
+
+/** @name Section 2 – Macros
+ *  @{ */
 
 // Marshalling and Unmarshalling
 #define UNMARSHAL(data, fifo) unmarshal(data, sizeof(*(data)), fifo)
@@ -226,7 +244,10 @@
 #define IsNvBitsIndex(attributes)    (GET_TPM_NT(attributes) == TPM_NT_BITS)
 #define IsNvExtendIndex(attributes)  (GET_TPM_NT(attributes) == TPM_NT_EXTEND)
 
-/* Section #3: Basic Types*/
+/** @} */
+
+/** @name Section 3 – Basic Types
+ *  @{ */
 
 /* Subsection #3.1: Primitive Types */
 
@@ -312,7 +333,10 @@ typedef TPM_ALG_ID TPMI_ALG_RSA_SCHEME;
 
 typedef TPM_KEY_BITS TPMI_RSA_KEY_BITS;
 
-/* Section #4: Complex Types */
+/** @} */
+
+/** @name Section 4 – Complex Types
+ *  @{ */
 
 /* Subsection #4.1: Hash and Digest Types */
 
@@ -769,47 +793,51 @@ typedef struct __packed {
     /* ACT (empty) */
 } state_clear_data;
 
-/* Section #5: Command IO Structures */
+/** @} */
+
+/** @name Section 5 – Command I/O Structures
+ *  @{ */
 
 /* Subsection #5.1: Random Number Generation Commands */
 
-// Startup
+/** @brief Input for TPM2_Startup — specifies CLEAR or STATE restart. */
 typedef struct __packed {
-    TPM_SU startupType;
+    TPM_SU startupType; /**< @c TPM_SU_CLEAR or @c TPM_SU_STATE. */
 } Startup_In;
 
-// Shutdown
+/** @brief Input for TPM2_Shutdown — specifies CLEAR or STATE save. */
 typedef struct __packed {
-    TPM_SU shutdownType;
+    TPM_SU shutdownType; /**< @c TPM_SU_CLEAR or @c TPM_SU_STATE. */
 } Shutdown_In;
 
-// SelfTest
+/** @brief Input for TPM2_SelfTest. */
 typedef struct __packed {
-    TPMI_YES_NO fullTest;
+    TPMI_YES_NO fullTest; /**< 1 = full test; 0 = incremental. */
 } SelfTest_In;
 
-// GetCapability
+/** @brief Input for TPM2_GetCapability. */
 typedef struct __packed {
-    TPM_CAP capability;
-    TPM_PT property;
-    UINT32 propertyCount;
+    TPM_CAP capability;   /**< Capability group (e.g. TPM_CAP_TPM_PROPERTIES). */
+    TPM_PT property;      /**< First property to query. */
+    UINT32 propertyCount; /**< Max number of properties to return. */
 } GetCapability_In;
 
+/** @brief Output for TPM2_GetCapability (simplified single-property). */
 typedef struct __packed {
-    TPMI_YES_NO moreData;
-    TPM_PT property;
-    UINT32 value;
+    TPMI_YES_NO moreData; /**< Non-zero if more data is available. */
+    TPM_PT property;      /**< Returned property tag. */
+    UINT32 value;         /**< Returned property value. */
 } GetCapability_Out;
 
-// GetTestResult
+/** @brief Output for TPM2_GetTestResult. */
 typedef struct __packed {
-    TPM2B_MAX_BUFFER outData;
-    TPM_RC testResult;
+    TPM2B_MAX_BUFFER outData;   /**< Diagnostic data (empty in this impl). */
+    TPM_RC testResult;          /**< Self-test result code. */
 } GetTestResult_Out;
 
-// FieldUpgradeData
+/** @brief Input for TPM2_FieldUpgradeData. */
 typedef struct __packed {
-    TPM2B_MAX_BUFFER fuData;
+    TPM2B_MAX_BUFFER fuData; /**< Firmware upgrade data block. */
 } FieldUpgradeData_In;
 
 // GetRandom
@@ -985,63 +1013,120 @@ typedef struct __packed {
     TPM2B_NAME qualifiedName;
 } ReadPublic_Out;
 
-/* Section #6: Function Prototypes */
+/** @} */
 
-/* Subsection #6.1: Marshalling and Unmarshalling functions */
+/** @name Section 6 – Function Prototypes
+ *  @{ */
 
+/* Subsection 6.1: Marshalling / Unmarshalling */
+
+/** @brief Unmarshal @p size bytes from @p fifo into @p data. */
 void unmarshal(void *data, size_t size, Fifo8 *fifo);
+/** @brief Marshal @p size bytes of @p data into @p fifo. */
 void marshal(Fifo8 *fifo, const void *data, size_t size);
 
-/* Subsection #6.2: Helper Functions */
+/* Subsection 6.2: Helper Functions */
 
-// NV Storage
+/* ---- NV Storage ---- */
+
+/** @brief Look up an NV index and return its descriptor. */
 NV_INDEX *NvGetIndexInfo(TPM_HANDLE nvHandle, NV_REF *locator);
+/** @brief Validate write access to an NV index. */
 TPM_RC NvWriteAccessChecks(TPM_HANDLE authHandle, TPM_HANDLE nvHandle,
                            TPMA_NV attributes);
+/** @brief Write data to an NV index’s data area. */
 TPM_RC NvWriteIndexData(NV_INDEX *nvIndex, UINT32 offset, UINT32 size,
                         void *data);
+/** @brief Validate read access to an NV index. */
 TPM_RC NvReadAccessChecks(TPM_HANDLE authHandle, TPM_HANDLE nvHandle,
                           TPMA_NV attributes);
+/** @brief Read data bytes from an NV index’s data area. */
 void NvGetIndexData(NV_INDEX *nvIndex, NV_REF locator, UINT32 offset,
                     UINT16 size, void *data);
 
+/** @brief Define a new NV index with full attribute checks. */
 TPM_RC NvDefineSpace(TPMI_RH_PROVISION authHandle, TPM2B_AUTH *auth,
                      TPMS_NV_PUBLIC *publicInfo, TPM_RC blameAuthHandle,
                      TPM_RC blameAuth, TPM_RC blamePublic);
+/** @brief Connect TPM device memory to the NV storage module. */
 BOOL NvInit(void *memory, size_t size, state_clear_data *tpm_saved_state);
 
-/* State Machine Helpers */
+/** @name State Machine Helpers
+ *  Functions implemented in @ref tpm_state_machine.c.
+ *  @{ */
 struct S32k358TPMState;
+
+/** @brief Reset all state-machine flags to power-on defaults. */
 void tpm_state_machine_reset(struct S32k358TPMState *s);
+
+/**
+ * @brief Check whether @p cc is allowed in the current TPM mode.
+ * @param[in,out] s      Device state.
+ * @param[in]     cc     Command code to check.
+ * @param[out]    rc_out Receives the rejection code on failure.
+ * @return @c true if the command may proceed.
+ */
 bool tpm_command_allowed_in_current_mode(struct S32k358TPMState *s, TPM_CC cc,
                                          TPM_RC *rc_out);
+
+/** @brief State-machine Startup handler. */
 TPM_RC TPM2_Startup_SM(struct S32k358TPMState *s, Startup_In *in);
+/** @brief State-machine Shutdown handler. */
 TPM_RC TPM2_Shutdown_SM(struct S32k358TPMState *s, Shutdown_In *in);
+/** @brief State-machine SelfTest handler. */
 TPM_RC TPM2_SelfTest_SM(struct S32k358TPMState *s, SelfTest_In *in);
+/** @brief State-machine GetTestResult handler. */
 TPM_RC TPM2_GetTestResult_SM(struct S32k358TPMState *s, GetTestResult_Out *out);
+/** @brief State-machine GetCapability handler. */
 TPM_RC TPM2_GetCapability_SM(struct S32k358TPMState *s, GetCapability_In *in,
                              GetCapability_Out *out);
+/** @brief State-machine FieldUpgradeStart handler. */
 TPM_RC TPM2_FieldUpgradeStart_SM(struct S32k358TPMState *s);
+/** @brief State-machine FieldUpgradeData handler. */
 TPM_RC TPM2_FieldUpgradeData_SM(struct S32k358TPMState *s,
                                 FieldUpgradeData_In *in);
+/** @} */
 
-/* Subsection #6.3: TPM Commands */
+/* Subsection 6.3: TPM Commands */
+
+/** @brief Generate random bytes (Spec Section 5.1). */
 TPM_RC TPM2_GetRandom(GetRandom_In *in, GetRandom_Out *out);
-/* Cryptographic Primitives */
+
+/* ---- Cryptographic Primitives ---- */
+
+/** @brief Sign data using a loaded key (Spec Section 5.5). */
 TPM_RC TPM2_Sign(Sign_In *in, Sign_Out *out);
+/** @brief Verify a signature against a loaded key (Spec Section 5.5). */
 TPM_RC TPM2_VerifySignature(VerifySignature_In *in, VerifySignature_Out *out);
+/** @brief Compute a hash of the supplied data (Spec Section 5.3). */
 TPM_RC TPM2_Hash(Hash_In *in, Hash_Out *out);
+/** @brief Symmetric encrypt/decrypt using a loaded key (Spec Section 5.6). */
 TPM_RC TPM2_EncryptDecrypt2(EncryptDecrypt2_In *in, EncryptDecrypt2_Out *out);
+/** @brief RSA encryption using a loaded public key. */
 TPM_RC TPM2_RSA_Encrypt(RSA_Encrypt_In *in, RSA_Encrypt_Out *out);
+/** @brief RSA decryption using a loaded private key. */
 TPM_RC TPM2_RSA_Decrypt(RSA_Decrypt_In *in, RSA_Decrypt_Out *out);
-/* Key Lifecycle Management */
+
+/* ---- Key Lifecycle Management ---- */
+
+/** @brief Create a primary key from a hierarchy seed (Spec Section 5.4). */
 TPM_RC TPM2_CreatePrimary(CreatePrimary_In *in, CreatePrimary_Out *out);
+/** @brief Create a child key under a loaded parent (Spec Section 5.4). */
 TPM_RC TPM2_Create(Create_In *in, Create_Out *out);
+/** @brief Load a key-pair into a transient object slot (Spec Section 5.4). */
 TPM_RC TPM2_Load(Load_In *in, Load_Out *out);
+/** @brief Read the public area of a loaded object (Spec Section 5.4). */
 TPM_RC TPM2_ReadPublic(ReadPublic_In *in, ReadPublic_Out *out);
-/* NV Memory */
+
+/* ---- NV Memory ---- */
+
+/** @brief Define a new NV index (Spec Section 5.2). */
 TPM_RC TPM2_NV_DefineSpace(NV_DefineSpace_In *in);
+/** @brief Write data to a defined NV index (Spec Section 5.2). */
 TPM_RC TPM2_NV_Write(NV_Write_In *in);
+/** @brief Read data from a defined NV index (Spec Section 5.2). */
 TPM_RC TPM2_NV_Read(NV_Read_In *in, NV_Read_Out *out);
+
+/** @} */
 
 #endif /* TPM2_SPEC_PROTOCOL_H */

@@ -1,43 +1,30 @@
-/*
- * tpm_drbg.c – Deterministic Random Bit Generator for the TPM model.
+/**
+ * @file   tpm_drbg.c
+ * @brief  Deterministic Random Bit Generator (CTR_DRBG) for the TPM model.
  *
- * Class: DRBG
- * Functions: DRBG_InstantiateSeeded, DRBG_Uninstantiate, DRBG_Generate
+ * Provides a simplified educational implementation of CTR_DRBG based on
+ * AES-256 as described in TPM 2.0 Part 1 Section B.5.
  *
- * OVERVIEW:
- * The TPM specification (Part 1, §B.5) describes a CTR_DRBG based on
- * AES-256. This file provides a simplified educational implementation that:
- *   1. Uses SHA-256 for seed derivation (KDF)
- *   2. Uses AES-256-ECB for pseudorandom output generation
- *   3. Maintains a counter-based state (reseedCounter)
+ * @par Implementation
+ * - **Seed Derivation** – Iterative SHA-256 KDF over
+ *   (counter || seed || purpose || name || additional) producing
+ *   @c DRBG_SEED_SIZE_BYTES.
+ * - **Random Generation** – AES-256-ECB encryption of an incrementing
+ *   128-bit counter block using the derived seed as key.
+ * - **State** – @c DRBG_STATE holds a magic number, reseed counter,
+ *   seed, and lastValue (counter block).
  *
- * IMPLEMENTATION DETAILS:
- * - Seed Derivation: Iterative SHA-256 hashing of (counter || seed ||
- *   purpose || name || additional) to produce DRBG_SEED_SIZE_BYTES
- * - Random Generation: AES-256-ECB encryption of incrementing counter
- *   blocks using the derived seed as the key
- * - State: DRBG_STATE contains magic number, reseedCounter, seed, and
- *   lastValue (counter block)
+ * @par Simplifications
+ * - No entropy collection (uses provided seed directly).
+ * - No prediction resistance.
+ * - No personalization string beyond the purpose label.
+ * - Uses AES-ECB instead of the full CTR_DRBG construction.
  *
- * SIMPLIFICATIONS FROM SPEC:
- * - No entropy collection (uses provided seed directly)
- * - No prediction resistance
- * - No personalization string beyond the purpose label
- * - Simplified reseed counter (increments per block, no limit checking)
- * - Uses AES-ECB instead of full CTR_DRBG construction
+ * @note Uses NIST-approved primitives (SHA-256, AES-256).  Not intended
+ *       for production cryptographic key generation.
  *
- * SECURITY NOTES:
- * This implementation uses NIST-approved primitives (SHA-256, AES-256)
- * and is suitable for an educational TPM where:
- * - The primary seed comes from a secure hierarchy seed
- * - Output is used for key generation and nonces (not for cryptographic
- *   keys in production systems)
- * - Deterministic output is acceptable (same seed → same keys)
- *
- * For production use, consider replacing with a library implementation
- * of NIST SP 800-90A CTR_DRBG.
- *
- * Reference: ms-tpm-20-ref CryptRand.c, NIST SP 800-90A
+ * @see NIST SP 800-90A
+ * @see ms-tpm-20-ref CryptRand.c
  */
 
 #include "hw/misc/s32k358_tpm.h"
@@ -45,14 +32,20 @@
 #include "hw/misc/tpm_crypt.h"
 #include <string.h>
 
-/* -----------------------------------------------------------------------
- * Internal helpers
- * ----------------------------------------------------------------------- */
+/* ---- Internal helpers ------------------------------------------------ */
 
-/*
- * Derivation function – Mix seed, purpose, name, additional into
- * a DRBG_SEED.  We use iterated SHA-256: each 32-byte block of the seed
- * is computed as  H(counter || seed || purpose || name || additional).
+/**
+ * @brief Mix seed, purpose, name, and additional data into a DRBG seed.
+ *
+ * Each 32-byte block of the output seed is computed as:
+ * H(counter || seed || purpose || name || additional), where counter
+ * is a big-endian 32-bit integer incremented per block.
+ *
+ * @param[out] out         Derived seed (@c DRBG_SEED_SIZE_BYTES bytes).
+ * @param[in]  seed        Input seed (e.g. hierarchy primary seed).
+ * @param[in]  purpose     ASCII label (no NUL terminator used).
+ * @param[in]  name        Object Name (may be @c NULL).
+ * @param[in]  additional  Additional data (may be @c NULL).
  */
 static void DrbgDerivation(DRBG_SEED *out,
                            const TPM2B *seed,
@@ -143,16 +136,22 @@ static void DrbgDerivation(DRBG_SEED *out,
     }
 }
 
-/* -----------------------------------------------------------------------
- * Public API
- * ----------------------------------------------------------------------- */
+/* ---- Public API ------------------------------------------------------ */
 
-/*
- * DRBG_InstantiateSeeded – Derive a DRBG state from a primary seed and
- * contextual data (purpose/label, name, additional).
+/**
+ * @brief Derive a DRBG state from a primary seed and contextual data.
  *
- * Reference: ms-tpm-20-ref CryptRand.c  DRBG_InstantiateSeeded()
- *            lines 610-700
+ * Initialises @p drbgState, derives the internal seed via the KDF,
+ * and zeroes the counter block.
+ *
+ * @param[out] drbgState   DRBG state to instantiate.
+ * @param[in]  seed        Primary seed.
+ * @param[in]  purpose     KDF label string.
+ * @param[in]  name        Object Name (may be @c NULL).
+ * @param[in]  additional  Additional data (may be @c NULL).
+ * @return @c TPM_RC_SUCCESS, or @c TPM_RC_FAILURE.
+ *
+ * @see ms-tpm-20-ref CryptRand.c DRBG_InstantiateSeeded()
  */
 TPM_RC DRBG_InstantiateSeeded(DRBG_STATE *drbgState,
                               const TPM2B *seed,
@@ -182,10 +181,14 @@ TPM_RC DRBG_InstantiateSeeded(DRBG_STATE *drbgState,
     return TPM_RC_SUCCESS;
 }
 
-/*
- * DRBG_Uninstantiate – Securely zeroize the DRBG state.
+/**
+ * @brief Securely zeroize the DRBG state.
  *
- * Reference: ms-tpm-20-ref CryptRand.c  DRBG_Uninstantiate()
+ * @param[in,out] drbgState  State to clear.
+ * @return @c TPM_RC_SUCCESS, or @c TPM_RC_VALUE if @p drbgState is
+ *         @c NULL.
+ *
+ * @see ms-tpm-20-ref CryptRand.c DRBG_Uninstantiate()
  */
 TPM_RC DRBG_Uninstantiate(DRBG_STATE *drbgState)
 {
@@ -197,18 +200,20 @@ TPM_RC DRBG_Uninstantiate(DRBG_STATE *drbgState)
     return TPM_RC_SUCCESS;
 }
 
-/*
- * DRBG_Generate – Produce pseudorandom bytes from the DRBG state.
+/**
+ * @brief Produce pseudo-random bytes from the DRBG state.
  *
- * This is a simplified CTR_DRBG_Generate:
- *   – Increment the block counter (lastValue).
- *   – Encrypt the counter with AES-ECB using the first 256 bits of
- *     the seed as the key.
- *   – Copy the cipher text to the output.
+ * Simplified CTR_DRBG_Generate:
+ * 1. Increment the 128-bit counter (@c lastValue).
+ * 2. AES-ECB-encrypt the counter using the first 256 bits of the seed.
+ * 3. Copy the cipher text to @p random.
  *
- * Returns the number of bytes actually generated.
+ * @param[in,out] state       DRBG state (cast to @c RAND_STATE).
+ * @param[out]    random      Output buffer.
+ * @param[in]     randomSize  Requested byte count.
+ * @return Number of bytes actually generated.
  *
- * Reference: ms-tpm-20-ref CryptRand.c  DRBG_Generate() lines 750-904
+ * @see ms-tpm-20-ref CryptRand.c DRBG_Generate()
  */
 UINT16 DRBG_Generate(RAND_STATE *state, BYTE *random, UINT16 randomSize)
 {

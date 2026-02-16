@@ -1,24 +1,20 @@
 #ifndef HW_MISC_TPM_CREATE_PRIMARY_H
 #define HW_MISC_TPM_CREATE_PRIMARY_H
 
-/*
- * Declarations for all functions required by TPM2_CreatePrimary.
+/**
+ * @file   tpm_create_primary.h
+ * @brief  Umbrella header for all functions required by TPM2_CreatePrimary.
  *
- * These functions are organized by class:
- *   - Utility        (tpm_util.c)        : MemorySet, RcSafeAddToResult
- *   - Hierarchy      (tpm_hierarchy.c)   : HierarchyGetPrimarySeed,
- *                                          HierarchyNormalizeHandle,
- *                                          EntityGetHierarchy
- *   - Object Mgmt    (tpm_object.c)      : FindEmptyObjectSlot,
- *                                          ObjectSetLoadedAttributes,
- *                                          CreateChecks, AdjustAuthSize,
- *                                          PublicMarshalAndComputeName,
- *                                          FillInCreationData,
- *                                          CryptCreateObject
- *   - TPM Marshaling (tpm_marshal_tpm.c): TPMT_PUBLIC_Marshal
- *   - DRBG           (tpm_drbg.c)        : DRBG_InstantiateSeeded,
- *                                          DRBG_Uninstantiate, DRBG_Generate
- *   - Ticket         (tpm_ticket.c)      : TicketComputeCreation
+ * Declarations are organized by functional class:
+ *
+ * | Class         | Source file        | Functions                          |
+ * |---------------|--------------------|---------------------------------|
+ * | Utility       | tpm_util.c         | MemorySet, RcSafeAddToResult       |
+ * | Hierarchy     | tpm_hierarchy.c    | HierarchyGetPrimarySeed, …         |
+ * | Object Mgmt   | tpm_object.c       | FindEmptyObjectSlot, …             |
+ * | TPM Marshal   | tpm_marshal_tpm.c  | TPMT_PUBLIC_Marshal                |
+ * | DRBG          | tpm_drbg.c         | DRBG_InstantiateSeeded, …          |
+ * | Ticket        | tpm_ticket.c       | TicketComputeCreation              |
  */
 
 #include "hw/misc/tpm2_spec_protocol.h"
@@ -26,180 +22,176 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-/* Forward declaration – avoids pulling in the full QEMU device header.
- * When s32k358_tpm.h has already been included, S32k358TPMState is
- * already fully defined. */
+/**
+ * @brief Forward declaration of the QEMU device state.
+ *
+ * Avoids pulling in the full device header; when
+ * [s32k358_tpm.h](include/hw/misc/s32k358_tpm.h) is already included,
+ * @c S32k358TPMState is fully defined.
+ */
 struct S32k358TPMState;
 
-/* ========================================================================
- * Utility (tpm_util.c)
- * ======================================================================== */
+/* ---- Utility (tpm_util.c) -------------------------------------------- */
 
+/** @brief Wrapper around @c memset with a @c NULL guard. */
 void MemorySet(void *dest, int val, size_t size);
 
+/** @brief Combine a base return code with a parameter/handle modifier. */
 TPM_RC RcSafeAddToResult(TPM_RC result, TPM_RC modifier);
 
-/* ========================================================================
- * Hierarchy (tpm_hierarchy.c)
- * ======================================================================== */
+/* ---- Hierarchy (tpm_hierarchy.c) ------------------------------------- */
 
-/*
- * Set the global TPM device-state pointer used by hierarchy functions.
- * Must be called once from the device realize callback (s32k358_tpm.c).
+/**
+ * @brief Register the device state for hierarchy seed look-ups.
+ *
+ * Must be called exactly once from the device @c realize callback.
  */
 void tpm_hierarchy_set_state(struct S32k358TPMState *s);
 
+/** @brief Return the primary seed for a given hierarchy handle. */
 TPM_RC HierarchyGetPrimarySeed(TPM_HANDLE hierarchy, TPM2B_SEED *seed);
 
+/** @brief Map FW-/SVN-limited hierarchy handles to their base. */
 TPM_HANDLE HierarchyNormalizeHandle(TPM_HANDLE handle);
 
+/** @brief Determine the hierarchy to which @p handle belongs. */
 TPMI_RH_HIERARCHY EntityGetHierarchy(TPM_HANDLE handle);
 
-/* ========================================================================
- * Object Management (tpm_object.c)
- * ======================================================================== */
+/* ---- Object Management (tpm_object.c) -------------------------------- */
 
-/*
- * Maximum number of simultaneously loaded transient objects.
- * The ms-tpm-20-ref uses a similar compile-time constant.
- */
-#define MAX_LOADED_OBJECTS 16
+#define MAX_LOADED_OBJECTS 16   /**< Max simultaneous transient objects. */
+#define HR_TRANSIENT 0x80000000 /**< First transient handle. */
 
-/* First transient handle (HR_TRANSIENT) */
-#define HR_TRANSIENT 0x80000000
-
+/** @brief Allocate a free object slot and return a transient handle. */
 OBJECT *FindEmptyObjectSlot(TPM_HANDLE *handle);
 
+/** @brief Set load-time attributes (hierarchy, isParent). */
 void ObjectSetLoadedAttributes(OBJECT *object, TPM_HANDLE parentHandle);
 
+/** @brief Validate public-area template for object creation. */
 TPM_RC CreateChecks(OBJECT *parentObject, TPM_HANDLE parentHandle,
                     TPMT_PUBLIC *publicArea, uint32_t sensitiveDataSize);
 
+/** @brief Verify auth-value size against the Name algorithm. */
 BOOL AdjustAuthSize(TPM2B_AUTH *auth, TPMI_ALG_HASH nameAlg);
 
+/** @brief Marshal @c TPMT_PUBLIC and compute the object Name. */
 TPM2B *PublicMarshalAndComputeName(TPMT_PUBLIC *publicArea,
                                    TPM2B_NAME *name);
 
-/*
- * TPMT_PUBLIC_Marshal – Marshal TPMT_PUBLIC structure for Name computation.
- * Performs proper big-endian field-by-field marshaling as required by
- * TPM 2.0 spec (Part 4: Supporting Routines - Marshaling).
- * Returns actual marshaled size in bytes (no padding).
+/**
+ * @brief Marshal @c TPMT_PUBLIC into canonical big-endian wire format.
+ *
+ * Used for Name computation and @c outPublic sizing.
+ *
+ * @param[in]  publicArea  Public area to marshal.
+ * @param[out] buffer      Destination buffer.
+ * @return Actual marshaled size in bytes.
+ *
+ * @see TPM 2.0 Part 2 – Table 184 (TPMT_PUBLIC definition)
  */
 UINT16 TPMT_PUBLIC_Marshal(const TPMT_PUBLIC *publicArea, BYTE *buffer);
 
+/** @brief Populate creation-data output structures (minimal). */
 void FillInCreationData(TPM_HANDLE parentHandle, TPMI_ALG_HASH nameAlg,
                         TPML_PCR_SELECTION *creationPCR,
                         TPM2B_DATA *outsideInfo,
                         TPM2B_CREATION_DATA *outCreation,
                         TPM2B_DIGEST *creationHash);
 
+/** @brief Create cryptographic material for a new object. */
 TPM_RC CryptCreateObject(OBJECT *object,
                           TPMS_SENSITIVE_CREATE *sensitiveCreate,
                           RAND_STATE *rand);
 
-/* ========================================================================
- * DRBG (tpm_drbg.c)
- * ======================================================================== */
+/* ---- DRBG (tpm_drbg.c) ----------------------------------------------- */
 
-#define DRBG_MAGIC 0x47425244 /* "DRBG" little-endian */
+#define DRBG_MAGIC 0x47425244 /**< "DRBG" in little-endian. */
 
+/** @brief Derive a DRBG state from a primary seed and context data. */
 TPM_RC DRBG_InstantiateSeeded(DRBG_STATE *drbgState, const TPM2B *seed,
                               const char *purpose, const TPM2B *name,
                               const TPM2B *additional);
 
+/** @brief Securely zeroize the DRBG state. */
 TPM_RC DRBG_Uninstantiate(DRBG_STATE *drbgState);
 
+/** @brief Produce pseudo-random bytes from the DRBG state. */
 UINT16 DRBG_Generate(RAND_STATE *state, BYTE *random, UINT16 randomSize);
 
-/* ========================================================================
- * Ticket (tpm_ticket.c)
- * ======================================================================== */
+/* ---- Ticket (tpm_ticket.c) ------------------------------------------- */
 
+/** @brief Compute a @c TPMT_TK_CREATION for a newly created primary. */
 TPM_RC TicketComputeCreation(TPMI_RH_HIERARCHY hierarchy, TPM2B_NAME *name,
                              TPM2B_DIGEST *creation,
                              TPMT_TK_CREATION *ticket);
 
-/* ========================================================================
- * Object – Load support (tpm_object.c + tpm_load.c)
- * ======================================================================== */
+/* ---- Object – Load support (tpm_object.c + tpm_load.c) --------------- */
 
-/*
- * HandleToObject – Resolve a transient handle to an OBJECT pointer.
- * Returns NULL for permanent handles or if the slot is not occupied.
- *
- * Reference: ms-tpm-20-ref Object.c HandleToObject()
- */
+/** @brief Resolve a transient handle to an @c OBJECT pointer. */
 OBJECT *HandleToObject(TPMI_DH_OBJECT handle);
 
-/*
- * ObjectIsParent – Return TRUE if the object has the isParent attribute set.
- *
- * Reference: ms-tpm-20-ref Object_spt.c ObjectIsParent()
- */
+/** @brief Check whether the object has the @c isParent attribute set. */
 BOOL ObjectIsParent(OBJECT *parentObject);
 
-/*
- * PrivateToSensitive – Unwrap a TPM2B_PRIVATE blob into a TPMT_SENSITIVE.
+/**
+ * @brief Unwrap a @c TPM2B_PRIVATE blob into a @c TPMT_SENSITIVE.
  *
- * In the full spec this involves HMAC integrity check and decryption.
- * Our simplified model just copies the marshaled TPMT_SENSITIVE out of
- * the blob.
+ * Simplified model: copies the marshaled @c TPMT_SENSITIVE directly
+ * without HMAC integrity check.
  *
- * Reference: ms-tpm-20-ref Object_spt.c PrivateToSensitive()
+ * @see ms-tpm-20-ref Object_spt.c PrivateToSensitive()
  */
 TPM_RC PrivateToSensitive(TPM2B *inPrivate, TPM2B *name,
                           OBJECT *parent, TPM_ALG_ID nameAlg,
                           TPMT_SENSITIVE *sensitive);
 
-/*
- * SensitiveToPrivate – Wrap a TPMT_SENSITIVE into a TPM2B_PRIVATE blob.
+/**
+ * @brief Wrap a @c TPMT_SENSITIVE into a @c TPM2B_PRIVATE blob.
  *
- * Simplified model: copies the raw TPMT_SENSITIVE bytes into the private
- * buffer.
+ * Simplified model: copies the raw @c TPMT_SENSITIVE bytes.
  *
- * Reference: ms-tpm-20-ref Object_spt.c SensitiveToPrivate()
+ * @see ms-tpm-20-ref Object_spt.c SensitiveToPrivate()
  */
 void SensitiveToPrivate(TPMT_SENSITIVE *sensitive, TPM2B_NAME *name,
                         OBJECT *parent, TPM_ALG_ID nameAlg,
                         TPM2B_PRIVATE *outPrivate);
 
-/*
- * ObjectLoad – Common function to load a non-primary object.
- * Validates the public area, loads sensitive if present, and
- * checks cryptographic binding.
+/**
+ * @brief Load a non-primary object, validate public area and
+ *        cryptographic binding.
  *
- * Reference: ms-tpm-20-ref Object.c ObjectLoad()
+ * @see ms-tpm-20-ref Object.c ObjectLoad()
  */
 TPM_RC ObjectLoad(OBJECT *object, OBJECT *parent,
                   TPMT_PUBLIC *publicArea, TPMT_SENSITIVE *sensitive,
                   TPM_RC blamePublic, TPM_RC blameSensitive,
                   TPM2B_NAME *name);
 
-/* ========================================================================
- * Authorization (tpm_auth.c)
- * ======================================================================== */
+/* ---- Authorization (tpm_auth.c) -------------------------------------- */
 
-/* Forward declaration for Fifo8 to avoid including qemu/fifo8.h */
+/** @brief Forward declaration to avoid including qemu/fifo8.h. */
 struct Fifo8;
 
-/*
- * ParseAuthArea – Parse authorization area from command FIFO.
+/**
+ * @brief Parse authorization area from the command FIFO.
  *
- * For TPM_ST_SESSIONS commands, this parses the authorization area that
- * follows the command parameters. Currently supports password authorization
- * (sessionHandle == TPM_RS_PW) with empty passwords.
+ * For @c TPM_ST_SESSIONS commands, parses the authorization area that
+ * follows the command parameters.  Supports password authorization
+ * (@c TPM_RS_PW) with empty passwords.
  *
- * Returns TPM_RC_SUCCESS if valid, error otherwise.
+ * @param[in]  fifo     Command FIFO.
+ * @param[out] authCmd  Parsed authorization command on success.
+ * @return @c TPM_RC_SUCCESS on success, or an appropriate error code.
  */
 TPM_RC ParseAuthArea(Fifo8 *fifo, TPMS_AUTH_COMMAND *authCmd);
 
-/*
- * MarshalAuthResponse – Marshal authorization response area to output FIFO.
+/**
+ * @brief Marshal authorization response area to the output FIFO.
  *
- * For TPM_ST_SESSIONS responses, this marshals the authorization area
- * after the response parameters. Currently sends empty nonce and HMAC
- * for password sessions.
+ * Marshals an empty nonce and HMAC for password-session responses.
+ *
+ * @param[in,out] fifo  Output FIFO.
  */
 void MarshalAuthResponse(Fifo8 *fifo);
 

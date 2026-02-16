@@ -1,23 +1,54 @@
+/**
+ * @file tpm_cmds.c
+ * @brief TPM 2.0 command implementations (Spec Section 5).
+ *
+ * Contains the business logic for every supported TPM2 command:
+ *
+ *   - **Random / Hash**: GetRandom, Hash
+ *   - **NV Memory**: NV_DefineSpace, NV_Write, NV_Read
+ *   - **Signing**: Sign, VerifySignature
+ *   - **RSA Encrypt/Decrypt**: RSA_Encrypt, RSA_Decrypt
+ *   - **Symmetric**: EncryptDecrypt2 (AES ECB/CBC/CFB/OFB/CTR)
+ *   - **Key Lifecycle**: CreatePrimary, Create, Load, ReadPublic
+ *
+ * Each function unmarshals its command-specific input, executes the
+ * operation, and returns a @c TPM_RC result code.  Response marshaling
+ * is handled by @ref tpm_send_response in the device model.
+ *
+ * @see s32k358_tpm.c   for command dispatch.
+ * @see tpm_crypt.c      for cryptographic primitives.
+ * @see tpm_load.c       for TPM2_Load and private-blob handling.
+ * @see tpm_object.c     for object slot and name management.
+ */
+
 #include "hw/misc/s32k358_tpm.h"
 #include "hw/misc/tpm_crypt.h"
 #include "qemu/fifo8.h"
 #include <string.h>
 #include <stdlib.h>
 
-/* Fallback AES key for EncryptDecrypt2 when no symmetric key object
- * is available.  RSA commands now resolve real key material from the
- * loaded OBJECT via HandleToObject(). */
+/** @brief Fallback AES-128 key for EncryptDecrypt2 when no symmetric
+ *         key object is loaded.  RSA commands resolve real key material
+ *         from the loaded @c OBJECT via @c HandleToObject(). */
 static const uint8_t DEFAULT_AES_KEY[16] = {
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
     0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
 };
 static const uint16_t DEFAULT_AES_KEY_SIZE = 16;
+
+/**
+ * @brief Extract the handle type from a TPM handle.
+ *
+ * @param[in] handle  TPM handle value.
+ * @return Handle type (upper byte).
+ */
 static TPM_HT HandleGetType(TPM_HANDLE handle) {
     return (TPM_HT)(handle >> HR_SHIFT);
 }
 
-/* TPM responses */
+/* ---- TPM response helpers -------------------------------------------- */
 
+/* See s32k358_tpm.h for documentation. */
 void tpm_finalize_response(S32k358TPMState *s)
 {
     fifo8_reset(&s->infifo);
@@ -33,6 +64,7 @@ void tpm_finalize_response(S32k358TPMState *s)
                   & R_TPM_STS_burstCount_MASK;
 }
 
+/* See s32k358_tpm.h for documentation. */
 void tpm_send_response(S32k358TPMState *s, TPM_RC rc, const void *data,
                        size_t size) {
     tpm_rsp_header_t rsp_header;
@@ -59,8 +91,17 @@ void tpm_send_response(S32k358TPMState *s, TPM_RC rc, const void *data,
     tpm_finalize_response(s);
 }
 
-/* TPM Commands */
+/* ---- TPM command implementations ------------------------------------- */
 
+/**
+ * @brief Generate random bytes (TPM 2.0 Part 3, Section 16.1).
+ *
+ * Produces up to @c sizeof(TPMU_HA) random bytes via the DRBG.
+ *
+ * @param[in]  in   Requested byte count.
+ * @param[out] out  Random bytes produced.
+ * @return TPM_RC_SUCCESS.
+ */
 TPM_RC TPM2_GetRandom(GetRandom_In *in, GetRandom_Out *out) {
     // Truncate size to maximum supported digest size
     if (in->bytesRequested > sizeof(TPMU_HA)) {
@@ -86,6 +127,12 @@ TPM_RC TPM2_GetRandom(GetRandom_In *in, GetRandom_Out *out) {
     return TPM_RC_SUCCESS;
 }
 
+/**
+ * @brief Define a new NV index (TPM 2.0 Part 3, Section 31.3).
+ *
+ * @param[in] in  NV public-area template and authorisation.
+ * @return TPM_RC_SUCCESS or NV-specific error code.
+ */
 TPM_RC TPM2_NV_DefineSpace(NV_DefineSpace_In *in) {
     // This command only supports TPM_HT_NV_INDEX-typed NV indices.
     if (HandleGetType(in->publicInfo.nvPublic.nvIndex) != TPM_HT_NV_INDEX) {
@@ -97,6 +144,15 @@ TPM_RC TPM2_NV_DefineSpace(NV_DefineSpace_In *in) {
                          RC_NV_DefineSpace_publicInfo);
 }
 
+/**
+ * @brief Write data to an NV index (TPM 2.0 Part 3, Section 31.5).
+ *
+ * Validates access rights, attribute consistency, offset / size
+ * range, and delegates the write to @c NvWriteIndexData.
+ *
+ * @param[in] in  Write parameters (handle, offset, data).
+ * @return TPM_RC_SUCCESS or NV-specific error code.
+ */
 TPM_RC TPM2_NV_Write(NV_Write_In *in) {
     NV_INDEX *nvIndex = NvGetIndexInfo(in->nvIndex, NULL);
 
@@ -150,6 +206,16 @@ TPM_RC TPM2_NV_Write(NV_Write_In *in) {
                             in->data.buffer);
 }
 
+/**
+ * @brief Read data from an NV index (TPM 2.0 Part 3, Section 31.4).
+ *
+ * Validates access rights and range, then copies the requested
+ * slice of the NV data into @p out.
+ *
+ * @param[in]  in   Read parameters (handle, offset, size).
+ * @param[out] out  Data read from the index.
+ * @return TPM_RC_SUCCESS or NV-specific error code.
+ */
 TPM_RC TPM2_NV_Read(NV_Read_In *in, NV_Read_Out *out) {
     NV_REF locator;
     NV_INDEX *nvIndex = NvGetIndexInfo(in->nvIndex, &locator);
@@ -191,8 +257,19 @@ TPM_RC TPM2_NV_Read(NV_Read_In *in, NV_Read_Out *out) {
 
     return TPM_RC_SUCCESS;
 }
-/* Cryptographic Operations */
+/* ---- Cryptographic operations ---------------------------------------- */
 
+/**
+ * @brief Sign a digest with a loaded RSA key (Spec Section 5.5).
+ *
+ * Resolves the signing key via @c HandleToObject, validates
+ * key attributes (type, @c sign_encrypt), and delegates to
+ * @c CryptSignRSA_PSS_SHA256.
+ *
+ * @param[in]  in   Key handle, digest, and scheme.
+ * @param[out] out  Produced signature.
+ * @return TPM_RC_SUCCESS or attribute / handle error.
+ */
 TPM_RC TPM2_Sign(Sign_In *in, Sign_Out *out) {
     qemu_log_mask(LOG_GUEST_ERROR,
                   "TPM2_Sign: Signing digest with key handle 0x%08X\n",
@@ -272,6 +349,16 @@ TPM_RC TPM2_Sign(Sign_In *in, Sign_Out *out) {
     return TPM_RC_SUCCESS;
 }
 
+/**
+ * @brief Verify an RSA signature against a loaded public key.
+ *
+ * Uses the public key from the loaded object to verify an
+ * RSA-PSS-SHA256 signature.
+ *
+ * @param[in]  in   Key handle, digest, and signature.
+ * @param[out] out  Validation ticket on success.
+ * @return TPM_RC_SUCCESS or TPM_RC_SIGNATURE on mismatch.
+ */
 TPM_RC TPM2_VerifySignature(VerifySignature_In *in, VerifySignature_Out *out) {
     qemu_log_mask(
         LOG_GUEST_ERROR,
@@ -327,6 +414,13 @@ TPM_RC TPM2_VerifySignature(VerifySignature_In *in, VerifySignature_Out *out) {
     return TPM_RC_SUCCESS;
 }
 
+/**
+ * @brief Compute a SHA-256 hash of the supplied data.
+ *
+ * @param[in]  in   Data buffer and hash algorithm.
+ * @param[out] out  Digest and validation ticket.
+ * @return TPM_RC_SUCCESS or TPM_RC_HASH if algorithm unsupported.
+ */
 TPM_RC TPM2_Hash(Hash_In *in, Hash_Out *out) {
     qemu_log_mask(LOG_GUEST_ERROR, "TPM2_Hash: Computing hash (alg=0x%04X)\n",
                   in->hashAlg);
@@ -357,6 +451,16 @@ TPM_RC TPM2_Hash(Hash_In *in, Hash_Out *out) {
     return TPM_RC_SUCCESS;
 }
 
+/**
+ * @brief Symmetric AES encrypt / decrypt (TPM 2.0 Part 3, Section 13.4).
+ *
+ * Supports ECB, CBC, CFB, OFB, and CTR modes with a default
+ * AES-128 key.  ECB and CBC require block-aligned input.
+ *
+ * @param[in]  in   Key handle, data, mode, IV, and direction.
+ * @param[out] out  Processed data and updated IV.
+ * @return TPM_RC_SUCCESS or mode / value error.
+ */
 TPM_RC TPM2_EncryptDecrypt2(EncryptDecrypt2_In *in, EncryptDecrypt2_Out *out) {
     qemu_log_mask(LOG_GUEST_ERROR, "TPM2_EncryptDecrypt2: %s, Mode=0x%04X\n",
                   in->decrypt ? "Decrypt" : "Encrypt", in->mode);
@@ -461,6 +565,16 @@ TPM_RC TPM2_EncryptDecrypt2(EncryptDecrypt2_In *in, EncryptDecrypt2_Out *out) {
     return TPM_RC_SUCCESS;
 }
 
+/**
+ * @brief RSA public-key encryption (TPM 2.0 Part 3, Section 14.2).
+ *
+ * Resolves the encryption key via @c HandleToObject and encrypts
+ * using the public key (anyone can encrypt).
+ *
+ * @param[in]  in   Key handle and plaintext message.
+ * @param[out] out  Ciphertext.
+ * @return TPM_RC_SUCCESS or handle / value error.
+ */
 TPM_RC TPM2_RSA_Encrypt(RSA_Encrypt_In *in, RSA_Encrypt_Out *out) {
     qemu_log_mask(LOG_GUEST_ERROR,
                   "TPM2_RSA_Encrypt: RSA encryption with handle 0x%08X\n",
@@ -507,6 +621,16 @@ TPM_RC TPM2_RSA_Encrypt(RSA_Encrypt_In *in, RSA_Encrypt_Out *out) {
     return TPM_RC_SUCCESS;
 }
 
+/**
+ * @brief RSA private-key decryption (TPM 2.0 Part 3, Section 14.3).
+ *
+ * Resolves the decryption key via @c HandleToObject, checks the
+ * @c decrypt attribute, and decrypts using the private key.
+ *
+ * @param[in]  in   Key handle and ciphertext.
+ * @param[out] out  Recovered plaintext.
+ * @return TPM_RC_SUCCESS or handle / attribute error.
+ */
 TPM_RC TPM2_RSA_Decrypt(RSA_Decrypt_In *in, RSA_Decrypt_Out *out) {
     qemu_log_mask(LOG_GUEST_ERROR,
                   "TPM2_RSA_Decrypt: RSA decryption with handle 0x%08X\n",
@@ -561,15 +685,17 @@ TPM_RC TPM2_RSA_Decrypt(RSA_Decrypt_In *in, RSA_Decrypt_Out *out) {
     return TPM_RC_SUCCESS;
 }
 
-/*
- * TPM2_ReadPublic – Return the public area of a loaded object.
+/**
+ * @brief Return the public area of a loaded object (Spec Section 5.6).
  *
- * This command does not require authorization.  It returns the
- * public area, the Name, and the Qualified Name of the object
- * referenced by objectHandle.
+ * Does not require authorisation.  Returns the public area, the
+ * Name (nameAlg || H(TPMT_PUBLIC)), and the Qualified Name.
  *
- * Reference: ms-tpm-20-ref ReadPublic.c TPM2_ReadPublic()
- *            TPM 2.0 Spec Part 3 – Commands, Section 12.4
+ * @param[in]  in   Object handle.
+ * @param[out] out  Public area, Name, and Qualified Name.
+ * @return TPM_RC_SUCCESS or TPM_RCS_HANDLE.
+ *
+ * @see ms-tpm-20-ref ReadPublic.c
  */
 TPM_RC TPM2_ReadPublic(ReadPublic_In *in, ReadPublic_Out *out) {
     OBJECT *object;
@@ -619,6 +745,20 @@ TPM_RC TPM2_ReadPublic(ReadPublic_In *in, ReadPublic_Out *out) {
     return TPM_RC_SUCCESS;
 }
 
+/**
+ * @brief Create a primary object under a hierarchy (Spec Section 5.2).
+ *
+ * Allocates a transient slot, validates the public template,
+ * instantiates a seeded DRBG from the hierarchy primary seed,
+ * generates key material, fills in creation data, and produces
+ * a creation ticket.
+ *
+ * @param[in]  in   Hierarchy handle, public template, sensitive create.
+ * @param[out] out  Object handle, public area, Name, creation data.
+ * @return TPM_RC_SUCCESS or creation-specific error.
+ *
+ * @see ms-tpm-20-ref CreatePrimary.c
+ */
 TPM_RC TPM2_CreatePrimary(CreatePrimary_In *in, CreatePrimary_Out *out) {
     TPM_RC result = TPM_RC_SUCCESS;
     TPMT_PUBLIC *publicArea;
@@ -708,15 +848,18 @@ TPM_RC TPM2_CreatePrimary(CreatePrimary_In *in, CreatePrimary_Out *out) {
     return result;
 }
 
-/*
- * TPM2_Create – Create an ordinary object under a parent key.
+/**
+ * @brief Create a child object under a loaded parent (Spec Section 5.3).
  *
- * Unlike CreatePrimary, Create uses the parent's protection seed and
- * returns a private blob (TPM2B_PRIVATE) + public area but does NOT
- * load the object into a transient slot.  The caller must use
- * TPM2_Load to make the object usable.
+ * Unlike CreatePrimary, this returns a private blob
+ * (@c TPM2B_PRIVATE) and public area but does **not** load the
+ * object.  The caller must use @c TPM2_Load to make it usable.
  *
- * Reference: ms-tpm-20-ref Create.c TPM2_Create()
+ * @param[in]  in   Parent handle, public template, sensitive create.
+ * @param[out] out  Private blob, public area, creation data, ticket.
+ * @return TPM_RC_SUCCESS or creation-specific error.
+ *
+ * @see ms-tpm-20-ref Create.c
  */
 TPM_RC TPM2_Create(Create_In *in, Create_Out *out) {
     TPM_RC result = TPM_RC_SUCCESS;

@@ -1,3 +1,14 @@
+/**
+ * @file s32k358_tpm.h
+ * @brief S32K358 TPM device model — state structure and register map.
+ *
+ * Defines the QOM type, TIS register fields, reset values, FIFO
+ * sizes, and NV-memory limits for the emulated TPM device.
+ *
+ * @see s32k358_tpm.c          for the device implementation.
+ * @see tpm_state_machine.c    for lifecycle command helpers.
+ */
+
 #ifndef HW_MISC_S32K358_TPM_H
 #define HW_MISC_S32K358_TPM_H
 
@@ -37,37 +48,71 @@ OBJECT_DECLARE_SIMPLE_TYPE(S32k358TPMState, S32K358_TPM)
 #define TPM_RID_RST            0x00
 
 // NV Memory Configuration
-#define S32K358_TPM_NV_MEM_SIZE             1024
-#define S32K358_TPM_MAX_NV_BUFFER_SIZE      1024
-#define S32K358_TPM_NV_MEM_FIRST_VALID_ADDR 0x04
+#define S32K358_TPM_NV_MEM_SIZE             1024  /**< Total NV memory pool (bytes). */
+#define S32K358_TPM_MAX_NV_BUFFER_SIZE      1024  /**< Max single NV buffer (bytes). */
+#define S32K358_TPM_NV_MEM_FIRST_VALID_ADDR 0x04  /**< First allocatable NV offset. */
 
-// Response functions
+/**
+ * @brief Write the completed response into the output FIFO.
+ *
+ * Sets @c dataAvail, updates @c burstCount, and transitions
+ * the device to @c TPM_S_CMPL.
+ *
+ * @param[in,out] s  Device state.
+ */
 void tpm_finalize_response(S32k358TPMState *s);
+
+/**
+ * @brief Build and send a standard TPM response.
+ *
+ * Constructs a @c tpm_rsp_header_t with the given return code,
+ * appends optional output data, and calls @ref tpm_finalize_response.
+ *
+ * @param[in,out] s     Device state.
+ * @param[in]     rc    Response code.
+ * @param[in]     data  Pointer to output payload (may be @c NULL).
+ * @param[in]     size  Payload size in bytes.
+ */
 void tpm_send_response(S32k358TPMState *s, TPM_RC rc, const void *data,
                        size_t size);
 
+/**
+ * @brief Convenience wrapper — send an error response with no payload.
+ *
+ * Equivalent to @code tpm_send_response(s, rc, NULL, 0) @endcode.
+ *
+ * @param[in,out] s   Device state.
+ * @param[in]     rc  Error code to return to the guest.
+ */
 static inline void tpm_send_error_response(S32k358TPMState *s, TPM_RC rc) {
     tpm_send_response(s, rc, NULL, 0);
 }
 
+/**
+ * @brief Per-instance state of the S32K358 TPM device.
+ *
+ * Contains TIS registers, FIFO buffers, NV memory, hierarchy
+ * enables, state-machine flags, and seed material.
+ */
 struct S32k358TPMState {
-    SysBusDevice parent_obj;
+    SysBusDevice parent_obj; /**< Parent QOM object. */
 
-    MemoryRegion iomem;
+    MemoryRegion iomem;  /**< MMIO region mapped to the system bus. */
 
+    /** @brief Current TIS state-machine state. */
     enum {
-        TPM_S_INIT,
-        TPM_S_IDLE,
-        TPM_S_READY,
-        TPM_S_RECV,
-        TPM_S_EXEC,
-        TPM_S_CMPL
+        TPM_S_INIT,  /**< Power-on / reset, awaiting locality. */
+        TPM_S_IDLE,  /**< Locality granted, awaiting commandReady. */
+        TPM_S_READY, /**< Accepting command bytes via data FIFO. */
+        TPM_S_RECV,  /**< Receiving command data. */
+        TPM_S_EXEC,  /**< Executing the dispatched command. */
+        TPM_S_CMPL   /**< Command complete, response available. */
     } tpm_state;
 
-    TPM2B_SEED endorsement_seed;
-    TPM2B_SEED platform_seed;
-    TPM2B_SEED owner_seed;
-    TPM2B_SEED null_seed;
+    TPM2B_SEED endorsement_seed; /**< Endorsement hierarchy seed. */
+    TPM2B_SEED platform_seed;    /**< Platform hierarchy seed. */
+    TPM2B_SEED owner_seed;       /**< Owner hierarchy seed. */
+    TPM2B_SEED null_seed;        /**< Null hierarchy seed. */
 
     uint8_t tpm_access;
     uint32_t tpm_int_enable;
@@ -86,15 +131,18 @@ struct S32k358TPMState {
     uint32_t nvmem_size;
     char *filename;
 
-    bool initialized;
-    bool in_failure_mode;
-    bool in_fum_mode;
-    bool orderly_shutdown;
-    bool startup_clear_required;
-    bool read_only_mode;
-    TPM_SU last_shutdown_type;
-    TPM_RC self_test_result;
-    bool self_test_done;
+    /** @name State-machine lifecycle flags
+     *  @{ */
+    bool initialized;            /**< True after a successful TPM2_Startup. */
+    bool in_failure_mode;        /**< True when the TPM is in failure mode. */
+    bool in_fum_mode;            /**< True when in Field-Upgrade Mode. */
+    bool orderly_shutdown;       /**< True after a successful TPM2_Shutdown. */
+    bool startup_clear_required; /**< Force Startup(CLEAR) on next init. */
+    bool read_only_mode;         /**< True when the TPM is read-only. */
+    TPM_SU last_shutdown_type;   /**< Last shutdown type (CLEAR / STATE). */
+    TPM_RC self_test_result;     /**< Self-test result code. */
+    bool self_test_done;         /**< True after TPM2_SelfTest completes. */
+    /** @} */
 
     state_clear_data gc;
 
